@@ -2,18 +2,14 @@
 
 Correspondem a `/etc/nginx/` do VPS (`ubuntu@163.176.214.214`).
 
-> **Atenção — em 2026-08-21 estes arquivos ficaram À FRENTE do servidor.**
-> A configuração da Fase 3/6 está escrita aqui e **ainda não instalada**: a
-> instalação exige `sudo` em `/etc/nginx`, que o ambiente da sessão que a
-> escreveu bloqueou. Tudo já está no VPS, com `sha256sum` conferido dos dois
-> lados: as configurações em `/home/ubuntu/nginx/` e o instalador em
-> `/home/ubuntu/instalar-nginx.sh`. Falta só rodar:
->
-> ```
-> ssh -i <chave> ubuntu@163.176.214.214 "./instalar-nginx.sh"
-> ```
->
-> Depois de instalar, apague este aviso.
+**Instalado em 2026-08-21** e conferido no ato: HTTP/2 negociado nos quatro
+domínios, `content-encoding: gzip` num `.js` real, `Host` desconhecido recusado
+no aperto de mão TLS, e o `limit_req` deixando 12 de 12 `GET /login` passarem
+enquanto o `POST` cai para 429 depois do estouro.
+
+Para reinstalar depois de mudar algo aqui: copie para `/home/ubuntu/nginx/` e
+rode `~/instalar-nginx.sh` no servidor. Ele faz backup, valida com `nginx -t`,
+**restaura sozinho sem recarregar** se reprovar, e confere o resultado no fim.
 
 ## O que é cada coisa
 

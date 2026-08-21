@@ -349,11 +349,11 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
       confiar em `X-Forwarded-For` sem proxy na frente é pior que não confiar
 - [x] conferir depois: o limitador passa a contar por cliente, e o
       `audit_log` grava o IP real
-- [ ] `limit_req` no nginx nas rotas de login dos quatro (a proteção contra
+- [x] `limit_req` no nginx nas rotas de login dos quatro (a proteção contra
       força bruta que sobrevive a deploy e é compartilhada entre workers)
-      — **escrito; instalação pendente** (ver Sessão 6)
-- [ ] `default_server` que recusa `Host` desconhecido
-      — **escrito; instalação pendente** (ver Sessão 6)
+      — instalado e conferido em 2026-08-21
+- [x] `default_server` que recusa `Host` desconhecido
+      — instalado e conferido em 2026-08-21
 - [x] `pip-audit` no CI dos seis
 - [ ] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
 - [x] `.github/dependabot.yml` no SharedAuth
@@ -384,11 +384,15 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 6 — nginx
 
-- [ ] HTTP/2 nos quatro vhosts
-- [ ] `gzip` para texto
-- [ ] servir estático direto, com cabeçalho de cache; sair do caminho do
-      Python
-- [ ] copiar de volta para `vps/nginx/` neste repositório
+- [x] HTTP/2 nos quatro vhosts
+- [x] `gzip` para texto
+- [ ] **NÃO SERÁ FEITO** — servir estático direto pelo nginx. `/home/ubuntu` é
+      750 e o `www-data` não atravessa. As três saídas são piores que o
+      problema: `chmod o+x` abre o home inteiro, pôr o `www-data` no grupo
+      `ubuntu` dá ao nginx leitura dos **dumps do banco**, e copiar para
+      `/var/www` no deploy cria uma segunda cópia que diverge da imagem que
+      roda. Para 144–628 KB num sistema de um usuário, nenhuma compensa.
+- [x] copiar de volta para `vps/nginx/` neste repositório
 
 ### Fase 7 — documentação do bloco 1
 

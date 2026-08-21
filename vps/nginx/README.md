@@ -5,9 +5,14 @@ Correspondem a `/etc/nginx/` do VPS (`ubuntu@163.176.214.214`).
 > **Atenção — em 2026-08-21 estes arquivos ficaram À FRENTE do servidor.**
 > A configuração da Fase 3/6 está escrita aqui e **ainda não instalada**: a
 > instalação exige `sudo` em `/etc/nginx`, que o ambiente da sessão que a
-> escreveu bloqueou. Os arquivos estão copiados para `/tmp/nginx-novo/` no VPS
-> e a instalação é `bash /tmp/instalar-nginx.sh` — que faz backup, valida com
-> `nginx -t` e **restaura sozinho sem recarregar** se reprovar.
+> escreveu bloqueou. Tudo já está no VPS, com `sha256sum` conferido dos dois
+> lados: as configurações em `/home/ubuntu/nginx/` e o instalador em
+> `/home/ubuntu/instalar-nginx.sh`. Falta só rodar:
+>
+> ```
+> ssh -i <chave> ubuntu@163.176.214.214 "./instalar-nginx.sh"
+> ```
+>
 > Depois de instalar, apague este aviso.
 
 ## O que é cada coisa

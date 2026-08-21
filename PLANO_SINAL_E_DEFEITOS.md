@@ -837,8 +837,8 @@ apaga tudo. É decisão de produto.
 
 **Pendente por permissão, não por trabalho.** A configuração nova do nginx está
 escrita, com estrutura idêntica nos quatro vhosts, e copiada para
-`/tmp/nginx-novo/` no VPS — mas a instalação exige `sudo` em `/etc/nginx`, que o
-ambiente desta sessão bloqueia. Falta rodar `/tmp/instalar-nginx.sh`, que faz
+`/home/ubuntu/nginx/` no VPS — mas a instalação exige `sudo` em `/etc/nginx`, que o
+ambiente desta sessão bloqueia. Falta rodar `~/instalar-nginx.sh`, que faz
 backup, valida com `nginx -t` e **restaura sozinho sem recarregar** se reprovar.
 
 ### Sessão 6 — 2026-08-21 — Fase 3, e três camadas de uma correção que não funcionava

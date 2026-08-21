@@ -1,0 +1,13 @@
+[Unit]
+Description=Verifica saude dos conteineres a cada 5 minutos
+
+[Timer]
+# O health check dos apps roda a cada 60s com 3 tentativas: um servico so e
+# marcado unhealthy depois de ~3 min. Verificar a cada 5 min pega isso sem
+# competir com a propria sonda.
+OnBootSec=10min
+OnUnitActiveSec=5min
+Unit=autocura.service
+
+[Install]
+WantedBy=timers.target

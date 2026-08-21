@@ -3,6 +3,7 @@ Description=Backup diario dos bancos de producao (camada 1)
 Documentation=file:/home/ubuntu/backup-db.sh
 After=docker.service
 Requires=docker.service
+OnFailure=alerta@%n.service
 
 [Service]
 Type=oneshot

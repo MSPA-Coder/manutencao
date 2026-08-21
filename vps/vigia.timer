@@ -1,0 +1,14 @@
+[Unit]
+Description=Dispara o vigia de hora em hora
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+# Sem isso, quatro maquinas com o mesmo timer bateriam no mesmo segundo. Aqui
+# e uma so, mas o desvio tambem evita coincidir com o backup das 03:00.
+RandomizedDelaySec=5min
+Persistent=true
+Unit=vigia.service
+
+[Install]
+WantedBy=timers.target

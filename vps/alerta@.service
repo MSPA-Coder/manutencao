@@ -1,0 +1,33 @@
+# Unidade template: alvo de `OnFailure=` de qualquer outra unidade.
+#
+# Uso na unidade que se quer vigiar:
+#
+#     [Unit]
+#     OnFailure=alerta@%n.service
+#
+# `%n` expande para o nome completo da unidade que falhou (com o sufixo
+# `.service`), e vira o `%i` daqui. O nome resultante — por exemplo
+# `alerta@backup-db.service.service` — é feio e é o idioma correto do systemd.
+#
+# Instalação: /etc/systemd/system/alerta@.service
+
+[Unit]
+Description=Alerta de falha de %i
+# Sem rede, sem alerta. `network-online` evita a corrida em que uma unidade
+# falha durante o boot e o envio morre por DNS que ainda não subiu.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/home/ubuntu/alerta.sh --unidade %i
+
+# Um alerta que trava seguraria um `systemctl` inteiro esperando.
+TimeoutStartSec=60
+
+# Este serviço não pode ter `OnFailure=` — apontaria para si mesmo e a falha
+# de envio viraria um laço. O `alerta.sh` já garante saída zero sempre; isto
+# aqui é o cinto além do suspensório.
+Restart=no

@@ -1,0 +1,12 @@
+[Unit]
+Description=Reinicia conteiner marcado como unhealthy pelo Docker
+After=docker.service
+Requires=docker.service
+OnFailure=alerta@%n.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/home/ubuntu/autocura.sh
+TimeoutStartSec=300

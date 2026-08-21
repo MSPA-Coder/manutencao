@@ -1,0 +1,12 @@
+[Unit]
+Description=Vigia disco, enderecos publicos, certificado e frescor do backup
+After=network-online.target docker.service
+Wants=network-online.target
+OnFailure=alerta@%n.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/home/ubuntu/vigia.sh
+TimeoutStartSec=300

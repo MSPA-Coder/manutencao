@@ -5,6 +5,11 @@
 *.sh text eol=lf
 *.service text eol=lf
 *.timer text eol=lf
+# `.conf` entrou com o primeiro drop-in do systemd (certbot.service.d/).
+# Um drop-in com CRLF faz o systemd ler `alerta@%n.service` como nome de
+# unidade e o OnFailure= simplesmente não dispara -- falha silenciosa numa
+# peça cujo trabalho inteiro é avisar.
+*.conf text eol=lf
 
 # Planos são lidos nas duas plataformas; normaliza para não gerar diff falso.
 *.md text eol=lf

@@ -13,3 +13,12 @@
 
 # Planos são lidos nas duas plataformas; normaliza para não gerar diff falso.
 *.md text eol=lf
+
+# Os vhosts do nginx nao tem extensao (`megasena`, `conforto-termico`,
+# `recusa-host-desconhecido`), entao nenhuma regra por extensao os alcanca --
+# o `*.conf` acima pega o `conf.d/` e o `snippets/` e para por ali. Sem isto o
+# checkout no Windows os entrega com CRLF e o `scp` leva CRLF para o servidor.
+# Terceira vez que este arquivo precisa cobrir um caso novo pelo mesmo motivo:
+# a regra util e cobrir por CAMINHO o que vai para o Linux, nao por extensao.
+vps/nginx/* text eol=lf
+vps/nginx/**/* text eol=lf

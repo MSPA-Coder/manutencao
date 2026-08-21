@@ -1,8 +1,8 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
-Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1, 2, 4 e 6 concluídas;
-a 3 fechada menos a remediação dos CVE que a varredura nova encontrou. **Fase 5
-adiada por decisão do mantenedor; bloco 2 (8 a 11) fora de escopo por ora.**
+Iniciado em 2026-08-21. **Bloco 1 concluído** — fases 0, 0b, 1, 2, 3, 4, 6 e 7.
+**Fase 5 (métricas) adiada por decisão do mantenedor; bloco 2 (fases 8 a 11)
+fora de escopo por ora.**
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -356,9 +356,8 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 - [x] `default_server` que recusa `Host` desconhecido
       — instalado e conferido em 2026-08-21
 - [x] `pip-audit` no CI dos seis
-- [~] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
-      — **funcionando, PRs abertas e vermelhas de propósito.** Ver Sessão 7:
-      a varredura achou CVE de verdade e fechá-los é trabalho próprio
+- [x] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
+      — e os CVE que ela achou foram fechados. Ver Sessão 8
 - [x] `.github/dependabot.yml` no SharedAuth
 - [x] `pool_pre_ping` no CRV
 - [x] `.env.vps.example` do ConfortoTermico, com `CONFORTO_COOKIE_SEGURO=1`
@@ -399,10 +398,7 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 7 — documentação do bloco 1
 
-- [~] `AGENTS.md` dos afetados — escrito e commitado, mas nos branches do
-      Trivy: o texto descreve as barreiras novas de CI, então entra em `main`
-      junto com elas. O do ConfortoTermico sobre a dívida do `db_backend` já
-      está em `main` (Fase 4).
+- [x] `AGENTS.md` dos afetados
 - [x] `README.md` deste repositório: nova linha na tabela de planos
 - [x] seção 9 abaixo, com o estado final do bloco 1 (Sessões 1 a 7)
 
@@ -981,3 +977,49 @@ cometer. Produção não está pior do que ontem: os CVE já estavam lá, a dife
 é que agora alguém sabe.
 
 Fechá-los é a próxima rodada, e é trabalho de imagem, não de varredura.
+
+### Sessão 8 — 2026-08-21 — os CVE fechados, e bloco 1 concluído
+
+As quatro PRs do Trivy estão verdes e implantadas. A correção não foi subir
+versão de pacote — foi descobrir que **nenhum dos dois pacotes precisava estar
+na imagem servida**:
+
+- o `msgpack` acusado é o que o **próprio `pip`** carrega vendorizado em
+  `pip/_vendor/`, não dependência de ninguém;
+- o `setuptools` foi **introduzido pela minha correção anterior**. Conferido nos
+  quatro contêineres em produção: eles já rodavam sem ele.
+
+Então `pip` e `setuptools` saíram da imagem servida. É o mesmo raciocínio que
+já mantém `gcc`, `make` e `wget` fora do runtime — coisa que os testes de
+contrato destes projetos verificam há rodadas. A última linha do `RUN` é a
+própria verificação: se `pip` continuar no PATH, o build falha ali em vez de
+entregar uma imagem que só *parece* limpa.
+
+**Cinco defeitos apareceram no caminho, e os testes de contrato pegaram dois
+deles.** Vale listar porque todos são da mesma família — mexer no nome de uma
+imagem quebra quem a procurava pelo nome antigo:
+
+| Onde | O que quebrou |
+|---|---|
+| ConfortoTermico | só o serviço `schema` tem `build:`; `docker compose build ict` era no-op e a tag nunca existia |
+| ControleBancario | com `image:` no âncora, `compose config --images \| grep -x` passou a devolver duas linhas e o `docker run` recebeu ref inválida |
+| ControleRendaVariavel | o contrato inspecionava `controle-renda-variavel-web`, nome derivado que deixou de existir |
+| MegaSena | o `quality` chamava `pip` direto; `python -m pip` funciona só com o módulo, que é o que o `ensurepip` garante |
+| **todos** | removi o `_distutils_hack` e **deixei o `.pth` que o carrega** — o Python passaria a imprimir traceback a cada início. Pego pelo contrato do ControleBancario |
+
+O último é o mais instrutivo: a imagem *funcionaria*, e sujaria todo log de
+produção com um erro que não aponta para a causa. Nenhum teste de aplicação
+pegaria isso; o teste de contrato pegou.
+
+E o `python -m pip check`, que o contrato rodava na imagem servida, não foi
+descartado — foi para o **build**, logo antes da remoção. Verificar antes de
+remover a ferramenta é melhor que verificar depois de perdê-la.
+
+**Verificado em produção nos quatro:** `pip=ausente`, `setuptools=ausente`,
+diretório do `pip` inexistente, e o interpretador subindo sem reclamar de
+`.pth`. Os quatro respondem 200 com `"status":"ok"`.
+
+**Bloco 1 concluído.** Fica pendente, por decisão registrada: a Fase 5
+(métricas) e o bloco 2 (interface, fases 8 a 11). A lista de trabalho da Fase 9
+já está pronta em
+[INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md).

@@ -8,8 +8,8 @@ desenho, não de implementação; a seção 3 explica por quê e o que entrou no
 **Status: concluído em 2026-08-20 — as oito fases estão feitas e validadas.**
 A produção do VPS tem backup diário verificado, buscado e catalogado sozinho
 todo dia, com um ensaio de restauração real já confirmado contra a produção.
-Pendência conhecida, fora das oito fases: a cópia das configurações do nginx
-em `_manutencao/vps/nginx/` (D5) nunca foi feita — ver seção 22.
+A cópia das configurações do nginx em `_manutencao/vps/nginx/` (D5), pendência
+fora das oito fases, foi feita em 2026-08-20 — ver seção 22.
 
 Documentos irmãos: [PLANO_RESSINCRONIZACAO_VPS.md](PLANO_RESSINCRONIZACAO_VPS.md)
 (fluxo local → GitHub → VPS, concluído) e
@@ -1060,10 +1060,24 @@ VPS descrita ponta a ponta.** Última fase do plano.
 
 ### O que fica pendente, fora das oito fases
 
-- Cópia das configurações do nginx em `_manutencao/vps/nginx/` (D5) — sem
-  segredo dentro, mas sem cópia nenhuma hoje.
 - Extração de segredos do VPS para o cofre (sempre manual, por decisão de
   escopo — D5 mais ampla).
+
+### Sessão de 2026-08-20 (continuação) — cópia do nginx feita
+
+Reconsiderada a decisão D5 antes de executar: automatizar essa cópia pelo
+BackupRestore exigiria ou dar à chave restrita um verbo novo fora do diretório
+de dumps (mais superfície numa chave que hoje só toca dumps se vazar), ou
+trazer a chave de administração para dentro do código do app (hoje ela só é
+usada manualmente — um BackupRestore comprometido não deve virar acesso amplo
+ao VPS). As duas pioram uma fronteira de segurança existente; a decisão
+manual se sustenta por motivo próprio, não só por ter sido acordada no meio
+do plano. Puxados `/etc/nginx/sites-available/{conforto-termico,
+controle-bancario,controle-renda-variavel,megasena}` do VPS com a chave de
+administração (`ssh-key-2026-08-17.key`) para `_manutencao/vps/nginx/`, com
+README explicando a origem e o comando para atualizar. Sem segredo dentro
+(domínio, porta, caminho de certificado) — confirmado por leitura antes de
+copiar.
 
 ---
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispara o backup dos bancos as 03:00 de Sao Paulo
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 America/Sao_Paulo
+Persistent=true
+Unit=backup-db.service
+
+[Install]
+WantedBy=timers.target

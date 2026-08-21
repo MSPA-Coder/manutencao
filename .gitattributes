@@ -1,0 +1,10 @@
+# Os arquivos de `vps/` rodam em Linux. Sem isto, o `core.autocrlf=true` desta
+# máquina Windows entregaria o script com CRLF no checkout, e o `\r` no fim da
+# linha do shebang quebra o bash com um erro que não parece ter relação nenhuma
+# ("bad interpreter: no such file or directory").
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+
+# Planos são lidos nas duas plataformas; normaliza para não gerar diff falso.
+*.md text eol=lf

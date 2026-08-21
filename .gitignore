@@ -1,0 +1,22 @@
+# Este repositório guarda planos e infraestrutura — nunca credencial.
+#
+# A guarda existe porque o conteúdo daqui é escrito à mão, em texto corrido, e
+# já aconteceu de uma senha entrar num plano sem ninguém notar. Em Git isso é
+# permanente: apagar depois não tira do histórico.
+.env
+.env.*
+.secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*credential*
+*password*
+*token*
+
+# Ruído de sistema
+Thumbs.db
+desktop.ini
+.DS_Store

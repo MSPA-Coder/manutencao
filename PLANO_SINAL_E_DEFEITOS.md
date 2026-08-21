@@ -355,7 +355,9 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 - [x] `default_server` que recusa `Host` desconhecido
       — instalado e conferido em 2026-08-21
 - [x] `pip-audit` no CI dos seis
-- [ ] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
+- [~] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
+      — **funcionando, PRs abertas e vermelhas de propósito.** Ver Sessão 7:
+      a varredura achou CVE de verdade e fechá-los é trabalho próprio
 - [x] `.github/dependabot.yml` no SharedAuth
 - [x] `pool_pre_ping` no CRV
 - [x] `.env.vps.example` do ConfortoTermico, com `CONFORTO_COOKIE_SEGURO=1`
@@ -898,3 +900,80 @@ declaram `image:` no serviço servido, e o nome sai derivado do diretório.
 Acertar isso significa mexer no `compose.yaml` dos três e trocar o nome das
 imagens em produção — mudança de blast radius maior que o item, e que merece
 rodada própria em vez de ser embutida aqui.
+
+### Sessão 7 — 2026-08-21 — nginx no ar, Fase 4, chave de sessão, e o Trivy achando coisa
+
+**nginx instalado e conferido no ato**, não só recarregado: HTTP/2 negociado
+nos quatro domínios, `content-encoding: gzip` num `.js` real, `Host`
+desconhecido recusado no aperto de mão TLS, e o `limit_req` deixando **12 de 12
+`GET /login`** passarem enquanto o `POST` cai para 429 depois do estouro — o
+`map` que zera a chave em não-POST existia justamente para recarregar a tela de
+login não virar bloqueio, e funciona. Fecha `limit_req` e `default_server` da
+Fase 3, e HTTP/2 e gzip da Fase 6.
+
+**Fase 4 fechada, e um item dela foi recusado com base em medição.** O plano
+pedia `RETURNING id` no lugar do `SELECT currval(...)`. Conferido o esquema:
+**8 das 18 tabelas não têm coluna `id`**, e várias são alvo de INSERT
+(`configuracoes_zona`, `controle_zonas`, `estado_equipamentos`,
+`agregados_15min`). Acrescentar `RETURNING id` a todo INSERT transformaria
+upserts que funcionam em erro de SQL, para economizar um round trip num sistema
+cujos dumps inteiros têm centenas de quilobytes. O defeito *real* do `currval`
+— devolver o id de outra linha quando nada foi inserido — foi fechado com uma
+guarda de `rowcount`, sem tocar no esquema.
+
+O item principal foi feito: a substituição cega de `?` por `%s` virou um
+percorredor que respeita literal, identificador citado, literal com cifrão,
+comentário de linha e de bloco (que aninham no PostgreSQL) e os operadores
+`?|`/`?&` de jsonb. E conta os marcadores convertidos: se não baterem com os
+parâmetros, recusa com a causa provável e a saída (`jsonb_exists`). 12 testes.
+
+**A ADR 005 foi substituída, não atropelada.** A chave de sessão gerada em
+silêncio estava registrada como decisão consciente, com um motivo concreto: "o
+Compose não fornece uma chave de sessão como Docker secret dedicado". O motivo
+deixou de valer. A própria ADR 005 dizia o que a evolução exigiria — migração
+coordenada, compatibilidade temporária e rollback documentado — e a ADR 007 faz
+as três. **Ninguém foi deslogado**: o arquivo de segredo foi semeado com a
+chave que já estava no volume, dentro do próprio servidor, `sha256` conferido
+idêntico. Muda de *onde* a chave vem, não *qual* chave é.
+
+**O Trivy funciona, e por isso as PRs estão vermelhas.**
+
+Duas coisas foram aprendidas antes de ele rodar:
+
+1. **A action de marketplace é barrada.** As quatro PRs falharam com
+   `startup_failure` e zero log — não era o YAML. A política destes
+   repositórios é `allowed_actions: selected` com `github_owned_allowed: true`,
+   `verified_allowed: false` e `patterns_allowed: []`: só actions da própria
+   GitHub. Conformar-se a isso é melhor que afrouxá-la para caber uma
+   ferramenta, então o Trivy roda como **contêiner**, com `docker save` +
+   `--input` em vez de montar `/var/run/docker.sock` — montar o socket é dar
+   root na prática, que foi exatamente o motivo de o `autoheal` ter sido
+   recusado na Fase 1.
+2. **A varredura precisa de nome de imagem determinístico.** Três dos quatro
+   `compose.yaml` não declaravam `image:`, e o Compose batizava a imagem pelo
+   nome do diretório — um nome no CI, outro no VPS. Isso também exigiu corrigir
+   uma linha do CI do ControleBancario que procurava o nome derivado.
+
+E aí ele achou, na primeira execução:
+
+| Pacote | Instalado | Corrigido em | |
+|---|---|---|---|
+| `setuptools` | 70.3.0 | 78.1.1 | CVE-2025-47273, travessia de caminho |
+| `msgpack` | 1.1.2 | 1.2.1 | GHSA-6v7p-g79w-8964 |
+| `util-linux` (Debian) | — | — | CVE-2026-53614/53615 |
+
+O `apt-get upgrade` no estágio `base` **fechou toda a parte de sistema
+operacional** nos quatro. O que sobrou são dois pacotes Python, e fechá-los não
+é uma linha: cada projeto monta a imagem de um jeito diferente — o MegaSena usa
+`/opt/venv` (que ganha cópia própria do `setuptools` ao ser criado), o
+ControleBancario faz `COPY --from=runtime-dependencies /install /usr/local`
+(que sobrescreve o `setuptools` corrigido na base), e o `msgpack` é transitivo
+em todos.
+
+**As quatro PRs ficam ABERTAS e vermelhas**, de propósito. Mesclar vermelho
+ensina a ignorar o vermelho, e baixar o `--exit-code` para 0 seria instalar um
+alarme desligado — os dois erros que este plano inteiro existe para não
+cometer. Produção não está pior do que ontem: os CVE já estavam lá, a diferença
+é que agora alguém sabe.
+
+Fechá-los é a próxima rodada, e é trabalho de imagem, não de varredura.

@@ -1,6 +1,7 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
-Iniciado em 2026-08-21. **Status: aberto, fases 0 a 7 pendentes.**
+Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1 e 2 concluídas;
+**3 a 11 pendentes** (a 3 em execução).
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -140,12 +141,22 @@ pedidos procedem, e o diagnóstico é mais específico do que a impressão inici
 |---|---|---|
 | ControleBancario | `data-confirm` → modal próprio (`openConfirmModal`) | 14 |
 | ControleRendaVariavel | `hx-confirm` do HTMX — por baixo é o `window.confirm` do navegador | 13 |
-| MegaSena | os três misturados | 2 + 2 + 3 |
-| ConfortoTermico | `confirm()` nativo, e nada mais | 3 |
+| MegaSena | dois mecanismos redundantes sobre os **mesmos 2 botões** | 2 |
+| ConfortoTermico | `confirm()` nativo, e nada mais | 5 |
 
 Contra ~79 rotas que mutam estado e 92 funções com nome de exclusão ou
 alteração. A diferença entre projetos não é de estilo: em dois deles a
 confirmação é a caixa cinza do navegador, no outro é um modal desenhado.
+
+**Números corrigidos em 2026-08-21 pelo inventário item a item.** A contagem
+original desta tabela vinha de `grep`, e errou em duas linhas. O MegaSena
+estava registrado como "os três misturados, 2 + 2 + 3", o que sugeria sete
+operações protegidas; na verdade o `hx-confirm` e o `data-confirm-message`
+cobrem **os mesmos dois botões**, e o terceiro caminho (`base.js:58`) tem uma
+guarda que se desliga quando o `hx-confirm` está presente. São 2, não 7 — e o
+resto do aplicativo não confirmava nada. Contar ocorrências de atributo mede o
+código; só o inventário mede a cobertura. Ver
+[INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md).
 
 **O componente que o mantenedor descreveu já existe**, em
 `ControleBancario/static/js/core/application.js:760` — `openConfirmModal`,
@@ -266,13 +277,13 @@ pelos dois frameworks. Os templates ficam finos e por framework.
 
 Nada aqui é editável a partir da estação de trabalho. Levantar no VPS:
 
-- [ ] `free -h`, `nproc`, `df -h` — dimensionamento real do host
-- [ ] `docker system df` — quanto o cache de build dos deploys acumulou
-- [ ] o `.env.docker` de produção do ConfortoTermico: `CONFORTO_COOKIE_SEGURO`
+- [x] `free -h`, `nproc`, `df -h` — dimensionamento real do host
+- [x] `docker system df` — quanto o cache de build dos deploys acumulou
+- [x] o `.env.docker` de produção do ConfortoTermico: `CONFORTO_COOKIE_SEGURO`
       está em `1`? (não dá para verificar daqui — o arquivo é gitignored)
-- [ ] `nginx -v` — decide entre `http2 on;` e `listen ... http2`
-- [ ] `systemctl list-timers` — o certbot renova por timer? tem `OnFailure=`?
-- [ ] limites atuais da camada gratuita escolhida em D1 (não confiar em
+- [x] `nginx -v` — decide entre `http2 on;` e `listen ... http2`
+- [x] `systemctl list-timers` — o certbot renova por timer? tem `OnFailure=`?
+- [x] limites atuais da camada gratuita escolhida em D1 (não confiar em
       número memorizado; ler na fonte no dia)
 
 ### Fase 0b — inventário de operação destrutiva sem confirmação
@@ -280,44 +291,55 @@ Nada aqui é editável a partir da estação de trabalho. Levantar no VPS:
 Leitura pura, não altera nada. Sobe para junto da Fase 0 porque o risco aqui
 é perda de dado, não estética — e porque o resultado pode reordenar o resto.
 
-- [ ] listar, nos quatro apps, toda rota que exclui ou altera estado
-- [ ] marcar quais têm confirmação hoje e por qual dos quatro mecanismos
-- [ ] destacar as que **não têm nenhuma** e cujo efeito é irreversível
-- [ ] **se aparecer caso grave** (exclusão de conta, lançamento ou posição sem
+- [x] listar, nos quatro apps, toda rota que exclui ou altera estado
+- [x] marcar quais têm confirmação hoje e por qual dos quatro mecanismos
+- [x] destacar as que **não têm nenhuma** e cujo efeito é irreversível
+- [x] **se aparecer caso grave** (exclusão de conta, lançamento ou posição sem
       pergunta), corrigir aquele caso imediatamente com o mecanismo que o
       projeto já tem — sem esperar o bloco 2 e sem inventar componente novo
-- [ ] o inventário vira a lista de trabalho da Fase 9
+- [x] o inventário vira a lista de trabalho da Fase 9
+
+**Concluída em 2026-08-21**, em duas etapas. A primeira parou na *medição* — a
+tabela do Tema F, com os quatro mecanismos e a contagem agregada. Isso não é
+inventário: sem saber qual rota, em qual arquivo, com ou sem confirmação e
+reversível ou não, o critério "irreversível pede, reversível não pede" não tem
+como ser aplicado e a Fase 9 não tem sobre o que trabalhar.
+
+A segunda etapa produziu a lista item a item — **124 operações nos quatro
+aplicativos** — em [INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md).
+Achou **seis casos graves**, todos corrigidos e implantados no mesmo dia, e
+corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 1 — sinal de falha (maior retorno, menor custo)
 
-- [ ] bot criado no @BotFather; token e chat id gravados pelo mantenedor em
+- [x] bot criado no @BotFather; token e chat id gravados pelo mantenedor em
       `/home/ubuntu/.secrets/telegram.env` (600, dono `ubuntu`). Os valores
       não passam por conversa nem por repositório
-- [ ] `alerta.sh` no VPS: lê o arquivo, envia por `curl`, e falha em silêncio
+- [x] `alerta.sh` no VPS: lê o arquivo, envia por `curl`, e falha em silêncio
       sem derrubar quem o chamou — um alerta que não sai não pode virar um
       segundo incidente. Versionado em `vps/` aqui (não tem segredo dentro)
-- [ ] `alerta@.service` — unidade template para servir de alvo de `OnFailure=`
-- [ ] testado com uma falha forçada de verdade, não com um envio manual
-- [ ] `OnFailure=` em `backup-db.service` apontando para uma unidade de alerta
-- [ ] `OnFailure=` na unidade de renovação do certbot
-- [ ] auto-cura de contêiner `unhealthy`: **timer systemd com script curto**,
+- [x] `alerta@.service` — unidade template para servir de alvo de `OnFailure=`
+- [x] testado com uma falha forçada de verdade, não com um envio manual
+- [x] `OnFailure=` em `backup-db.service` apontando para uma unidade de alerta
+- [x] `OnFailure=` na unidade de renovação do certbot
+- [x] auto-cura de contêiner `unhealthy`: **timer systemd com script curto**,
       rodando como `ubuntu` (já está no grupo `docker`). Recusado o
       `autoheal` em contêiner: exige montar o socket do Docker, que é
       privilégio de root na prática — privilégio grande demais para o
       problema
-- [ ] checagem externa de uptime nos quatro `https://<dom>/health` (não em
+- [x] checagem externa de uptime nos quatro `https://<dom>/health` (não em
       `/login`), com alerta no mesmo canal
-- [ ] alerta de disco acima de 80%
+- [x] alerta de disco acima de 80%
 
 ### Fase 2 — rollback e sonda certa no `deploy.sh`
 
-- [ ] guardar `git rev-parse HEAD` antes do `merge --ff-only`
-- [ ] trocar a verificação final de `/login` para `/health`, e exigir corpo
+- [x] guardar `git rev-parse HEAD` antes do `merge --ff-only`
+- [x] trocar a verificação final de `/login` para `/health`, e exigir corpo
       com `"status":"ok"` — não só HTTP 200
-- [ ] em falha da verificação: `git reset --hard` para o commit guardado,
+- [x] em falha da verificação: `git reset --hard` para o commit guardado,
       `compose up -d --build`, reverificar, e alertar em qualquer desfecho
-- [ ] `--check` continua não alterando nada
-- [ ] copiar para o VPS e conferir `sha256sum` dos dois lados (convenção do
+- [x] `--check` continua não alterando nada
+- [x] copiar para o VPS e conferir `sha256sum` dos dois lados (convenção do
       `README.md` deste repositório)
 
 ### Fase 3 — defeitos de segurança pontuais
@@ -731,3 +753,88 @@ idêntico dos dois lados.
 
 **Fase 1 fechada.** Sinal de falha, auto-cura, vigia interno e vigia externo,
 todos testados com falha real e não só com envio manual.
+
+### Sessão 5 — 2026-08-21 — Fase 0b de verdade, Fase 2 fechada, Fase 3 em curso
+
+**A Fase 0b estava dada como feita e não estava.** O que existia era a medição
+agregada do Tema F. Virou inventário item a item — 124 operações nos quatro
+aplicativos, em [INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md),
+levantado por quatro agentes em paralelo, um por projeto.
+
+Lição de método que vale além desta fase: **contar ocorrências de atributo mede
+o código, não a cobertura.** O `grep` dizia que o MegaSena tinha "2 + 2 + 3"
+confirmações; o inventário mostrou dois mecanismos redundantes sobre os mesmos
+dois botões. Eram 2, não 7 — e a tabela do Tema F foi corrigida.
+
+**Seis casos graves, todos corrigidos e implantados no mesmo dia** (irreversível
+e sem confirmação nenhuma):
+
+| Projeto | Caso | PR |
+|---|---|---|
+| CRV | encerrar posição (ação e opção) apaga o extrato em cascata | #22 |
+| CRV | editar posição trocando a carteira para Simulada apaga o extrato | #22 |
+| CRV | atualizar cotações sobrescreve lançamento manual | #22 |
+| Bancário | editar "este e os próximos" apaga comprovante por CASCADE | #27 |
+| MegaSena | importar planilha sobrescreve concurso já cadastrado | #30 |
+| ConfortoTermico | `/api/reset` apagava a série temporal com trava só no front | #21 |
+
+O pior não é o maior: o do **CRV com a carteira Simulada** é destruição de
+histórico com aparência de edição rotineira — o usuário escolhe uma opção num
+`<select>`, clica em Salvar e lê "Posição atualizada."
+
+Três armadilhas encontradas por conferir em vez de presumir, todas do tipo que
+teria produzido uma proteção *aparente*:
+
+1. `hx-confirm` só dispara em requisição do HTMX. Em `<form method="post">`
+   comum ele é ignorado em silêncio — pareceria protegido e não estaria.
+2. `hx-boost` num form cascateia para os `<a>` dentro dele, e a busca de
+   `hx-confirm` sobe pelos ancestrais: os links "Cancelar" e "Transações"
+   passariam a exigir a confirmação de destruição só para navegar. Resolvido com
+   `hx-boost="false"` nos links.
+3. No ControleBancario, o `_initDynamicConfirmButtons` genérico liga o listener
+   uma vez e depois confirma incondicionalmente — não expressa condição que muda
+   depois de ligado — e não é reexecutado no swap htmx da tabela, então pararia
+   de confirmar depois do primeiro filtro.
+
+**Fase 2 fechada, com o rollback provado por falha real.** Uma cópia descartável
+do `deploy.sh` reprovando de propósito a primeira verificação foi rodada contra
+o MegaSena: mesclou, reconstruiu, reprovou, voltou para o commit anterior,
+reconstruiu de novo, verificou e alertou. Só o veredito era falso; merge,
+rebuild, `git reset --hard` e Telegram foram reais.
+
+**Um erro meu, achado por medir.** A poda de cache que escrevi filtrava por
+idade (`until=168h`) e não podava nada: com deploys frequentes nenhuma entrada
+chega a ter uma semana, e o cache subiu de 5,8 para 6,8 GB com a poda ligada.
+Trocado por teto de tamanho (`--max-used-space 3GB`), que liberou 2,6 GB. Idade
+mede quando a camada nasceu; o que interessa é quanto disco ela ocupa.
+
+**Fase 6 decidida pelo que o sistema de arquivos permite, não pelo checklist.**
+O item "servir estático direto pelo nginx" **não será feito**, e a razão é
+concreta: `/home/ubuntu` é 750 e o nginx (`www-data`) não atravessa. As três
+saídas são piores que o problema — `chmod o+x` abre o home inteiro,
+`usermod -aG ubuntu www-data` daria ao nginx leitura dos **dumps do banco**, e
+copiar para `/var/www` no deploy cria uma segunda cópia que pode divergir da
+imagem que está rodando. Para 144–628 KB de estático num sistema de um usuário,
+nenhuma compensa. O estático sai do Python por cache no navegador
+(`SEND_FILE_MAX_AGE_DEFAULT`), não por permissão de arquivo.
+
+**Dois números do Tema E também estavam errados**, conferidos no servidor:
+o `default_server` **existe** na porta 80 (vem no site `default` do pacote do
+Ubuntu) — o buraco é só na 443; e o `gzip on;` **já está ligado** no
+`nginx.conf`, mas com `gzip_types` comentado, e o padrão do nginx nesse caso é
+comprimir só `text/html`. Estava ligado e não comprimia CSS nem JS.
+
+**Achado que muda a leitura do caso grave 6.** O botão "Limpar histórico" do
+ConfortoTermico é invisível desde sempre: nasce com a classe `oculto` e nem
+`moverCampo` nem `moverCheck` a removem. Vale também para `cfg-sons`,
+`cfg-emails` e `wrap-email-destino`. Logo `/api/reset` **não tem interface** — a
+trava de servidor que entrou hoje é a única proteção que existe, e não uma
+segunda camada. Não corrigido de propósito: revelar `cfg-emails` pode disparar
+e-mail sem SMTP conferido, e revelar `btn-limpar` acrescenta à tela um botão que
+apaga tudo. É decisão de produto.
+
+**Pendente por permissão, não por trabalho.** A configuração nova do nginx está
+escrita, com estrutura idêntica nos quatro vhosts, e copiada para
+`/tmp/nginx-novo/` no VPS — mas a instalação exige `sudo` em `/etc/nginx`, que o
+ambiente desta sessão bloqueia. Falta rodar `/tmp/instalar-nginx.sh`, que faz
+backup, valida com `nginx -t` e **restaura sozinho sem recarregar** se reprovar.

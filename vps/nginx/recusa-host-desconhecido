@@ -1,0 +1,36 @@
+# Servidor padrão de HTTPS: recusa requisição com `Host` que não é de nenhum
+# dos quatro domínios.
+#
+# POR QUE EXISTE: sem um `default_server` na 443, o nginx atende `Host`
+# desconhecido com o PRIMEIRO bloco `server` carregado — que hoje é o
+# `conforto-termico`, só porque vem antes em ordem alfabética. Qualquer
+# varredura de IP, qualquer domínio apontado para cá por engano ou de
+# propósito, é servida como se fosse o ConfortoTermico. Isso não é hipotético:
+# é o comportamento documentado quando nenhum `server_name` casa.
+#
+# A porta 80 JÁ TEM `default_server` — vem no site `default` do pacote do
+# Ubuntu, em `/etc/nginx/sites-available/default`. O plano registrava "nginx
+# sem default_server" para as duas portas; conferido no servidor, o buraco era
+# só o HTTPS. Este arquivo trata apenas a 443, e por isso não conflita com o
+# site do pacote.
+#
+# `ssl_reject_handshake on` (nginx 1.19.4+; aqui roda 1.24.0) corta a conexão
+# ainda no aperto de mão TLS. É melhor que responder 444 depois de estabelecer
+# a sessão por dois motivos: não gasta certificado nem CPU de handshake com
+# quem não deveria estar ali, e não revela nenhum dos certificados — o nome do
+# domínio no certificado é informação, e um servidor padrão que apresenta o
+# certificado do ConfortoTermico entrega a lista de domínios a quem só tinha o
+# IP.
+
+server {
+    # O `http2` repetido aqui não é decoração. Até o nginx 1.25 o HTTP/2 é
+    # propriedade do SOCKET, não do bloco `server`: com quatro vhosts pedindo
+    # `http2` e o servidor padrão do mesmo socket omitindo, a configuração do
+    # socket fica ambígua. Declarar igual em todos os blocos da 443 remove a
+    # ambiguidade em vez de depender da ordem de carga.
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name _;
+
+    ssl_reject_handshake on;
+}

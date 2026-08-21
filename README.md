@@ -38,6 +38,8 @@ Os quatro primeiros rodam em produção num VPS Oracle, com deploy por
 | [PLANO_RETIRAR_BACKUPS_LOCAIS.md](PLANO_RETIRAR_BACKUPS_LOCAIS.md) | concluído — um backup, um dono |
 | [PLANO_UNIFICAR_AUTENTICACAO.md](PLANO_UNIFICAR_AUTENTICACAO.md) | concluído — login e mensagens viram o SharedAuth |
 | [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md) | concluído — cabeçalhos/CSP, formatação pt-BR, `/health` e convenções de CI |
+| [PLANO_SINAL_E_DEFEITOS.md](PLANO_SINAL_E_DEFEITOS.md) | **aberto** — sinal de falha, rollback no deploy, confirmação de operação destrutiva e varredura de vulnerabilidade |
+| [INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md) | referência — 124 operações que mudam estado nos quatro apps, com reversibilidade |
 
 Nenhum plano está aberto no momento. Os dois últimos são a leitura obrigatória
 antes de mexer em autenticação ou em política de segurança de qualquer um dos

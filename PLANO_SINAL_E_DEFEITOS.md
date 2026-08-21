@@ -1,7 +1,8 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
-Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1 e 2 concluídas; a 3
-quase toda (falta nginx instalar, Trivy e `SECRET_KEY`); **4 a 11 pendentes.**
+Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1, 2, 4 e 6 concluídas;
+a 3 fechada menos a remediação dos CVE que a varredura nova encontrou. **Fase 5
+adiada por decisão do mantenedor; bloco 2 (8 a 11) fora de escopo por ora.**
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -398,9 +399,9 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 7 — documentação do bloco 1
 
-- [ ] `AGENTS.md` dos afetados
-- [ ] `README.md` deste repositório: nova linha na tabela de planos
-- [ ] seção 9 abaixo, com o estado final do bloco 1
+- [x] `AGENTS.md` dos afetados
+- [x] `README.md` deste repositório: nova linha na tabela de planos
+- [x] seção 9 abaixo, com o estado final do bloco 1 (Sessões 1 a 7)
 
 ---
 

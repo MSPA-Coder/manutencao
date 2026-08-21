@@ -399,7 +399,10 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 7 — documentação do bloco 1
 
-- [x] `AGENTS.md` dos afetados
+- [~] `AGENTS.md` dos afetados — escrito e commitado, mas nos branches do
+      Trivy: o texto descreve as barreiras novas de CI, então entra em `main`
+      junto com elas. O do ConfortoTermico sobre a dívida do `db_backend` já
+      está em `main` (Fase 4).
 - [x] `README.md` deste repositório: nova linha na tabela de planos
 - [x] seção 9 abaixo, com o estado final do bloco 1 (Sessões 1 a 7)
 

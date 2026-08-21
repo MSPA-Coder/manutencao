@@ -1,7 +1,7 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
-Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1 e 2 concluídas;
-**3 a 11 pendentes** (a 3 em execução).
+Iniciado em 2026-08-21. **Status: aberto.** Fases 0, 0b, 1 e 2 concluídas; a 3
+quase toda (falta nginx instalar, Trivy e `SECRET_KEY`); **4 a 11 pendentes.**
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -344,19 +344,21 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 
 ### Fase 3 — defeitos de segurança pontuais
 
-- [ ] `ProxyFix(x_for=1, x_proto=1, x_host=1)` no ConfortoTermico, atrás da
+- [x] `ProxyFix(x_for=1, x_proto=1, x_host=1)` no ConfortoTermico, atrás da
       mesma variável de ambiente que os outros dois usam — não incondicional:
       confiar em `X-Forwarded-For` sem proxy na frente é pior que não confiar
-- [ ] conferir depois: o limitador passa a contar por cliente, e o
+- [x] conferir depois: o limitador passa a contar por cliente, e o
       `audit_log` grava o IP real
 - [ ] `limit_req` no nginx nas rotas de login dos quatro (a proteção contra
       força bruta que sobrevive a deploy e é compartilhada entre workers)
+      — **escrito; instalação pendente** (ver Sessão 6)
 - [ ] `default_server` que recusa `Host` desconhecido
-- [ ] `pip-audit` no CI dos seis
+      — **escrito; instalação pendente** (ver Sessão 6)
+- [x] `pip-audit` no CI dos seis
 - [ ] varredura de imagem (Trivy) no CI dos quatro que constroem imagem
-- [ ] `.github/dependabot.yml` no SharedAuth
-- [ ] `pool_pre_ping` no CRV
-- [ ] `.env.vps.example` do ConfortoTermico, com `CONFORTO_COOKIE_SEGURO=1`
+- [x] `.github/dependabot.yml` no SharedAuth
+- [x] `pool_pre_ping` no CRV
+- [x] `.env.vps.example` do ConfortoTermico, com `CONFORTO_COOKIE_SEGURO=1`
 - [ ] `SECRET_KEY` do ConfortoTermico: falhar alto como os outros três, em
       vez de gerar em silêncio
 
@@ -838,3 +840,57 @@ escrita, com estrutura idêntica nos quatro vhosts, e copiada para
 `/tmp/nginx-novo/` no VPS — mas a instalação exige `sudo` em `/etc/nginx`, que o
 ambiente desta sessão bloqueia. Falta rodar `/tmp/instalar-nginx.sh`, que faz
 backup, valida com `nginx -t` e **restaura sozinho sem recarregar** se reprovar.
+
+### Sessão 6 — 2026-08-21 — Fase 3, e três camadas de uma correção que não funcionava
+
+Cinco agentes da Fase 3 morreram no limite de sessão, dois deles com trabalho
+parcial aproveitável. O resto foi feito diretamente, o que se mostrou mais
+barato: remontar contexto num agente novo custa mais que executar.
+
+**Entregue e implantado:** `pip-audit` no CI dos **seis** repositórios,
+`dependabot.yml` e CI endurecido no SharedAuth (era o único sem dependabot e o
+menos vigiado dos seis, sendo o único ponto de cadeia de suprimento do
+conjunto), `pool_pre_ping` no CRV, `.env.vps.example` e `ProxyFix` no
+ConfortoTermico.
+
+**A lição da sessão: uma correção de segurança que passou em tudo e não fazia
+nada.** O `ProxyFix` foi implantado e o `audit_log` continuou gravando
+`172.21.0.1`, o gateway do Docker. Foram **três** camadas de falha empilhadas,
+e cada uma teria bastado sozinha para anular a proteção:
+
+1. **A variável não chegava ao contêiner.** O `--env-file` do Compose serve
+   para INTERPOLAR `${VAR}` no `compose.yaml`; ele não injeta nada no
+   contêiner. Só chega ao processo o que está listado no `environment:` do
+   serviço.
+2. **O waitress apagava o cabeçalho.** O waitress 3.0.2 vem com
+   `clear_untrusted_proxy_headers=True` e `trusted_proxy=None`: remove os
+   `X-Forwarded-*` antes de montar o environ, e o `ProxyFix` recebia um
+   environ já limpo. Os outros três projetos usam gunicorn, que não toca
+   nesses cabeçalhos — **copiar o padrão do irmão para um servidor diferente**
+   foi o que produziu a correção inerte.
+3. **Meu próprio teste era inválido.** Usei `app.request_context(env)` para
+   verificar, e ele monta a requisição direto do environ, sem passar pelo
+   middleware. Nunca poderia mostrar o efeito do `ProxyFix`.
+
+O que salvou foi a Fase 3 exigir, como item próprio, *"conferir depois: o
+limitador passa a contar por cliente e o `audit_log` grava o IP real"*. Sem
+esse item eu teria reportado três vezes uma entrega que não existia. **Item de
+verificação no plano vale mais que o item de implementação.**
+
+Verificado ao fim com requisição real e marcador único: `"ip": "177.96.64.76"`,
+o IP público de verdade. Como o `flask-limiter` usa a mesma
+`request.remote_addr`, o limitador passou a contar por cliente no mesmo ato.
+
+**Efeito colateral que é ganho, não regressão.** Com o `x-forwarded-proto`
+finalmente chegando, a aplicação passou a saber que está sendo servida por
+HTTPS — e a verificação de referrer do CSRF, que só vale em requisição segura,
+saiu do estado desligado em que estava sem ninguém notar. Navegador manda
+`Referer` em POST de mesma origem, então o uso normal não muda; um cliente que
+não mande passa a levar 400.
+
+**Trivy adiado, com motivo.** A varredura de imagem precisa de um nome de
+imagem determinístico para apontar. Três dos quatro `compose.yaml` não
+declaram `image:` no serviço servido, e o nome sai derivado do diretório.
+Acertar isso significa mexer no `compose.yaml` dos três e trocar o nome das
+imagens em produção — mudança de blast radius maior que o item, e que merece
+rodada própria em vez de ser embutida aqui.

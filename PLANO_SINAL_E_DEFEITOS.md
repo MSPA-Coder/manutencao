@@ -1,8 +1,15 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
 Iniciado em 2026-08-21. **Blocos 1 e 2 concluídos e em produção** — fases 0,
-0b, 1, 2, 3, 4, 6, 7, 8, 9, 10 e 11. **Só a Fase 5 (métricas) fica pendente,
-adiada por decisão do mantenedor.**
+0b, 1, 2, 3, 4, 6, 7, 8, 9, 10 e 11. A Fase 5 (métricas) fica pendente, adiada
+por decisão do mantenedor.
+
+**A revisão de 2026-08-22 (Sessão 11) achou trabalho que as fases davam por
+feito.** Um defeito ativo, já corrigido e implantado, e **três itens da lista
+de trabalho da Fase 9 que sumiram** — ver o fim da Fase 9. Não estavam nem
+feitos nem adiados: caíram quando os agentes morreram no limite de uso, e o
+registro seguiu em frente. Enquanto os três não forem resolvidos, este plano
+**não** está concluído.
 
 ---
 
@@ -388,17 +395,22 @@ corrigiu de passagem um número errado deste plano (ver Sessão 5).
 - [x] `.github/dependabot.yml` no SharedAuth
 - [x] `pool_pre_ping` no CRV
 - [x] `.env.vps.example` do ConfortoTermico, com `CONFORTO_COOKIE_SEGURO=1`
-- [ ] `SECRET_KEY` do ConfortoTermico: falhar alto como os outros três, em
+- [x] `SECRET_KEY` do ConfortoTermico: falhar alto como os outros três, em
       vez de gerar em silêncio
 
 ### Fase 4 — blindar o `db_backend.py` (sem refatorar)
 
-- [ ] trocar a substituição cega de `?` por conversão que respeite literais
+- [x] trocar a substituição cega de `?` por conversão que respeite literais
       e operadores, **ou** por uma verificação que recuse a consulta ambígua
       em vez de corrompê-la
-- [ ] teste que prova a recusa/conversão correta com um `?` de `jsonb`
-- [ ] `RETURNING id` no lugar do `SELECT currval(...)`
-- [ ] registrar em `AGENTS.md` que a camada é dívida datada, com ponteiro
+- [x] teste que prova a recusa/conversão correta com um `?` de `jsonb`
+- [x] `RETURNING id` no lugar do `SELECT currval(...)` — **recusado com razão**,
+      e a razão está no cabeçalho de `app/db_backend.py`: 8 das 18 tabelas não
+      têm coluna `id`, e várias são alvo de INSERT. Acrescentá-lo a todo INSERT
+      transformaria upsert que funciona em erro de SQL, para poupar um round
+      trip. O defeito real do `currval` — devolver id alheio quando nada foi
+      inserido — foi fechado com guarda de `rowcount`
+- [x] registrar em `AGENTS.md` que a camada é dívida datada, com ponteiro
       para a seção 7 deste plano
 
 ### Fase 5 — métricas
@@ -478,6 +490,35 @@ Trabalha sobre a lista da Fase 0b.
 - [x] **regra a valer daqui em diante:** operação irreversível pede
       confirmação; operação reversível não pede. Confirmar tudo treina o
       usuário a clicar "sim" sem ler, e aí a confirmação deixa de proteger
+
+#### Ainda em aberto — caíram nas retomadas (achado em 2026-08-22)
+
+A Fase 0b definiu que **o inventário vira a lista de trabalho da Fase 9**. A
+seção 6 do inventário tem seis itens; três sub-itens nunca foram executados, e
+não apareciam em lugar nenhum deste plano — nem como feitos, nem como adiados.
+`git log` mostra os três arquivos intocados desde o release V2.0.
+
+Nenhum é urgente, e os três são de natureza diferente — um é conserto, um é
+remoção, um é contrato de HTTP:
+
+- [ ] **Bancário — `confirm_current_month` fixo.** `templates/settings/index.html:87`
+      manda o campo oculto com `value="on"`, então a trava de
+      `core/views.py:567`, que avisaria que a projeção recorrente já rodou no
+      mês, **nunca pode reprovar**. É literalmente o tema desta iniciativa —
+      verificação que existe, está escrita certo e é inalcançável — e sobreviveu
+      à faxina inteira. Decidir: remover o campo oculto (e deixar o aviso
+      funcionar) ou remover a trava (e assumir que a projeção repetida é aceita)
+- [ ] **Bancário — três rotas POST órfãs.** `transactions:cancel_entry`,
+      `close_month` e `reopen_month` (`transactions/urls.py:19,28-29`) mudam
+      estado, e `grep` confirma **zero** referências em template: as telas usam
+      o caminho equivalente em `core:`. Superfície acessível por requisição
+      direta sem tela correspondente. Remover ou assumir, por escrito
+- [ ] **ConfortoTermico — um GET que escreve.** `GET
+      /api/dados-entrada/configuracoes` (`app/dados_entrada_rotas.py:21`) chama
+      `sincronizar_zonas`, que faz INSERT/UPDATE em `configuracoes_zona`. O
+      efeito é idempotente, então não é perda de dado — é contrato de HTTP
+      quebrado: qualquer prefetch, robô ou sonda escreve no banco ao passar.
+      Vale arrumar antes que alguém construa em cima
 
 ### Fase 10 — mensagens no formato novo
 
@@ -1150,3 +1191,72 @@ chegado à verificação final. Commitar em branch **antes** de revisar — com 
 mensagem dizendo que não estava revisado e o que conferir — transformou
 "trabalho perdido" em "trabalho pendente de revisão". É a diferença entre
 recomeçar e continuar.
+
+---
+
+### Sessão 11 — 2026-08-22 — a revisão, e o botão pela terceira vez
+
+Revisão do planejado contra o executado, pedida porque duas rodadas de agentes
+morreram no limite de uso e as retomadas podiam ter deixado buraco. Tinham.
+
+**O defeito ativo.** `usuarios.html` do ConfortoTermico tinha os quatro
+`data-sa-*` no botão Excluir desde a Fase 9 e estende `_layout_auth.html`, que
+carregava **só** `css/style.css`. Sem o script na página ninguém lê o atributo:
+o form enviava direto e **o usuário era excluído sem confirmação nenhuma**.
+
+É o mesmo botão pela terceira vez. Primeiro `onsubmit="return confirm(...)"`,
+bloqueado pela CSP. Depois o atributo sem script. Nos dois casos a proteção
+existia no fonte e não existia no navegador, e nos dois casos um grep pelo
+atributo dizia que estava tudo certo — foi exatamente assim que a revisão da
+Fase 9 aprovou.
+
+A causa é estrutural e explica por que só aqui: este projeto tem **duas**
+cadeias de layout (`index.html` monta a própria e já carregava o componente;
+`_layout_auth.html` ficou de fora), enquanto os outros três apps têm um
+`base.html` único por onde tudo passa. Conferido nos três: nenhum tem o
+problema. Corrigido em [#29], implantado em `03bd6ba`.
+
+**E a correção nasceu com um defeito próprio**, achado ao verificar em produção
+— não pelo CI, que estava verde. `login.html` herda do mesmo layout, e
+`sharedauth_ui.static` não é isento de login: para quem ainda não entrou, os
+dois arquivos respondiam 302 para o próprio login, e o navegador recusava
+`text/html` onde esperava CSS e JS. Dois erros de console a cada carga, pelo
+**mesmo motivo** que as IBM Plex do Google Fonts já tinham sido removidas
+daquele arquivo — e o comentário explicando isso estava a seis linhas de onde
+eu havia posto os links. Corrigido em [#30] com blocos Jinja ligados por
+padrão: quem dispensa declara o bloco vazio, e esquecer dá o lado seguro.
+Implantado em `8b236d5`.
+
+O teste (`tests/test_componente_ui_carregado.py`) fecha a classe em vez do
+caso: varre os templates, resolve `extends` e `include`, e reprova qualquer um
+que use `data-sa-` sem alcançar o script. Ele próprio nasceu com dois furos,
+ambos corrigidos e ambos instrutivos — um bloco sobrescrito vazio contava como
+"alcança" (o teste errava da mesma forma que o defeito que procura), e o
+comentário que *explica a ausência* do atributo fazia o template entrar na
+lista dos que o usam (a mesma armadilha do teste de CSS que casou com o
+comentário dizendo não haver `url()`). O último teste renderiza pelo Jinja de
+verdade: prova no HTML que o navegador recebe, não na expressão regular.
+
+Verificado em produção: `curl` na página de login pública devolve **zero**
+referências ao componente, e o layout dentro do contêiner tem as duas.
+
+**Três itens da Fase 9 tinham sumido** — registrados agora no fim daquela fase.
+A Fase 0b dizia que o inventário vira a lista de trabalho da Fase 9; a seção 6
+dele tem seis itens, e três nunca foram executados nem adiados. `git log`
+mostra os arquivos intocados desde o release V2.0. O pior deles é o
+`confirm_current_month` fixo em `value="on"`: uma trava que não pode reprovar,
+que é o tema desta iniciativa, sobrevivendo à faxina que existia para caçá-la.
+
+**Caixas que mentiam em silêncio.** A Fase 4 estava inteira desmarcada e
+inteira feita; o item de `SECRET_KEY` da Fase 3, idem. Marcadas agora. Não era
+trabalho perdido — era o registro parando um passo antes do fim, que é o que
+acontece quando quem marcaria a caixa morre no limite.
+
+**O que a revisão ensina sobre o método.** Verificar o artefato não é verificar
+o efeito. Grep encontra o atributo; só o HTML renderizado prova que ele será
+lido. CI verde não viu o 302, porque o 302 depende de não haver sessão. As
+duas correções desta sessão saíram de olhar a coisa funcionando, e nenhuma
+teria saído de reler o diff.
+
+[#29]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/29
+[#30]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/30

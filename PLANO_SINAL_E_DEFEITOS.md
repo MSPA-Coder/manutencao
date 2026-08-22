@@ -529,27 +529,23 @@ consertar contrato.
       **Trocado por leitura pura** ([ICT#31]), implantado em `0ad6b8f`. A
       materialização continua nos dois caminhos que já gravam (salvar e gerar)
 
-Três achados adjacentes ficam **registrados e não corrigidos**, porque nenhum é
-limpeza óbvia — os três são decisão do mantenedor:
+Três achados adjacentes apareceram no caminho. O mantenedor decidiu os três em
+2026-08-22, e os três foram executados no mesmo dia:
 
-1. **Bancário — `run_day` configura uma execução automática que não existe.** O
-   campo "Dia de execução automática" é salvo, exibido, e a mensagem de
-   sucesso diz "execução no dia N". Não há agendador no código, nem
-   `management/commands/`, nem cron ou timer no VPS:
-   `ensure_recurring_projection_horizon` tem um único chamador, o botão manual.
-   Resolver é implementar funcionalidade, não consertar defeito.
-2. **Bancário — três permissões que não guardam nada.** `transactions.cancel`,
-   `transactions.close_month` e `transactions.reopen_month` eram exigidas só
-   pelas rotas removidas. O caso de `reopen_month` é o que incomoda: reabrir
-   mês continua possível por `core:settings_reopen_month`, que exige
-   `settings.monthly_close.manage` — **duas permissões para a mesma operação**,
-   e revogar a errada não tira capacidade nenhuma. Tirar linha de catálogo
-   semeado exige migração que mexe em concessões reais de usuário.
-3. **Bancário — o filtro "Cancelado" não encontra nada** que o sistema tenha
-   produzido, enquanto não existir botão de cancelar. `cancel_transaction` foi
-   mantida de propósito: `STATUS_CANCELED` está no modelo, na restrição
-   `CHECK`, na projeção recorrente e no rollup de status da operação. Falta o
-   botão, não a regra
+1. **Bancário — `run_day` configurava uma execução automática que não existia.**
+   O campo "Dia de execução automática" era salvo, exibido e confirmado por
+   mensagem, e não havia agendador nenhum: nem no código, nem
+   `management/commands/`, nem cron ou timer no VPS. **Decisão: implementar**,
+   uma vez por mês e não a cada entrada ([#33], implantado em `9d93c31`). Ver
+   Sessão 13.
+2. **Bancário — três permissões que não guardavam nada.** **Decisão: revogar**
+   ([#34], implantado em `b321538`). `transactions.reopen_month` era o caso
+   grave: reabrir mês continua possível por `core:settings_reopen_month`, que
+   exige `settings.monthly_close.manage` — duas permissões para a mesma
+   operação, e revogar a errada não tirava capacidade nenhuma.
+3. **Bancário — cancelar lançamento nunca foi usado.** **Decisão: eliminar**
+   (mesmo PR). Confirmado no banco de produção antes de remover: zero linhas
+   `cancelado` em `cash_flow_entry` e em `bank_operation`
 
 ### Fase 10 — mensagens no formato novo
 
@@ -1350,3 +1346,73 @@ decisão do mantenedor.
 [#31]: https://github.com/MSPA-Coder/sistema-financeiro/pull/31
 [#32]: https://github.com/MSPA-Coder/sistema-financeiro/pull/32
 [ICT#31]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/31
+
+---
+
+### Sessão 13 — 2026-08-22 — a configuração que não configurava, e o status que nunca existiu
+
+Os três achados adjacentes da Sessão 12, decididos pelo mantenedor e executados
+no mesmo dia.
+
+| Decisão | Correção | PR | Em produção |
+|---|---|---|---|
+| "era para o programa fazer isso" | Projeção roda sozinha, 1×/mês | [#33] | `9d93c31` |
+| "revogue" | Três permissões órfãs removidas | [#34] | `b321538` |
+| "nunca foi usado, pode eliminar" | Cancelamento removido do código e do schema | [#34] | `b321538` |
+
+**A guarda voltou, no lugar certo.** `was_projection_run_in_month` foi removida
+na Sessão 12 por não proteger nada: como confirmação do botão manual ela
+obstruía o usuário numa operação idempotente. Voltou agora como **limite de
+frequência da execução automática**, que é o uso em que ela é a razão de o
+comportamento ser previsível. Mesma função, propósito oposto — a diferença entre
+"pergunta se você tem certeza" e "não faz duas vezes". Vale como padrão: antes de
+apagar um mecanismo que não serve onde está, perguntar onde ele serviria.
+
+**O caso que teria quebrado em silêncio.** `DEFAULT_PROJECTION_RUN_DAY` é **31**.
+Com `hoje.day >= run_day` cru, a execução automática nunca aconteceria em
+fevereiro, abril, junho, setembro e novembro — **com o valor padrão**, ou seja,
+para quem nunca abriu a tela. `dia_efetivo_de_execucao` encurta para o último dia
+do mês. Produção usa 28, então o defeito não a atingiria; a instalação seguinte
+sim.
+
+**Por que middleware e não `AppConfig.ready()`.** `ready()` roda também em
+`migrate` e `collectstatic`, onde gravar está errado; dispara uma vez por worker
+no boot; e sobretudo, só no boot significa que um contêiner de pé há 40 dias
+nunca executa. Depender de reinício é a forma silenciosa de a funcionalidade
+parar de existir — que é o defeito que este plano existe para caçar.
+
+**A armadilha da remoção do `cancelado`.** Duas listas eram definidas por fatia:
+
+```python
+STATUS_FILTER_OPTIONS = STATUS_OPTIONS[:-1]
+VIEW_FILTER_MODE_OPTIONS = VIEW_MODE_OPTIONS[:-1]
+```
+
+O que a fatia cortava era "Cancelado", por ser o último. Tirá-lo da origem sem
+tocar na fatia faria o corte comer **"Realizado"** — dois filtros perdendo opção
+válida, sem erro nenhum. É a mesma família do resto do plano, e teria sido
+*introduzida* pela limpeza. As duas viraram igualdade explícita, e o teste afirma
+conteúdo e não comprimento: um teste de tamanho passaria com a lista errada.
+
+**A verificação de esquema foi feita de verdade.** `TESTING.md` exige bootstrap
+em PostgreSQL vazio para mudança de esquema. Subi um PostgreSQL 17 local e cobri
+quatro caminhos: bootstrap do zero, reversão das duas migrações, aplicação com
+uma linha `cancelado` presente (**falha**, `IntegrityError`, e a restrição antiga
+fica intacta — atômica), e aplicação com dados válidos. O terceiro é o que
+importa: num banco que tenha linhas canceladas, a migração para em vez de
+converter dados às cegas.
+
+Antes de aplicar em produção, confirmei backup do dia com checksum. Depois,
+conferi no banco: as duas restrições sem `cancelado`, as três permissões
+zeradas, e os 717 lançamentos intactos.
+
+**Descoberta operacional que vale guardar.** O build da imagem `quality` falhou
+nesta máquina por interceptação de TLS (`CERTIFICATE_VERIFY_FAILED` ao buscar
+`setuptools`). A suíte do ControleBancario roda num venv comum — Django,
+django-htmx, whitenoise, psycopg, pdfplumber, pytest, pytest-django e o
+SharedAuth instalado do diretório irmão. Não substitui o `quality` (que é o que
+o CI executa), mas evita usar o CI como executor de testes quando o Docker local
+está indisponível.
+
+[#33]: https://github.com/MSPA-Coder/sistema-financeiro/pull/33
+[#34]: https://github.com/MSPA-Coder/sistema-financeiro/pull/34

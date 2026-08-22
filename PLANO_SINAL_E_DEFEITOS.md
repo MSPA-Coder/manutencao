@@ -1500,3 +1500,54 @@ agendadas brigando pelo mesmo Excel.
 
 [PR #26]: https://github.com/MSPA-Coder/ControleRendaVariavel/pull/26
 [PR #27]: https://github.com/MSPA-Coder/ControleRendaVariavel/pull/27
+
+---
+
+### Sessão 15 — 2026-08-22 — as limpezas, e uma credencial legível pela sandbox
+
+Três limpezas pedidas pelo mantenedor. As duas primeiras eram triviais; a
+terceira achou coisa.
+
+**1. Referências de branch obsoletas — 42 em sete repositórios.** Não eram
+branches: o `gh pr merge --delete-branch` já os removera do GitHub, e o que
+sobrara eram referências locais de rastreamento. `git push --delete` não faria
+nada (e não fez, na primeira tentativa); o conserto é `git fetch --prune`.
+Vale a nota porque o sintoma — `git branch -r` cheio — sugere a ação errada.
+
+Antes de apagar, cada branch foi conferido contra a lista de PRs **mesclados**
+(`gh pr list --state merged`), e não contra `git branch --merged`: com squash
+merge o tip do branch não é ancestral de `main`, então o teste natural do git
+reprova justamente os branches que estão seguros.
+
+**2. Segredo do controlador removido.** `.secrets/rtd_control_token` sobrava nos
+dois lados depois da Sessão 14. Apagado local e no VPS; `docker compose config`
+segue validando e `/health` responde 200.
+
+**3. A pasta de chaves — e o achado.** `C:\Users\MSPA\Downloads\OracleKeys`
+guarda duas chaves SSH privadas e duas credenciais de API. As **chaves estavam
+travadas** (`MSPA:(R)`, sem herança — provavelmente porque o SSH recusa chave
+permissiva e obrigou a isso). Os dois arquivos de credencial ao lado, não:
+herdavam `APSM\CodexSandboxUsers:(I)(RX)`.
+
+Ou seja, **uma conta de sandbox conseguia ler o token do bot do Telegram e a
+chave do UptimeRobot**, enquanto as chaves SSH na mesma pasta estavam
+protegidas. É a assimetria que denuncia: ninguém decidiu expor os dois; eles só
+nunca foram tratados, porque nenhuma ferramenta reclamou deles como o SSH
+reclama de chave frouxa.
+
+Corrigido nos arquivos e na **pasta** — a herança era `(OI)(CI)`, então toda
+credencial nova ali nasceria exposta do mesmo jeito. Conferido depois que as
+duas chaves continuam autenticando.
+
+**Mover a pasta ficou fora, e por um motivo concreto:**
+`BackupRestore/configuracao.local.json` aponta para o caminho absoluto da
+chave de backup. Mover quebraria o backup diário.
+
+**O que continua sendo do mantenedor.** As credenciais em texto puro seguem em
+texto puro; o que mudou é quem consegue lê-las. Levá-las para um gerenciador de
+senhas é ação dele — está na regra do `README.md` deste repositório, e não é
+coisa que um agente possa fazer por ele. O `Telegram.txt` (46 bytes) é
+redundante: a cópia operacional vive em `/home/ubuntu/.secrets/telegram.env`
+no VPS, em `600`, com token **e** chat id (93 bytes). Apagá-lo é seguro — o
+token ainda seria regerável pelo @BotFather —, mas é decisão dele, não minha:
+nunca abri o arquivo.

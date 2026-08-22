@@ -16,14 +16,30 @@ para que a próxima comece a trabalhar em vez de reconstruir contexto.
 | Repositório | Situação |
 |---|---|
 | **SharedAuth** | **Fase 8 pronta.** Mesclada em `main` e publicada como **tag `v0.3.0`**. Nada a refazer |
-| **ConfortoTermico** | **Fases 9, 10 e 11 prontas.** PR [#28](https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/28), aguardando CI e merge |
-| **ControleBancario** | pendente — inclui remover o mecanismo antigo (`openConfirmModal`) por inteiro |
-| **ControleRendaVariavel** | pendente |
-| **MegaSena** | pendente |
+| **ConfortoTermico** | **Pronto e revisado.** PR [#28](https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/28) |
+| **ControleBancario** | PR [#30](https://github.com/MSPA-Coder/sistema-financeiro/pull/30) — **NÃO revisado** |
+| **ControleRendaVariavel** | PR [#25](https://github.com/MSPA-Coder/ControleRendaVariavel/pull/25) — **NÃO revisado** |
+| **MegaSena** | PR [#33](https://github.com/MSPA-Coder/mega-sena/pull/33) — **NÃO revisado** |
 
-Se um repositório aparecer com árvore suja e sem PR, é trabalho de agente
-interrompido: **confira antes de confiar**, porque agente interrompido para no
-meio (ver os dois defeitos listados abaixo).
+### Os três PRs não revisados: o que falta e por quê
+
+Os três agentes foram interrompidos pelo limite de uso **durante a própria
+verificação final**. O trabalho estava na árvore e foi commitado para não se
+perder — `ruff` passa limpo nos três, mas a suíte não roda nesta máquina
+(ControleBancario não tem Django instalado; MegaSena estoura o tempo). **Quem
+valida é o CI na imagem `quality`.**
+
+Portanto: **não mesclar sem CI verde e sem ler o diff.** O que conferir em cada
+um está escrito na mensagem de commit do próprio PR. Em resumo:
+
+- **todos:** chamada que ficou no `confirm` NATIVO em vez do componente —
+  `grep -rn "[^a-zA-Z]confirm(" app/` (ou `static/ templates/` no Django);
+- **CRV:** a confirmação da carteira Simulada é CONDICIONAL. Se a condição se
+  perdeu, editar posição passou a confirmar sempre, que é o oposto da regra;
+- **MegaSena:** o caminho `data-confirm-message` do `base.js` e os atributos
+  nos templates saem JUNTOS — se sobrou um lado, ficou meio mecanismo. E
+  `templates/components/flash_messages.html` foi APAGADO: confirmar que quem o
+  incluía passou a incluir o parcial do sharedauth, senão a página quebra.
 
 ### O componente, em cinco linhas
 

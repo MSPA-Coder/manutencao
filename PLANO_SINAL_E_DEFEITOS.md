@@ -1,8 +1,82 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
 Iniciado em 2026-08-21. **Bloco 1 concluído** — fases 0, 0b, 1, 2, 3, 4, 6 e 7.
-**Fase 5 (métricas) adiada por decisão do mantenedor; bloco 2 (fases 8 a 11)
-fora de escopo por ora.**
+**Fase 5 (métricas) adiada por decisão do mantenedor.** Bloco 2 (fases 8 a 11)
+**em execução** — ver o quadro abaixo.
+
+---
+
+## COMO RETOMAR (bloco 2, atualizado em 2026-08-21)
+
+Sessões anteriores foram interrompidas por limite de uso. Este bloco existe
+para que a próxima comece a trabalhar em vez de reconstruir contexto.
+
+### Estado por repositório
+
+| Repositório | Situação |
+|---|---|
+| **SharedAuth** | **Fase 8 pronta.** Mesclada em `main` e publicada como **tag `v0.3.0`**. Nada a refazer |
+| **ConfortoTermico** | **Fases 9, 10 e 11 prontas.** PR [#28](https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/28), aguardando CI e merge |
+| **ControleBancario** | pendente — inclui remover o mecanismo antigo (`openConfirmModal`) por inteiro |
+| **ControleRendaVariavel** | pendente |
+| **MegaSena** | pendente |
+
+Se um repositório aparecer com árvore suja e sem PR, é trabalho de agente
+interrompido: **confira antes de confiar**, porque agente interrompido para no
+meio (ver os dois defeitos listados abaixo).
+
+### O componente, em cinco linhas
+
+`sharedauth.ui` — CSS e JS puro, **sem template de framework** (o
+ControleBancario é Django e instala sem o extra `[flask]`).
+
+- Flask: `registrar_ui(app)`; no template,
+  `url_for('sharedauth_ui.static', filename='sharedauth-ui.css')` e `.js`
+- Django: `STATICFILES_DIRS += [("sharedauth", CAMINHO_ESTATICO)]`; no template,
+  `{% static 'sharedauth/sharedauth-ui.css' %}` e `.js`
+- Declarativo: `data-sa-confirmar`, `data-sa-titulo`, `data-sa-severidade`
+  (`success|error|warning|info`), `data-sa-ok`, `data-sa-formulario`
+- Programático: `await window.sharedauth.confirmar({...})` → `Promise<boolean>`;
+  `window.sharedauth.avisar({mensagem, severidade})`
+- Ponte servidor→toast: `<div hidden data-sa-avisos='[{...}]'>`
+- **Já intercepta `htmx:confirm`**: um `hx-confirm` existente passa a usar o
+  modal sem trocar o atributo
+
+O contrato completo está no docstring de `sharedauth/ui/__init__.py` e no
+cabeçalho de `sharedauth/ui/estatico/sharedauth-ui.js`.
+
+### As duas armadilhas que já morderam — procure por elas nos três restantes
+
+1. **`confirm(` em vez de `confirmar(`.** No ConfortoTermico o agente deixou
+   duas chamadas ao `window.confirm` NATIVO recebendo objeto de opções, o que
+   mostra `[object Object]`. Passou pela autoverificação dele porque ele
+   procurou chamadas *sem* `await`, e estas tinham `await`. **Grep certo:**
+   `grep -rn "[^a-zA-Z]confirm(" app/` e confirmar que só sobra `confirmar(`.
+2. **Handler inline que a CSP bloqueia.** `onsubmit="return confirm(...)"` em
+   `usuarios.html` nunca disparava — `script-src 'self'` sem `unsafe-inline`
+   nem nonce. Excluir usuário vinha sem confirmação nenhuma. **Grep certo:**
+   `grep -rn "onsubmit=\|onclick=\|onchange=" templates/`.
+
+Nos dois casos o sintoma é o mesmo: proteção que parece existir e não existe.
+É o tema deste plano inteiro.
+
+### Regra que decide onde pôr confirmação
+
+**Irreversível pede; reversível NÃO pede.** A lista das 124 operações, com a
+classificação de reversibilidade por projeto, está em
+[INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md),
+seção 7. Ler antes de decidir. Confirmar demais anula a confirmação.
+
+Duas linhas do inventário que **não** devem virar confirmação: "gravar apostas"
+e "criar usuário" no MegaSena aparecem como irreversíveis só porque não existe
+rota de exclusão — é funcionalidade que falta, não confirmação que falta.
+
+### Depois que os quatro PRs mesclarem
+
+1. `./deploy.sh <projeto>` para cada um (o rollback automático já protege).
+2. Marcar as fases 8 a 11 como concluídas neste plano.
+3. `README.md` deste repositório: a linha do plano já existe; atualizar o
+   status.
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -410,25 +484,31 @@ Só começa com o bloco 1 fechado e o alerta funcionando. Ver D6.
 
 ### Fase 8 — o componente comum, uma vez
 
-- [ ] `sharedauth/ui/`: CSS com as tokens de severidade e os componentes, mais
+- [x] `sharedauth/ui/`: CSS com as tokens de severidade e os componentes, mais
       um módulo JS sem dependência. **Nada de template de framework aqui**
       (D8) — o projeto de referência é Django e não consome a parte Flask
-- [ ] expor `sharedauth.ui.CAMINHO_ESTATICO` (um `Path`) para o Django
+- [x] expor `sharedauth.ui.CAMINHO_ESTATICO` (um `Path`) para o Django
       adicionar em `STATICFILES_DIRS`. O pacote continua sem importar Django,
       como o núcleo já faz hoje com o Flask
-- [ ] ponto de partida: `openConfirmModal` do ControleBancario, generalizado —
+- [x] ponto de partida: `openConfirmModal` do ControleBancario, generalizado —
       severidade como parâmetro, título deixa de ser fixo em exclusão
-- [ ] quatro severidades com ícone: informação, sucesso, atenção, perigo. Ícone
-      **em SVG servido como arquivo**, não embutido — a CSP fecha `img-src` em
-      `'self'` em dois dos quatro, e abrir `data:` para todos seria a união das
-      políticas, exatamente o que o plano anterior recusou
-- [ ] toast além do banner, no mesmo vocabulário visual (D7)
-- [ ] acessibilidade não é opcional num modal: foco preso enquanto aberto,
+- [x] quatro severidades com ícone: informação, sucesso, atenção, perigo.
+      **Desvio deliberado:** o plano pedia SVG servido como ARQUIVO. O ícone é
+      SVG **construído no DOM**, o que é melhor que as duas opções que o plano
+      considerou. A preocupação registrada era com `data:` no `img-src`, e ela
+      estava certa — mas SVG no documento não é requisição e não passa por
+      `img-src` nenhum, além de poupar quatro requisições. Servir como arquivo
+      resolveria a CSP e criaria o custo à toa.
+      Junto: `error` e `warning` ganharam formas DIFERENTES (círculo com X e
+      triângulo). Distinguir severidade só por cor exclui quem não distingue
+      vermelho de âmbar — só apareceu ao ver os quatro lado a lado
+- [x] toast além do banner, no mesmo vocabulário visual (D7)
+- [x] acessibilidade não é opcional num modal: foco preso enquanto aberto,
       `Esc` fecha, foco volta ao gatilho, `aria-modal` e rótulo
-- [ ] **degradar sem JS**: se o script não carregar, o botão precisa continuar
+- [x] **degradar sem JS**: se o script não carregar, o botão precisa continuar
       submetendo o formulário. Um "confirmar" que engole o clique em silêncio
       é pior que não ter confirmação
-- [ ] SharedAuth sobe de versão por tag; os quatro apps fixam deliberadamente
+- [x] SharedAuth sobe de versão por tag; os quatro apps fixam deliberadamente
 
 ### Fase 9 — adotar a confirmação, projeto a projeto
 
@@ -1023,3 +1103,52 @@ diretório do `pip` inexistente, e o interpretador subindo sem reclamar de
 (métricas) e o bloco 2 (interface, fases 8 a 11). A lista de trabalho da Fase 9
 já está pronta em
 [INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md).
+
+### Sessão 9 — 2026-08-21 — bloco 2: Fase 8 pronta, ConfortoTermico adotado
+
+**Fase 8 concluída e publicada como tag `v0.3.0`.** O componente comum de
+confirmação e aviso está no `sharedauth.ui`: CSS e JS puro, sem template de
+framework, porque o projeto de referência é Django e instala o pacote sem o
+extra `[flask]`. Foi assim que o `messages` e o `/health` unificado pararam na
+fronteira do framework; desta vez a fronteira foi o ponto de partida do
+desenho, não a descoberta do fim.
+
+**Validado no navegador antes de liberar**, e foi essa validação que pegou duas
+coisas que teste nenhum mostraria:
+
+1. `error` e `warning` usavam o **mesmo triângulo**, distinguidos só pela cor.
+   Quem não distingue vermelho de âmbar não distinguiria perigo de atenção. O
+   erro ganhou círculo com X — forma, não só cor.
+2. Confirmado ao vivo que o `submitter` chega ao servidor (`name`/`value` do
+   botão clicado), que o `Esc` cancela sem enviar, que o foco volta ao gatilho
+   e que a rolagem destrava.
+
+Uma duplicação inevitável virou invariante conferido: o traçado do ícone existe
+em Python (banner do servidor) e em JavaScript (modal e toast), porque o JS não
+importa Python. Um teste extrai o traçado do JS e compara com o dicionário
+Python. De passagem apareceu que a versão estava declarada em dois lugares
+(`pyproject.toml` e `__init__.py`) e **já tinha divergido**; agora um teste
+confere as duas.
+
+**ConfortoTermico: fases 9, 10 e 11 prontas** (PR #28). Dois defeitos achados
+na revisão, os dois da mesma família — proteção que parece existir e não
+existe:
+
+- duas chamadas tinham ficado no `window.confirm` **nativo** recebendo objeto
+  de opções, o que mostra `[object Object]`. Escapou da autoverificação porque
+  ela procurou chamadas *sem* `await`, e estas tinham `await`;
+- `usuarios.html` usava `onsubmit="return confirm(...)"`, e a CSP do projeto é
+  `script-src 'self'` sem `unsafe-inline` nem nonce: **aquele confirm nunca
+  disparava**. Excluir usuário vinha sendo enviado sem confirmação alguma desde
+  que a CSP fechou, e passou despercebido porque era o único handler inline do
+  projeto — não havia um segundo caso quebrado para chamar atenção.
+
+Uma confirmação foi **removida** de propósito: comandar atuador. Ligar um
+nebulizador é reversível, basta desligar. A Fase 11 ali não teve trabalho: o
+login já consumia as tokens do app, com contraste de ~9,5:1.
+
+**Lição de método sobre agentes.** Duas rodadas de quatro agentes em paralelo
+morreram no limite de uso, e agentes interrompidos **não deixam nada** — param
+na fase de leitura e a árvore fica limpa. A partir daqui: um agente por vez, e
+commit assim que cada um entrega, para que a interrupção custe um projeto e não
+quatro.

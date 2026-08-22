@@ -4,12 +4,11 @@ Iniciado em 2026-08-21. **Blocos 1 e 2 concluídos e em produção** — fases 0
 0b, 1, 2, 3, 4, 6, 7, 8, 9, 10 e 11. A Fase 5 (métricas) fica pendente, adiada
 por decisão do mantenedor.
 
-**A revisão de 2026-08-22 (Sessão 11) achou trabalho que as fases davam por
-feito.** Um defeito ativo, já corrigido e implantado, e **três itens da lista
-de trabalho da Fase 9 que sumiram** — ver o fim da Fase 9. Não estavam nem
-feitos nem adiados: caíram quando os agentes morreram no limite de uso, e o
-registro seguiu em frente. Enquanto os três não forem resolvidos, este plano
-**não** está concluído.
+A revisão de 2026-08-22 (Sessões 11 e 12) achou trabalho que as fases davam
+por feito: um defeito ativo e três itens da lista de trabalho da Fase 9 que
+tinham sumido — não estavam nem feitos nem adiados, caíram quando os agentes
+morreram no limite de uso e o registro seguiu em frente. **Os quatro foram
+corrigidos e implantados no mesmo dia.**
 
 ---
 
@@ -491,34 +490,66 @@ Trabalha sobre a lista da Fase 0b.
       confirmação; operação reversível não pede. Confirmar tudo treina o
       usuário a clicar "sim" sem ler, e aí a confirmação deixa de proteger
 
-#### Ainda em aberto — caíram nas retomadas (achado em 2026-08-22)
+#### Caíram nas retomadas, achados e fechados em 2026-08-22
 
 A Fase 0b definiu que **o inventário vira a lista de trabalho da Fase 9**. A
 seção 6 do inventário tem seis itens; três sub-itens nunca foram executados, e
 não apareciam em lugar nenhum deste plano — nem como feitos, nem como adiados.
 `git log` mostra os três arquivos intocados desde o release V2.0.
 
-Nenhum é urgente, e os três são de natureza diferente — um é conserto, um é
-remoção, um é contrato de HTTP:
+Os três eram de natureza diferente — um conserto, uma remoção, um contrato de
+HTTP — e por isso foram na ordem: restaurar proteção, remover superfície,
+consertar contrato.
 
-- [ ] **Bancário — `confirm_current_month` fixo.** `templates/settings/index.html:87`
+- [x] **Bancário — `confirm_current_month` fixo.** `templates/settings/index.html:87`
       manda o campo oculto com `value="on"`, então a trava de
       `core/views.py:567`, que avisaria que a projeção recorrente já rodou no
       mês, **nunca pode reprovar**. É literalmente o tema desta iniciativa —
       verificação que existe, está escrita certo e é inalcançável — e sobreviveu
-      à faxina inteira. Decidir: remover o campo oculto (e deixar o aviso
-      funcionar) ou remover a trava (e assumir que a projeção repetida é aceita)
-- [ ] **Bancário — três rotas POST órfãs.** `transactions:cancel_entry`,
+      à faxina inteira. **Resolvido removendo a trava, não o campo** ([#31]),
+      implantado em `b728aa3`. A projeção é idempotente — só olha para frente a
+      partir da maior data existente, e o horizonte é ancorado no primeiro dia
+      do mês —, então reexecutar gera zero. Fazer a trava disparar seria pior
+      que deixá-la morta: ela obstruiria o caminho legítimo de reexecutar
+      depois de aumentar o horizonte
+- [x] **Bancário — três rotas POST órfãs.** `transactions:cancel_entry`,
       `close_month` e `reopen_month` (`transactions/urls.py:19,28-29`) mudam
       estado, e `grep` confirma **zero** referências em template: as telas usam
       o caminho equivalente em `core:`. Superfície acessível por requisição
-      direta sem tela correspondente. Remover ou assumir, por escrito
-- [ ] **ConfortoTermico — um GET que escreve.** `GET
+      direta sem tela correspondente. **Removidas** ([#32]), implantado em
+      `b833f94`; conferido em produção que as três devolvem 404 e que os
+      caminhos vivos de `core:` continuam em 302. A `close_month` que saiu era a
+      **mais fraca** das duas: recebia `closing_balance` do próprio POST,
+      enquanto a que ficou calcula do razão
+- [x] **ConfortoTermico — um GET que escreve.** `GET
       /api/dados-entrada/configuracoes` (`app/dados_entrada_rotas.py:21`) chama
       `sincronizar_zonas`, que faz INSERT/UPDATE em `configuracoes_zona`. O
       efeito é idempotente, então não é perda de dado — é contrato de HTTP
-      quebrado: qualquer prefetch, robô ou sonda escreve no banco ao passar.
-      Vale arrumar antes que alguém construa em cima
+      quebrado: qualquer prefetch, robô ou sonda escrevia no banco ao passar.
+      **Trocado por leitura pura** ([ICT#31]), implantado em `0ad6b8f`. A
+      materialização continua nos dois caminhos que já gravam (salvar e gerar)
+
+Três achados adjacentes ficam **registrados e não corrigidos**, porque nenhum é
+limpeza óbvia — os três são decisão do mantenedor:
+
+1. **Bancário — `run_day` configura uma execução automática que não existe.** O
+   campo "Dia de execução automática" é salvo, exibido, e a mensagem de
+   sucesso diz "execução no dia N". Não há agendador no código, nem
+   `management/commands/`, nem cron ou timer no VPS:
+   `ensure_recurring_projection_horizon` tem um único chamador, o botão manual.
+   Resolver é implementar funcionalidade, não consertar defeito.
+2. **Bancário — três permissões que não guardam nada.** `transactions.cancel`,
+   `transactions.close_month` e `transactions.reopen_month` eram exigidas só
+   pelas rotas removidas. O caso de `reopen_month` é o que incomoda: reabrir
+   mês continua possível por `core:settings_reopen_month`, que exige
+   `settings.monthly_close.manage` — **duas permissões para a mesma operação**,
+   e revogar a errada não tira capacidade nenhuma. Tirar linha de catálogo
+   semeado exige migração que mexe em concessões reais de usuário.
+3. **Bancário — o filtro "Cancelado" não encontra nada** que o sistema tenha
+   produzido, enquanto não existir botão de cancelar. `cancel_transaction` foi
+   mantida de propósito: `STATUS_CANCELED` está no modelo, na restrição
+   `CHECK`, na projeção recorrente e no rollup de status da operação. Falta o
+   botão, não a regra
 
 ### Fase 10 — mensagens no formato novo
 
@@ -1260,3 +1291,62 @@ teria saído de reler o diff.
 
 [#29]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/29
 [#30]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/30
+
+---
+
+### Sessão 12 — 2026-08-22 — os três itens perdidos, fechados
+
+Executados na ordem que a natureza deles pedia: **restaurar proteção, remover
+superfície, consertar contrato.**
+
+| # | Correção | PR | Em produção |
+|---|---|---|---|
+| 1 | Guarda de projeção que nunca podia reprovar | [#31] | `b728aa3` |
+| 2 | Três rotas POST que nenhuma tela acionava | [#32] | `b833f94` |
+| 3 | GET que escrevia no banco | [ICT#31] | `0ad6b8f` |
+
+**O item 1 inverteu-se ao ser investigado, e essa é a lição da sessão.** O
+inventário mandava "consertar o `confirm_current_month` fixo", e o conserto
+óbvio era remover o campo oculto para o aviso passar a funcionar. Ler o que a
+operação faz mudou a conclusão: `_extend_operation` parte da maior data
+existente e preenche até o horizonte, que por sua vez é ancorado no primeiro
+dia do mês — reexecutar gera zero. A trava não protegia nada, e fazê-la
+disparar seria **pior que deixá-la morta**, porque obstruiria o caminho
+legítimo: depois de aumentar o horizonte no formulário logo acima, reexecutar é
+exatamente o que se quer, e o usuário levaria "já executada no mês atual" no
+lugar do resultado.
+
+Vale registrar o formato: um item de plano que diz "consertar X" não autoriza
+consertar X sem antes perguntar o que X protege. Aqui a resposta era "nada", e
+a correção certa era a oposta da pedida.
+
+**O item 2 não era só redundância.** A `close_month` órfã recebia
+`closing_balance` do próprio POST; a viva calcula do razão com
+`decimal_balance_before`. Um cliente direto com a permissão podia fechar o mês
+com qualquer saldo. Conferido em produção depois do deploy: as três devolvem
+404 — que acontece na resolução de URL, antes da autenticação — e os caminhos
+vivos continuam em 302.
+
+**O item 3 trouxe um segundo caso de brinde.** `_conexao(escrita=False)` não
+fazia nada: o parâmetro existia, cinco chamadores o passavam, e o bloco
+commitava igual. Promessa de leitura que o código não cumpria. Passou a
+descartar — e não a `SET TRANSACTION READ ONLY`, que ficaria grudado na conexão
+do pool para o próximo tomador, que pode ser um gravador legítimo.
+
+**Os testes desta sessão têm um formato em comum: controle positivo.** Cada um
+prova o que passou a valer *e* que o que devia continuar valendo continua —
+`sincronizar_zonas` ainda grava, os caminhos de `core:` ainda resolvem, o
+horizonte ainda avança no mês seguinte. Sem essa metade, todos passariam também
+se a funcionalidade tivesse sido perdida junto com o defeito. Nos três casos
+conferi que o teste reprova sem a correção antes de commitar.
+
+**Três achados adjacentes ficaram registrados sem correção** — ver o fim da
+Fase 9. O mais relevante: o campo "Dia de execução automática" do Bancário é
+salvo, exibido e confirmado por mensagem, e **não existe execução automática**
+em lugar nenhum — nem código, nem cron, nem timer. É a mesma família dos quatro
+defeitos desta revisão, mas resolver é implementar funcionalidade, e isso é
+decisão do mantenedor.
+
+[#31]: https://github.com/MSPA-Coder/sistema-financeiro/pull/31
+[#32]: https://github.com/MSPA-Coder/sistema-financeiro/pull/32
+[ICT#31]: https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/31

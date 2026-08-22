@@ -1,80 +1,24 @@
 # Plano — sinal de falha e os defeitos que a consistência não podia ver
 
-Iniciado em 2026-08-21. **Bloco 1 concluído** — fases 0, 0b, 1, 2, 3, 4, 6 e 7.
-**Fase 5 (métricas) adiada por decisão do mantenedor.** Bloco 2 (fases 8 a 11)
-**em execução** — ver o quadro abaixo.
+Iniciado em 2026-08-21. **Blocos 1 e 2 concluídos e em produção** — fases 0,
+0b, 1, 2, 3, 4, 6, 7, 8, 9, 10 e 11. **Só a Fase 5 (métricas) fica pendente,
+adiada por decisão do mantenedor.**
 
 ---
 
-## COMO RETOMAR (bloco 2, atualizado em 2026-08-21)
+## Bloco 2 — entregue em 2026-08-21
 
-Sessões anteriores foram interrompidas por limite de uso. Este bloco existe
-para que a próxima comece a trabalhar em vez de reconstruir contexto.
-
-### Estado por repositório
-
-| Repositório | Situação |
+| Repositório | Entrega |
 |---|---|
-| **SharedAuth** | **Fase 8 pronta.** Mesclada em `main` e publicada como **tag `v0.3.0`**. Nada a refazer |
-| **ConfortoTermico** | **Pronto e revisado.** PR [#28](https://github.com/MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico/pull/28) |
-| **ControleBancario** | PR [#30](https://github.com/MSPA-Coder/sistema-financeiro/pull/30) — **NÃO revisado** |
-| **ControleRendaVariavel** | PR [#25](https://github.com/MSPA-Coder/ControleRendaVariavel/pull/25) — **NÃO revisado** |
-| **MegaSena** | PR [#33](https://github.com/MSPA-Coder/mega-sena/pull/33) — **NÃO revisado** |
+| **SharedAuth** | Fase 8 — componente comum, tag `v0.3.0` |
+| **ConfortoTermico** | PR #28, implantado em `568e074` |
+| **ControleBancario** | PR #30, implantado em `677275d` |
+| **MegaSena** | PR #33, implantado em `307ad42` |
+| **ControleRendaVariavel** | PR #25, implantado em `f5561b6` |
 
-### Os três PRs não revisados: o que falta e por quê
-
-Os três agentes foram interrompidos pelo limite de uso **durante a própria
-verificação final**. O trabalho estava na árvore e foi commitado para não se
-perder — `ruff` passa limpo nos três, mas a suíte não roda nesta máquina
-(ControleBancario não tem Django instalado; MegaSena estoura o tempo). **Quem
-valida é o CI na imagem `quality`.**
-
-Portanto: **não mesclar sem CI verde e sem ler o diff.** O que conferir em cada
-um está escrito na mensagem de commit do próprio PR. Em resumo:
-
-- **todos:** chamada que ficou no `confirm` NATIVO em vez do componente —
-  `grep -rn "[^a-zA-Z]confirm(" app/` (ou `static/ templates/` no Django);
-- **CRV:** a confirmação da carteira Simulada é CONDICIONAL. Se a condição se
-  perdeu, editar posição passou a confirmar sempre, que é o oposto da regra;
-- **MegaSena:** o caminho `data-confirm-message` do `base.js` e os atributos
-  nos templates saem JUNTOS — se sobrou um lado, ficou meio mecanismo. E
-  `templates/components/flash_messages.html` foi APAGADO: confirmar que quem o
-  incluía passou a incluir o parcial do sharedauth, senão a página quebra.
-
-### O componente, em cinco linhas
-
-`sharedauth.ui` — CSS e JS puro, **sem template de framework** (o
-ControleBancario é Django e instala sem o extra `[flask]`).
-
-- Flask: `registrar_ui(app)`; no template,
-  `url_for('sharedauth_ui.static', filename='sharedauth-ui.css')` e `.js`
-- Django: `STATICFILES_DIRS += [("sharedauth", CAMINHO_ESTATICO)]`; no template,
-  `{% static 'sharedauth/sharedauth-ui.css' %}` e `.js`
-- Declarativo: `data-sa-confirmar`, `data-sa-titulo`, `data-sa-severidade`
-  (`success|error|warning|info`), `data-sa-ok`, `data-sa-formulario`
-- Programático: `await window.sharedauth.confirmar({...})` → `Promise<boolean>`;
-  `window.sharedauth.avisar({mensagem, severidade})`
-- Ponte servidor→toast: `<div hidden data-sa-avisos='[{...}]'>`
-- **Já intercepta `htmx:confirm`**: um `hx-confirm` existente passa a usar o
-  modal sem trocar o atributo
-
-O contrato completo está no docstring de `sharedauth/ui/__init__.py` e no
-cabeçalho de `sharedauth/ui/estatico/sharedauth-ui.js`.
-
-### As duas armadilhas que já morderam — procure por elas nos três restantes
-
-1. **`confirm(` em vez de `confirmar(`.** No ConfortoTermico o agente deixou
-   duas chamadas ao `window.confirm` NATIVO recebendo objeto de opções, o que
-   mostra `[object Object]`. Passou pela autoverificação dele porque ele
-   procurou chamadas *sem* `await`, e estas tinham `await`. **Grep certo:**
-   `grep -rn "[^a-zA-Z]confirm(" app/` e confirmar que só sobra `confirmar(`.
-2. **Handler inline que a CSP bloqueia.** `onsubmit="return confirm(...)"` em
-   `usuarios.html` nunca disparava — `script-src 'self'` sem `unsafe-inline`
-   nem nonce. Excluir usuário vinha sem confirmação nenhuma. **Grep certo:**
-   `grep -rn "onsubmit=\|onclick=\|onchange=" templates/`.
-
-Nos dois casos o sintoma é o mesmo: proteção que parece existir e não existe.
-É o tema deste plano inteiro.
+Conferido em produção, não só no CI: os quatro contêineres rodam
+`sharedauth v0.3.0` com o CSS e o JS presentes, e o `collectstatic` do Django
+gerou as versões com hash e gzip. As quatro telas de login respondem 200.
 
 ### Regra que decide onde pôr confirmação
 
@@ -86,13 +30,6 @@ seção 7. Ler antes de decidir. Confirmar demais anula a confirmação.
 Duas linhas do inventário que **não** devem virar confirmação: "gravar apostas"
 e "criar usuário" no MegaSena aparecem como irreversíveis só porque não existe
 rota de exclusão — é funcionalidade que falta, não confirmação que falta.
-
-### Depois que os quatro PRs mesclarem
-
-1. `./deploy.sh <projeto>` para cada um (o rollback automático já protege).
-2. Marcar as fases 8 a 11 como concluídas neste plano.
-3. `README.md` deste repositório: a linha do plano já existe; atualizar o
-   status.
 
 Documentos irmãos:
 [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md)
@@ -530,38 +467,38 @@ Só começa com o bloco 1 fechado e o alerta funcionando. Ver D6.
 
 Trabalha sobre a lista da Fase 0b.
 
-- [ ] ControleBancario primeiro: é a origem do componente, então a adoção lá é
+- [x] ControleBancario primeiro: é a origem do componente, então a adoção lá é
       migração e prova que a generalização não perdeu nada
-- [ ] MegaSena em seguida: é quem tem os três mecanismos misturados
-- [ ] ControleRendaVariavel: troca os 13 `hx-confirm` — atenção, o HTMX cancela
+- [x] MegaSena em seguida: é quem tem os três mecanismos misturados
+- [x] ControleRendaVariavel: troca os 13 `hx-confirm` — atenção, o HTMX cancela
       a requisição pelo retorno do `confirm`; com modal a confirmação é
       assíncrona e o padrão muda (`htmx:confirm` com `evt.preventDefault()`)
-- [ ] ConfortoTermico por último
-- [ ] cobrir as operações que hoje não têm confirmação nenhuma
-- [ ] **regra a valer daqui em diante:** operação irreversível pede
+- [x] ConfortoTermico por último
+- [x] cobrir as operações que hoje não têm confirmação nenhuma
+- [x] **regra a valer daqui em diante:** operação irreversível pede
       confirmação; operação reversível não pede. Confirmar tudo treina o
       usuário a clicar "sim" sem ler, e aí a confirmação deixa de proteger
 
 ### Fase 10 — mensagens no formato novo
 
-- [ ] `sharedauth/messages` passa a emitir ícone por categoria
-- [ ] toast para resultado de ação; banner permanece para o que precisa ficar
+- [x] `sharedauth/messages` passa a emitir ícone por categoria
+- [x] toast para resultado de ação; banner permanece para o que precisa ficar
       na página
-- [ ] os quatro passam a usar o mesmo caminho — hoje o ControleBancario usa
+- [x] os quatro passam a usar o mesmo caminho — hoje o ControleBancario usa
       `messages` do Django e os três Flask usam `flash()`; o formato de saída
       é que precisa convergir, não o mecanismo de cada framework
 
 ### Fase 11 — login que herda a paleta
 
-- [ ] os quatro logins deixam de declarar cor própria e passam a consumir as
+- [x] os quatro logins deixam de declarar cor própria e passam a consumir as
       tokens do app
-- [ ] ControleBancario incluído — hoje o dele está congelado num dos cinco
+- [x] ControleBancario incluído — hoje o dele está congelado num dos cinco
       temas (Tema F.3); é correção, não só padronização
-- [ ] mesma estrutura nos quatro (cartão centrado, campo, rótulo, erro em
+- [x] mesma estrutura nos quatro (cartão centrado, campo, rótulo, erro em
       `role="alert"`), cada um com a sua paleta
-- [ ] conferir contraste do texto sobre o fundo em cada tema, não só no que o
+- [x] conferir contraste do texto sobre o fundo em cada tema, não só no que o
       desenvolvedor tem aberto na tela
-- [ ] documentar em `AGENTS.md` que login não declara cor — herda
+- [x] documentar em `AGENTS.md` que login não declara cor — herda
 
 ---
 
@@ -1168,3 +1105,48 @@ morreram no limite de uso, e agentes interrompidos **não deixam nada** — para
 na fase de leitura e a árvore fica limpa. A partir daqui: um agente por vez, e
 commit assim que cada um entrega, para que a interrupção custe um projeto e não
 quatro.
+
+### Sessão 10 — 2026-08-21 — bloco 2 fechado e em produção
+
+Os quatro PRs mesclados e implantados. Os quatro contêineres rodam
+`sharedauth v0.3.0`, com CSS e JS presentes na imagem — conferido dentro do
+contêiner, não só pelo CI, porque `package-data` errado é exatamente o defeito
+que passa no teste e falha na imagem. No ControleBancario o `collectstatic`
+gerou as versões com hash e gzip, então o WhiteNoise pegou o pacote como
+esperado.
+
+**O que a revisão de cada PR encontrou.** Os três agentes caíram no limite
+durante a própria verificação final, então os PRs foram abertos marcados como
+não revisados, com a lista do que conferir escrita na mensagem de commit. Cada
+item da lista existia por um motivo:
+
+- **ControleBancario** — limpo. Zero resíduo do mecanismo antigo
+  (`openConfirmModal`, o markup `appConfirmModal`, os `data-confirm`), e a
+  decisão sobre conciliação foi a certa **e ficou documentada no template**:
+  conciliar e criar em lote deixaram de confirmar porque são reversíveis (têm
+  "Desfazer"); ignorar continua, por ser a única das três sem volta. Era o lote
+  que estava inconsistente, não a falta de confirmação na individual.
+- **MegaSena** — limpo. O caminho redundante `data-confirm-message` saiu junto
+  com os atributos nos templates, e o `flash_messages.html` apagado não deixou
+  ninguém referenciando um template ausente. Os 4 `hx-confirm` são exatamente
+  os que a regra pede: nada faltou, e nada sobrou.
+- **ControleRendaVariavel** — o único que reprovou no CI, e por um motivo que
+  vale registrar: `PUBLIC_ENDPOINTS` ganhou `sharedauth.static` (sem ele o
+  `requer_login` bloquearia o próprio CSS que estiliza "Usuário ou senha
+  inválidos"), mas o **teste escreve o conjunto de novo em vez de ler a
+  constante** — de propósito, para acrescentar rota pública ser decisão
+  consciente. O preço dessa escolha é que quem muda um lado tem de mudar o
+  outro, e foi só isso que faltou. A condicional da carteira Simulada
+  sobreviveu à migração intacta, que era o risco de verdade ali.
+
+**A armadilha do `confirm` nativo não voltou.** Ela mordeu no ConfortoTermico
+(duas chamadas ficaram no `window.confirm` recebendo objeto de opções) e por
+isso virou item de checklist. Nos três seguintes o grep achou uma única
+ocorrência, dentro de um comentário que explica justamente não usar o nativo.
+
+**Método que funcionou.** Depois de duas rodadas de quatro agentes em paralelo
+morrerem sem deixar nada, a terceira deixou o trabalho na árvore por ter
+chegado à verificação final. Commitar em branch **antes** de revisar — com a
+mensagem dizendo que não estava revisado e o que conferir — transformou
+"trabalho perdido" em "trabalho pendente de revisão". É a diferença entre
+recomeçar e continuar.

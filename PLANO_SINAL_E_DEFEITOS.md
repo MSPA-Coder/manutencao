@@ -10,6 +10,12 @@ tinham sumido — não estavam nem feitos nem adiados, caíram quando os agentes
 morreram no limite de uso e o registro seguiu em frente. **Os quatro foram
 corrigidos e implantados no mesmo dia.**
 
+O que a revisão descobriu de mais útil não foi nenhum dos defeitos, e sim o
+**formato** deles, que se repetiu em todas as sessões seguintes: uma proteção,
+uma configuração ou um estado que existe no documento, no formulário ou no tipo
+— e não no comportamento. As Sessões 13 e 14 acharam mais quatro casos do mesmo
+formato sem estar procurando por eles.
+
 ---
 
 ## Bloco 2 — entregue em 2026-08-21
@@ -1419,7 +1425,7 @@ está indisponível.
 
 ---
 
-### Sessão 13 — 2026-08-22 — dois coletores instalados, e a regra que só existia em prosa
+### Sessão 14 — 2026-08-22 — dois coletores instalados, e a regra que só existia em prosa
 
 Fora do plano original: o mantenedor pediu para conferir se havia mais de um
 serviço de coleta de cotações no ControleRendaVariavel, sobra de migração
@@ -1458,17 +1464,39 @@ mudança. Fica registrado como dívida: a suíte do CRV é parcialmente
 inexecutável fora do Linux, e o CI não cobre justamente os caminhos Windows,
 que são os únicos que rodam RTD de verdade.
 
-### Decisão pendente do mantenedor
+### Decisão do mantenedor — resolvida na mesma sessão
 
-**Manter o modo de controlador local?** É `scripts/rtd-host.ps1` +
-`app/rtd_control_server.py` + `app/host_bootstrap.py` + `app/host_env.py`, com
-quatro arquivos de teste. Não é código morto: está testado, documentado e
-funcionou até 15/08; ficou redundante quando a aplicação foi para o VPS.
+**Remover o modo de controlador local.** Perguntado, o mantenedor respondeu que
+não precisa dele. Removido inteiro em [PR #27], implantado em `96090c0`:
+`scripts/rtd-host.ps1`, `app/rtd_control_server.py`, `app/host_bootstrap.py`,
+`app/host_env.py`, `RemoteRtdService`, a configuração `RTD_CONTROL_*`, o
+segredo `rtd_control_token` (compose, CI e provisionamento) e quatro arquivos
+de teste.
 
-Recomendação registrada: **manter**. O dano real — as duas coisas instaladas ao
-mesmo tempo — já foi eliminado, e agora o código impede a metade que cabe ao
-servidor. Remover apaga a única forma de exercitar RTD sem o VPS.
-`scripts/rtd-host-common.ps1` não pode sair em nenhuma hipótese: o script do
-agente remoto também o carrega.
+`scripts/rtd-host-common.ps1` **ficou**, apesar do nome: define os caminhos que
+`rtd-remote-agent.ps1` também carrega, e removê-lo quebraria o agente. Só o
+comentário mudou. É a armadilha típica de limpeza por nome de arquivo.
+
+Duas notas sobre a forma da remoção, ambas para não perder cobertura junto com
+o código:
+
+- `test_runtime_configuration` deixou de assertar `RTD_CONTROL_TOKEN` e passou
+  a assertar `COLLECTOR_AGENT_TOKEN`. A asserção **mudou de token, não sumiu**:
+  o que ela protege é a resolução de segredo por arquivo `_FILE`, e apagá-la
+  teria deixado esse mecanismo sem cobertura nenhuma;
+- `test_coletor_unico` foi reescrito. A premissa era a exclusão mútua entre
+  dois modos, e não há mais dois; o que resta é a invariante que importa —
+  nenhum caminho de `create_app` produz cliente HTTP de coletor.
+
+Conferido em produção depois do deploy: `RTD_CONTROL_URL` fora da configuração
+e o segredo não mais montado no contêiner. Sobra no disco do VPS o arquivo
+`.secrets/rtd_control_token`, agora sem nenhuma referência — inofensivo, e vale
+apagar numa próxima passagem.
+
+`AGENTS.md` registra a regra para quem vier depois: **se alguém reintroduzir um
+segundo mecanismo de coleta, a primeira pergunta é qual processo lê o
+ProfitChart.** Foi conviverem sem essa decisão que produziu duas tarefas
+agendadas brigando pelo mesmo Excel.
 
 [PR #26]: https://github.com/MSPA-Coder/ControleRendaVariavel/pull/26
+[PR #27]: https://github.com/MSPA-Coder/ControleRendaVariavel/pull/27

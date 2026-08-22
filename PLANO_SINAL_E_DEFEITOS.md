@@ -1416,3 +1416,59 @@ está indisponível.
 
 [#33]: https://github.com/MSPA-Coder/sistema-financeiro/pull/33
 [#34]: https://github.com/MSPA-Coder/sistema-financeiro/pull/34
+
+---
+
+### Sessão 13 — 2026-08-22 — dois coletores instalados, e a regra que só existia em prosa
+
+Fora do plano original: o mantenedor pediu para conferir se havia mais de um
+serviço de coleta de cotações no ControleRendaVariavel, sobra de migração
+anterior. Havia. [PR #26], implantado em `7ed65a6`.
+
+**Duas tarefas agendadas no Windows.** O `README.md` já mandava não manter o
+coletor local e o agente remoto sobre o mesmo ProfitChart. As duas estavam
+instaladas: `ControleRendaVariavel Coletor Remoto` (o modo atual) e
+`ControleRendaVariavel RTD` (o modo pré-VPS), esta última disparando **a cada
+logon** e falhando com código 1 desde a migração de 18/08 — sua última coleta
+real foi 15/08, o que os próprios logs em `.docker-local/` mostram. Removida
+com `rtd-host.ps1 -Action Uninstall`, o caminho suportado e reversível.
+
+**E a aplicação em produção falava com um controlador que não existe.**
+`compose.yaml` fixa `RTD_CONTROL_URL: http://host.docker.internal:8765` e o
+segredo `rtd_control_token` está montado no VPS; com as duas condições
+verdadeiras, `create_app` instanciava `RemoteRtdService` apontando para um nome
+que **não resolve num Linux**. Não aparecia na tela porque `settings.html` já
+escolhe o bloco certo por `remote_collector_enabled` — a interface estava certa
+e o objeto por baixo, errado, que é a forma mais difícil de enxergar deste
+defeito. A regra do README virou código.
+
+**Terceiro achado, e o mais incômodo:** `available` do `RtdServiceManager` vale
+`sys.platform == "win32"`, então no Windows **cada `create_app()` da suíte
+subia uma thread sondando o ProfitChart por `powershell.exe` a cada 2 s**. A
+suíte ficava travada na máquina de quem desenvolve e verde no CI, que é Linux.
+Verde onde ninguém olha, quebrado onde se trabalha — o inverso do que um teste
+deveria fazer. `TESTING` passa a desligar o supervisor.
+
+**O que a verificação local não alcançou, e por quê.** Três arquivos de teste
+não passam nesta máquina: dois travam na conexão a `localhost:5432` (a
+armadilha de `::1` que `app/host_env.py` já documenta) e dois testes falham em
+caminho que só existe no Windows. Conferido, trocando apenas o
+`app/__init__.py`, que **os três se comportam igual no `main`** — nenhum é da
+mudança. Fica registrado como dívida: a suíte do CRV é parcialmente
+inexecutável fora do Linux, e o CI não cobre justamente os caminhos Windows,
+que são os únicos que rodam RTD de verdade.
+
+### Decisão pendente do mantenedor
+
+**Manter o modo de controlador local?** É `scripts/rtd-host.ps1` +
+`app/rtd_control_server.py` + `app/host_bootstrap.py` + `app/host_env.py`, com
+quatro arquivos de teste. Não é código morto: está testado, documentado e
+funcionou até 15/08; ficou redundante quando a aplicação foi para o VPS.
+
+Recomendação registrada: **manter**. O dano real — as duas coisas instaladas ao
+mesmo tempo — já foi eliminado, e agora o código impede a metade que cabe ao
+servidor. Remover apaga a única forma de exercitar RTD sem o VPS.
+`scripts/rtd-host-common.ps1` não pode sair em nenhuma hipótese: o script do
+agente remoto também o carrega.
+
+[PR #26]: https://github.com/MSPA-Coder/ControleRendaVariavel/pull/26

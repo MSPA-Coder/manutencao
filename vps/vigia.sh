@@ -4,8 +4,6 @@
 #   ./vigia.sh            faz o ciclo e alerta
 #   ./vigia.sh --estado   mostra tudo, sem alertar
 #
-# Cada verificação aqui cobre uma falha que hoje não tem quem a perceba.
-#
 # A de frescor do backup fecha um buraco do `OnFailure=`: ele só dispara se o
 # serviço RODAR e falhar. Timer desabilitado por engano, systemd que não
 # disparou, máquina desligada na hora — em nenhum desses casos existe falha
@@ -84,10 +82,8 @@ for dominio in "${DOMINIOS[@]}"; do
 
     # Regex e não texto literal: o `jsonify` do Flask serializa compacto
     # (`"status":"ok"`) e o `JsonResponse` do Django põe espaço depois dos
-    # dois-pontos (`"status": "ok"`). Espaço em JSON não é parte de contrato
-    # nenhum — quem tem de ser tolerante é o verificador. A primeira versão
-    # deste script comparava literal e reprovava o ControleBancario mesmo
-    # depois de ele estar correto.
+    # dois-pontos (`"status": "ok"`). Espaço em JSON não é parte de contrato,
+    # portanto o verificador aceita as duas serializações.
     if ! printf '%s' "$corpo" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
         alertar "FORA DO AR: $dominio" \
 "GET https://$dominio/health devolveu HTTP $codigo.

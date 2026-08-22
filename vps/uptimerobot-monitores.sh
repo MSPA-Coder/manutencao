@@ -20,11 +20,8 @@
 # `"status":"erro"` quando não. Só o keyword distingue os dois — que é
 # exatamente a diferença que este monitor existe para enxergar.
 #
-# POR QUE A API v3 E NÃO A v2: a v2 recusa QUALQUER criação de monitor nesta
-# conta ("not allowed to use some settings with your current plan"), inclusive
-# HTTP simples no intervalo mínimo. A v3 aceita a mesma chave como Bearer e
-# cria sem reclamar. Descoberto sondando a conta real, não por documentação: a
-# página pública da v3 não traz o esquema do POST.
+# A API v3 é necessária para criar os monitores desta conta e autentica a
+# chave como Bearer. A v2 não aceita a criação com a configuração usada aqui.
 
 set -uo pipefail
 
@@ -36,14 +33,8 @@ API=https://api.uptimerobot.com/v3
 # nas duas, e as aspas evitam casar com um "ok" solto de outra mensagem.
 PALAVRA='"ok"'
 
-# 1h, por decisão do mantenedor em 2026-08-21 (começou em 12h e desceu depois
-# de saber que o UptimeRobot notifica em MUDANÇA de estado, não a cada
-# verificação — baixar o intervalo não aumenta o número de mensagens, só
-# antecipa as mesmas).
-#
-# O piso da v3 é 15s e não custaria nada, então o número é escolha de tempo de
-# descoberta. 1h alinha o vigia externo ao `vigia.timer` interno: os dois
-# olham na mesma cadência, um de dentro e outro de fora.
+# O intervalo de 1h alinha o vigia externo ao `vigia.timer` interno. O
+# UptimeRobot notifica mudanças de estado, não cada verificação.
 INTERVALO=3600
 
 DOMINIOS=(
@@ -72,13 +63,13 @@ chamar() {
 url = "$API$caminho"
 header = "Authorization: Bearer ${UPTIMEROBOT_API_KEY}"
 EOF
-    # Plano gratuito: 10 requisições por minuto. Sem esta pausa uma execução
+    # A conta permite 10 requisições por minuto. Sem esta pausa uma execução
     # com quatro monitores esbarra no limite e chamadas voltam vazias.
     sleep 7
 }
 
 # --------------------------------------------------------------------------
-# Contato de alerta: descoberto, não fixado no código
+# Contato de alerta: resolvido pela API, não fixado no código
 # --------------------------------------------------------------------------
 CONTATO=$(chamar GET /alert-contacts | python3 -c '
 import json, sys

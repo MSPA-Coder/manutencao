@@ -1,57 +1,53 @@
-# Configurações do nginx do VPS
+# Nginx central do VPS
 
-Correspondem a `/etc/nginx/` do VPS (`ubuntu@163.176.214.214`).
+Esta pasta é a fonte versionada da configuração compartilhada em
+`/etc/nginx/`. Editar os arquivos aqui não altera o servidor. A instalação é
+uma operação explícita e deve usar [`instalar.sh`](instalar.sh), que salva a
+configuração atual, instala os arquivos, executa `nginx -t`, restaura o estado
+anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é válida.
 
-**Instalado em 2026-08-21** e conferido no ato: HTTP/2 negociado nos quatro
-domínios, `content-encoding: gzip` num `.js` real, `Host` desconhecido recusado
-no aperto de mão TLS, e o `limit_req` deixando 12 de 12 `GET /login` passarem
-enquanto o `POST` cai para 429 depois do estouro.
+## Arquivos
 
-Para reinstalar depois de mudar algo aqui: copie para `/home/ubuntu/nginx/` e
-rode `~/instalar-nginx.sh` no servidor. Ele faz backup, valida com `nginx -t`,
-**restaura sozinho sem recarregar** se reprovar, e confere o resultado no fim.
-
-## O que é cada coisa
-
-| Arquivo | Vai para | Para quê |
+| Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena` | `sites-available/` | um vhost por aplicativo; estrutura idêntica, só mudam domínio, porta e `client_max_body_size` |
-| `recusa-host-desconhecido` | `sites-available/` + link em `sites-enabled/` | servidor padrão da 443, que corta no aperto de mão TLS quem chega com `Host` desconhecido |
-| `conf.d/00-comum.conf` | `conf.d/` | compressão de verdade e a zona do limitador de login |
-| `snippets/proxy-app.conf` | `snippets/` | os cabeçalhos de proxy, incluídos por todos os `location` |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. |
+| `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
+| `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
+| `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |
 
-O prefixo `00-` do `conf.d` não é enfeite: `map` e `limit_req_zone` precisam
-ser lidos antes dos `sites-enabled/*` que os usam.
+O prefixo `00-` garante que `map` e `limit_req_zone` sejam carregados antes dos
+vhosts. `proxy_pass` permanece em cada vhost porque a porta é específica de
+cada aplicação.
 
-O `sites-enabled/` é só link simbólico para `sites-available/`.
+## Contratos
 
-## Por que existe um snippet em vez de repetir
+- HTTP redireciona para HTTPS, preservando o desafio ACME.
+- TLS usa os certificados do Certbot e emite HSTS.
+- Hosts desconhecidos são recusados durante o handshake TLS.
+- Os cabeçalhos `Host`, `X-Real-IP`, `X-Forwarded-For` e
+  `X-Forwarded-Proto` são encaminhados às aplicações.
+- Gzip cobre texto, CSS, JavaScript, JSON, XML, SVG e WASM; WOFF2 permanece de
+  fora porque já é comprimido.
+- A zona `login` é compartilhada pelo Nginx. Somente `POST /login` consome o
+  limite; `GET /login` permanece livre. O limite é `10r/m`, com burst 5 sem
+  atraso, e rejeições respondem 429.
+- Os vhosts mantêm `listen ... ssl http2` por compatibilidade com Nginx 1.24.
 
-Cada vhost passou a ter dois `location` — a raiz e o login com limitador. Sem o
-snippet, o mesmo bloco de seis linhas de `proxy_set_header` ficaria repetido
-oito vezes em quatro arquivos, e a próxima alteração seria feita em sete dos
-oito lugares. É o mecanismo de deriva que estas rodadas existem para eliminar.
+## Instalação
 
-`proxy_pass` fica de fora do snippet de propósito: é a única linha que muda
-entre os aplicativos, e é ela que precisa ficar visível em cada vhost.
+Disponibilize esta pasta no VPS em um diretório controlado pelo operador e
+execute, a partir dele:
 
-## Duas coisas conferidas no servidor que contrariavam o plano
-
-1. **O `default_server` já existia na porta 80** — vem no site `default` do
-   pacote do Ubuntu. O buraco era só o HTTPS, e é só isso que
-   `recusa-host-desconhecido` trata. Por isso ele não conflita com o site do
-   pacote.
-2. **`gzip on;` já estava ligado** no `nginx.conf`, mas com `gzip_types`
-   comentado — e o padrão do nginx nesse caso é comprimir só `text/html`. A
-   diretiva parecia resolvida e CSS e JS saíam sem compressão nenhuma.
-
-## Não tem segredo dentro
-
-Só domínio, porta e caminho de certificado. Não é artefato do BackupRestore —
-atualizar à mão sempre que mudar rota ou domínio no servidor:
-
-```
-scp -i "C:\Users\MSPA\Downloads\OracleKeys\ssh-key-2026-08-17.key" ubuntu@163.176.214.214:/etc/nginx/sites-available/<nome> .
+```bash
+sudo -v
+./instalar.sh "$(pwd)"
 ```
 
-Ver decisão D5 em `PLANO_BACKUPRESTORE_VPS.md`.
+O script precisa de `sudo` para escrever em `/etc/nginx` e recarregar o
+serviço. Ao final, ele verifica `/health` dos quatro domínios, negociação
+HTTP/2, compressão e recusa de host desconhecido. Se alguma conferência
+operacional falhar apesar de `nginx -t` passar, use o caminho de backup exibido
+pelo próprio instalador para restaurar a configuração anterior.
+
+Não inclua neste repositório credenciais, chaves privadas ou caminhos pessoais
+para arquivos de autenticação.

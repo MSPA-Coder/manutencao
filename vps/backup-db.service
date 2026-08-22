@@ -1,5 +1,5 @@
 [Unit]
-Description=Backup diario dos bancos de producao (camada 1)
+Description=Backup diario dos bancos de producao
 Documentation=file:/home/ubuntu/backup-db.sh
 After=docker.service
 Requires=docker.service

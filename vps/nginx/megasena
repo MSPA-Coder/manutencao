@@ -20,8 +20,7 @@ server {
 
 server {
     # `listen ... ssl http2` e não `http2 on;`: a diretiva separada só existe a
-    # partir do nginx 1.25.1, e aqui roda 1.24.0. Conferido no servidor antes
-    # de escrever -- a forma nova falharia ao recarregar.
+    # partir do nginx 1.25.1; a forma abaixo preserva compatibilidade com 1.24.
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name megasena-mspa.duckdns.org;

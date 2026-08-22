@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Backup diário dos bancos de produção — Camada 1.
+# Backup diário dos bancos de produção.
 #
 #   ./backup-db.sh            faz o ciclo dos quatro projetos
 #   ./backup-db.sh --estado   mostra o estado sem alterar nada
 #   ./backup-db.sh --forcar   ignora a checagem de alteração e faz o dump
-#
-# Plano: _manutencao/PLANO_BACKUPRESTORE_VPS.md (cópia deste script fica lá).
 #
 # O que este script NUNCA faz: ligar, parar ou recriar contêiner. Se o Postgres
 # de um projeto não estiver de pé, ele registra a falha e segue para o próximo.

@@ -2,19 +2,14 @@
 # dos quatro domínios.
 #
 # POR QUE EXISTE: sem um `default_server` na 443, o nginx atende `Host`
-# desconhecido com o PRIMEIRO bloco `server` carregado — que hoje é o
-# `conforto-termico`, só porque vem antes em ordem alfabética. Qualquer
-# varredura de IP, qualquer domínio apontado para cá por engano ou de
-# propósito, é servida como se fosse o ConfortoTermico. Isso não é hipotético:
-# é o comportamento documentado quando nenhum `server_name` casa.
+# desconhecido com o primeiro bloco `server` carregado. Um domínio sem
+# correspondência não deve receber conteúdo de nenhuma aplicação.
 #
-# A porta 80 JÁ TEM `default_server` — vem no site `default` do pacote do
-# Ubuntu, em `/etc/nginx/sites-available/default`. O plano registrava "nginx
-# sem default_server" para as duas portas; conferido no servidor, o buraco era
-# só o HTTPS. Este arquivo trata apenas a 443, e por isso não conflita com o
-# site do pacote.
+# A porta 80 usa o `default_server` do pacote do Ubuntu em
+# `/etc/nginx/sites-available/default`. Este arquivo trata apenas a 443 e não
+# conflita com esse site.
 #
-# `ssl_reject_handshake on` (nginx 1.19.4+; aqui roda 1.24.0) corta a conexão
+# `ssl_reject_handshake on` (nginx 1.19.4+) corta a conexão
 # ainda no aperto de mão TLS. É melhor que responder 444 depois de estabelecer
 # a sessão por dois motivos: não gasta certificado nem CPU de handshake com
 # quem não deveria estar ali, e não revela nenhum dos certificados — o nome do

@@ -6,27 +6,31 @@
 #   ./deploy.sh --status           estado dos quatro projetos
 #
 # Recusa implantar se houver alteração não commitada no servidor: o código do
-# servidor é sempre um espelho do main, nunca a origem de uma mudança. Isso
-# deixou de ser só higiene e virou pré-requisito de segurança — o rollback
-# abaixo faz `git reset --hard`, que descartaria em silêncio qualquer edição
-# feita no servidor.
+# servidor é sempre um espelho do main, nunca a origem de uma mudança. O
+# rollback usa `git reset --hard`, portanto só pode operar sobre checkout
+# limpo.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
-# o banco inteiramente fora do ar. Um deploy que quebra a conexão com o banco
-# passava na verificação e era declarado bem-sucedido. Os quatro projetos
-# expõem `/health`, que consulta o banco de verdade e responde 503 quando não
-# consegue — e o critério aqui é o CORPO conter `"status":"ok"`, não o código
-# HTTP, justamente para não repetir o erro de aceitar um 200 vazio de sentido.
+# o banco inteiramente fora do ar. Os quatro projetos expõem `/health`, que
+# consulta o banco e responde 503 quando não consegue. O critério é o CORPO
+# conter `"status":"ok"`, não apenas o código HTTP.
 #
 # POR QUE ROLLBACK AUTOMÁTICO: sem ele, um deploy que quebra o site avisa e
 # deixa quebrado; o conserto é para frente, sob pressão, com o site fora. O
 # estado anterior é conhecido (o commit de onde saímos) e comprovadamente
 # funcionava, então voltar é a ação de menor risco disponível.
+#
+# LIMITE DO ROLLBACK: ele volta o código e reconstrói a imagem, mas NÃO desfaz
+# migração de banco. Um deploy que execute migração exige antes um backup
+# verificado e uma migração retrocompatível, ou um procedimento manual de
+# reversão do schema. Este script deliberadamente não tenta adivinhar como
+# reverter dados.
 
 set -euo pipefail
 
-APPS=/home/ubuntu/apps
-ALERTA=/home/ubuntu/alerta.sh
+APPS=${APPS:-/home/ubuntu/apps}
+ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
+ESTADO_DIR=${ESTADO_DIR:-/home/ubuntu/.local/state/mspa-deploy}
 
 # Quanto esperar o endereço público ficar bom antes de declarar falha.
 # 12 x 5s = 60s depois de o Compose já ter parado de reportar `starting`.
@@ -96,13 +100,105 @@ verificar_saude() {
 }
 
 esperar_compose() {
-    for _ in $(seq 1 40); do
-        sleep 5
-        if ! compose ps --format '{{.Status}}' 2>/dev/null | grep -qi 'starting'; then
-            break
+    local i estados
+    for ((i = 1; i <= 40; i++)); do
+        if ! sleep 5; then
+            echo "A espera pelos contêineres foi interrompida." >&2
+            return 1
+        fi
+        if ! estados=$(compose ps --format '{{.Name}}  {{.Status}}' 2>/dev/null); then
+            echo "Não foi possível consultar o estado do Compose." >&2
+            return 1
+        fi
+        if ! printf '%s\n' "$estados" | grep -qi 'starting'; then
+            printf '%s\n' "$estados" | sed 's/^/  /'
+            return 0
         fi
     done
-    compose ps --format '  {{.Name}}  {{.Status}}'
+    printf '%s\n' "$estados" | sed 's/^/  /' >&2
+    echo "O Compose continuou em estado 'starting' após 200 segundos." >&2
+    return 1
+}
+
+# Grava somente o SHA, sem segredo, no diretório estável do usuário de deploy.
+# O rename no mesmo filesystem torna a troca atômica: nunca fica um SHA parcial.
+registrar_implantacao_saudavel() {
+    local commit temporario arquivo
+    commit=$(git rev-parse HEAD) || return 1
+    arquivo="$ESTADO_DIR/$DIR.commit"
+
+    install -d -m 700 "$ESTADO_DIR" || return 1
+    temporario=$(mktemp "$ESTADO_DIR/.${DIR}.commit.XXXXXX") || return 1
+    if ! chmod 600 "$temporario" || ! printf '%s\n' "$commit" >"$temporario"; then
+        rm -f -- "$temporario"
+        return 1
+    fi
+    if ! mv -f -- "$temporario" "$arquivo"; then
+        rm -f -- "$temporario"
+        return 1
+    fi
+}
+
+# Único caminho para toda falha posterior a um fast-forward bem-sucedido.
+# Cada comando potencialmente falho está dentro de um `if`: `set -e` nunca
+# consegue encerrar o processo antes de tentarmos restaurar a versão anterior.
+rollback_deploy() {
+    local motivo="$1" quebrado="$2" detalhe_rollback estado_nota=
+
+    echo >&2
+    echo "FALHOU após atualizar para ${quebrado:0:7}: $motivo" >&2
+    echo "-- revertendo código/imagem para ${atual:0:7} --" >&2
+    echo "AVISO: migrações de banco não são revertidas automaticamente." >&2
+
+    if ! git reset --hard "$atual"; then
+        detalhe_rollback="git reset --hard não conseguiu restaurar ${atual:0:7}"
+    elif ! compose up -d --build; then
+        detalhe_rollback="Compose não conseguiu reconstruir/subir ${atual:0:7}"
+    elif ! esperar_compose; then
+        detalhe_rollback="a espera do Compose falhou ao restaurar ${atual:0:7}"
+    elif verificar_saude "$TENTATIVAS_SAUDE"; then
+        if ! registrar_implantacao_saudavel; then
+            printf -v estado_nota \
+                '\n\nATENÇÃO: o site respondeu saudável, mas não foi possível atualizar o arquivo de estado em %s.' \
+                "$ESTADO_DIR"
+        fi
+        echo "REVERTIDO: $DIR voltou para $(git rev-parse --short HEAD) e responde." >&2
+        alertar "DEPLOY REVERTIDO: $DIR" \
+"A implantação de ${quebrado:0:7} falhou e foi desfeita.
+
+Motivo original: $motivo
+
+O site está de pé de novo em ${atual:0:7} — o estado anterior.
+$estado_nota
+
+O commit ruim CONTINUA no main do GitHub. O próximo deploy deste projeto
+vai tentar aplicá-lo outra vez. Conferir antes:
+
+  cd /home/ubuntu/apps/$DIR && git log --oneline ${atual:0:7}..origin/main"
+        return 1
+    else
+        detalhe_rollback="/health não confirmou saúde após restaurar ${atual:0:7} (HTTP $VERIF_CODE)"
+    fi
+
+    echo "GRAVE: reversão falhou: $detalhe_rollback." >&2
+    alertar "DEPLOY QUEBRADO E REVERSÃO FALHOU: $DIR" \
+"A implantação de ${quebrado:0:7} falhou e a reversão para ${atual:0:7} também falhou.
+
+Falha original: $motivo
+Falha da reversão: $detalhe_rollback
+
+HTTP na última sonda: $VERIF_CODE
+Resposta:
+$(printf '%s' "$VERIF_CORPO" | head -c 300)
+
+O rollback só reverte código/imagem; não reverte migrações de banco.
+
+Diagnóstico inicial:
+  cd /home/ubuntu/apps/$DIR
+  docker compose --env-file $ENVF -f compose.yaml ps
+  docker compose --env-file $ENVF -f compose.yaml logs --tail 50
+  df -h /"
+    return 1
 }
 
 status_geral() {
@@ -143,9 +239,14 @@ if [ -n "$sujo" ]; then
     exit 1
 fi
 
-git fetch --quiet origin main
-atual=$(git rev-parse HEAD)
-novo=$(git rev-parse origin/main)
+if ! git fetch --quiet origin main; then
+    echo "ABORTADO: não foi possível buscar origin/main; o HEAD local não foi alterado." >&2
+    exit 1
+fi
+if ! atual=$(git rev-parse HEAD) || ! novo=$(git rev-parse origin/main); then
+    echo "ABORTADO: não foi possível resolver os commits local e remoto; o deploy não começou." >&2
+    exit 1
+fi
 
 if [ "$atual" = "$novo" ]; then
     echo "Já está na versão do main ($(git rev-parse --short HEAD)). Nada a fazer."
@@ -167,86 +268,45 @@ fi
 # e comprovadamente respondia.
 echo
 echo "-- atualizando código (voltando para ${atual:0:7} se der errado) --"
-git merge --ff-only origin/main
+if ! git merge --ff-only origin/main; then
+    echo "ABORTADO: origin/main não pôde ser aplicado por fast-forward." >&2
+    echo "O deploy não começou e o HEAD permanece em ${atual:0:7}; não há rollback a fazer." >&2
+    exit 1
+fi
+quebrado=$novo
 
 echo "-- reconstruindo e subindo --"
-compose up -d --build
+if ! compose up -d --build; then
+    rollback_deploy "compose up -d --build falhou" "$quebrado"
+    exit 1
+fi
 
 echo "-- aguardando saúde --"
-esperar_compose
+if ! esperar_compose; then
+    rollback_deploy "a espera do Compose falhou ou excedeu 200 segundos" "$quebrado"
+    exit 1
+fi
 
 echo "-- verificando o endereço público --"
 if verificar_saude "$TENTATIVAS_SAUDE"; then
     echo "  https://$DOMINIO/health -> HTTP $VERIF_CODE  $VERIF_CORPO"
     echo "OK: $DIR em $(git rev-parse --short HEAD)"
 
-    # Poda do cache de build. O deploy constrói no servidor, então o cache
-    # cresce a cada implantação e nunca encolhe sozinho — 5,8 GB acumulados em
-    # 262 entradas quando isto foi escrito.
-    #
-    # O teto é de TAMANHO e não de idade. A primeira versão disto filtrava por
-    # `until=168h` e não podava absolutamente nada: com deploys frequentes,
-    # nenhuma entrada chega a ter uma semana. Idade mede há quanto tempo a
-    # camada foi criada; o que interessa é quanto disco ela ocupa. Medido, não
-    # suposto — o cache subiu de 5,8 para 6,8 GB com a poda por idade ligada.
-    #
-    # 3 GB cabe a camada recente dos quatro projetos (o que mantém o deploy
-    # seguinte rápido) e descarta o resto. Nunca falha o deploy.
+    if ! registrar_implantacao_saudavel; then
+        echo "FALHOU: deploy saudável, mas o commit não pôde ser registrado em $ESTADO_DIR." >&2
+        alertar "DEPLOY SEM REGISTRO DE ESTADO: $DIR" \
+"O deploy de ${quebrado:0:7} está saudável, mas não foi possível registrar o
+commit confirmado em $ESTADO_DIR. O código não foi revertido."
+        exit 1
+    fi
+
+    # Poda o cache por tamanho, pois deploys frequentes podem manter todas as
+    # camadas jovens mesmo quando o consumo de disco cresce. O teto preserva
+    # as camadas recentes dos quatro projetos e a poda nunca falha o deploy.
     docker builder prune -f --max-used-space 3GB >/dev/null 2>&1 || true
     exit 0
 fi
-
-# --------------------------------------------------------------------------
-# Rollback
-#
-# Só se chega aqui com a verificação reprovada depois de TENTATIVAS_SAUDE.
-# O rollback NÃO tem rollback: se voltar e ainda assim reprovar, o script para
-# e grita. Tentar consertar em cascata a partir daqui seria mexer às cegas num
-# sistema já fora do ar.
-# --------------------------------------------------------------------------
-quebrado=$(git rev-parse --short HEAD)
-echo >&2
-echo "FALHOU: https://$DOMINIO/health não confirmou \"status\":\"ok\"." >&2
-echo "  HTTP $VERIF_CODE" >&2
-printf '%s\n' "$VERIF_CORPO" | head -c 400 | sed 's/^/  /' >&2 || true
-echo >&2
-echo "-- revertendo para ${atual:0:7} --" >&2
-
-git reset --hard "$atual"
-compose up -d --build
-esperar_compose
-
-if verificar_saude "$TENTATIVAS_SAUDE"; then
-    echo "REVERTIDO: $DIR voltou para $(git rev-parse --short HEAD) e responde." >&2
-    alertar "DEPLOY REVERTIDO: $DIR" \
-"A implantação de $quebrado quebrou o /health e foi desfeita.
-
-O site está de pé de novo em ${atual:0:7} — o estado anterior.
-
-HTTP observado na versão ruim: $VERIF_CODE
-
-O commit ruim CONTINUA no main do GitHub. O próximo deploy deste projeto
-vai tentar aplicá-lo outra vez. Conferir antes:
-
-  cd /home/ubuntu/apps/$DIR && git log --oneline ${atual:0:7}..origin/main"
-    exit 1
-fi
-
-echo "GRAVE: a reversão para ${atual:0:7} também não respondeu." >&2
-alertar "DEPLOY QUEBRADO E REVERSÃO FALHOU: $DIR" \
-"A implantação de $quebrado reprovou no /health, a reversão para ${atual:0:7}
-foi feita e TAMBÉM reprovou.
-
-HTTP na última tentativa: $VERIF_CODE
-
-Resposta:
-$(printf '%s' "$VERIF_CORPO" | head -c 300)
-
-Isto não é o deploy: código que funcionava antes não está funcionando agora.
-Suspeitar de banco, disco, rede ou nginx, nesta ordem:
-
-  cd /home/ubuntu/apps/$DIR
-  docker compose --env-file $ENVF -f compose.yaml ps
-  docker compose --env-file $ENVF -f compose.yaml logs --tail 50
-  df -h /"
+rollback_deploy \
+    "/health não confirmou \"status\":\"ok\" (HTTP $VERIF_CODE; corpo: $(printf '%s' "$VERIF_CORPO" | head -c 300))" \
+    "$quebrado"
 exit 1

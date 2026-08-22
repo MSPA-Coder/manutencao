@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Agente restrito de backup — Camada 2, um verbo por conexão SSH.
+# Agente restrito de backup — um verbo por conexão SSH.
 #
 # Instalado com uma chave dedicada em authorized_keys, presa por `command=`
 # a este script: quem conecta com essa chave só executa um dos quatro verbos
-# abaixo, nunca um shell. Plano: _manutencao/PLANO_BACKUPRESTORE_VPS.md,
-# seção 6 (D1). Cópia deste script vive em /home/ubuntu/backup-agent.sh.
+# abaixo, nunca um shell. A cópia executável vive em
+# /home/ubuntu/backup-agent.sh.
 #
 #   listar               nomes, tamanhos e SHA-256 dos dumps disponíveis
 #   enviar <slug/nome>    despeja um dump na saída padrão

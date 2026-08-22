@@ -7,7 +7,6 @@
 # POR QUE ISTO EXISTE: o Compose não age sobre health check. `restart:
 # unless-stopped` reage a processo que morre, não a processo vivo e doente. Um
 # app cujo banco caiu fica `unhealthy` e de pé, indefinidamente, servindo erro.
-# Quem repara isso hoje é uma pessoa que percebeu por acaso.
 #
 # POR QUE NÃO O `autoheal` EM CONTÊINER: ele exige montar
 # /var/run/docker.sock. Quem fala com esse socket cria contêiner privilegiado,

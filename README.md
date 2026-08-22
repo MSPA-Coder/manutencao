@@ -1,77 +1,62 @@
-# Manutenção — memória de decisão dos seis projetos
+# Manutenção da infraestrutura
 
-Este repositório não guarda produto. Guarda o **porquê**: os planos de cada
-rodada de trabalho que atravessa mais de um projeto, e os arquivos de
-infraestrutura que vivem no VPS mas não pertencem a repositório nenhum dos
-projetos.
+Este repositório versiona a fonte da infraestrutura compartilhada do VPS. Os
+arquivos que executam no servidor ficam em [`vps/`](vps/); cada aplicação
+mantém seu próprio código, Compose, migrações e documentação operacional.
 
-Existe porque decisões como *"o Flask-Talisman saiu porque o nginx já faz o
-HSTS"* ou *"não deduplicamos o bloco de contrato do Postgres porque acoplaria
-dois repositórios a um terceiro por 15 linhas"* não cabem num commit e somem
-da memória em duas semanas. Um plano registra a decisão, a alternativa
-recusada e o motivo — inclusive quando o motivo foi "tentamos e não
-funcionou".
+Editar este repositório não implanta nem altera o VPS. A instalação exige
+copiar deliberadamente o artefato para o destino indicado, validar a cópia e
+executar o procedimento correspondente no servidor.
 
-## Os projetos
+## Operação atual
 
-Seis repositórios, todos privados em `MSPA-Coder`:
+| Componente | Fonte | Contrato operacional |
+|---|---|---|
+| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main`, recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. |
+| Limite do rollback | [`vps/deploy.sh`](vps/deploy.sh) | Migrações e dados não são revertidos automaticamente. Deploy com mudança de schema exige backup verificado, compatibilidade retroativa ou procedimento manual de reversão. |
+| Backup dos bancos | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. O timer agenda o ciclo diário. |
+| Acesso ao backup | [`vps/backup-agent.sh`](vps/backup-agent.sh) | Agente SSH preso por `command=` a quatro verbos: listar, enviar, apagar e consultar estado. Não oferece shell, restringe projetos/caminhos e nunca permite apagar o dump mais recente. |
+| Alerta | [`vps/alerta.sh`](vps/alerta.sh), [`vps/alerta@.service`](vps/alerta@.service), [`vps/certbot.service.d/alerta.conf`](vps/certbot.service.d/alerta.conf) | Envia falhas ao Telegram, inclui logs de unidades systemd e suprime repetições. O notificador sempre termina com sucesso para não criar cascata de falhas. |
+| Vigia | [`vps/vigia.sh`](vps/vigia.sh), [`vps/vigia.service`](vps/vigia.service), [`vps/vigia.timer`](vps/vigia.timer) | Verifica disco, `/health` público, certificados e frescor dos backups; alerta condições persistentes. |
+| Autocura | [`vps/autocura.sh`](vps/autocura.sh), [`vps/autocura.service`](vps/autocura.service), [`vps/autocura.timer`](vps/autocura.timer) | Reinicia contêineres `unhealthy` com teto de tentativas e alerta quando a recuperação automática não resolve. |
+| Monitor externo | [`vps/uptimerobot-monitores.sh`](vps/uptimerobot-monitores.sh) | Consulta ou aplica monitores UptimeRobot do tipo keyword para os quatro endpoints públicos `/health`, usando e-mail como canal independente do VPS. |
+| Entrada HTTP/TLS | [`vps/nginx/`](vps/nginx/) | Mantém os quatro vhosts, TLS/HSTS, proxy central, gzip, rejeição de host desconhecido e limite compartilhado somente para `POST /login`. |
 
-| Projeto | O que é |
-|---|---|
-| ConfortoTermico | Flask + PostgreSQL, índice de conforto térmico animal (ICT + coletor Modbus) |
-| ControleBancario | Django + PostgreSQL, controle financeiro |
-| ControleRendaVariavel | Flask + PostgreSQL, carteira de investimentos com coletor RTD no host Windows |
-| MegaSena | Flask + PostgreSQL, estatística de concursos |
-| BackupRestore | ferramenta Flask **de host**, deliberadamente sem contêiner — ela gerencia os contêineres dos outros |
-| SharedAuth | biblioteca Python consumida pelos quatro apps |
+## Deploy
 
-Os quatro primeiros rodam em produção num VPS Oracle, com deploy por
-`~/deploy.sh <projeto>`.
+No VPS, a interface é:
 
-## Os planos
+```bash
+~/deploy.sh <bancario|conforto|megasena|renda> --check
+~/deploy.sh <bancario|conforto|megasena|renda>
+~/deploy.sh --status
+```
 
-| Plano | Estado |
-|---|---|
-| [PLANO_MANUTENCAO.md](PLANO_MANUTENCAO.md) | concluído — varredura de análise, limpeza e redocumentação dos 5 projetos |
-| [PLANO_RESSINCRONIZACAO_VPS.md](PLANO_RESSINCRONIZACAO_VPS.md) | concluído — fluxo local → GitHub → VPS, e o `deploy.sh` |
-| [PLANO_BACKUPRESTORE_VPS.md](PLANO_BACKUPRESTORE_VPS.md) | concluído — backup da produção em duas camadas |
-| [PLANO_RETIRAR_BACKUPS_LOCAIS.md](PLANO_RETIRAR_BACKUPS_LOCAIS.md) | concluído — um backup, um dono |
-| [PLANO_UNIFICAR_AUTENTICACAO.md](PLANO_UNIFICAR_AUTENTICACAO.md) | concluído — login e mensagens viram o SharedAuth |
-| [PLANO_EQUALIZAR_BASE_COMPARTILHADA.md](PLANO_EQUALIZAR_BASE_COMPARTILHADA.md) | concluído — cabeçalhos/CSP, formatação pt-BR, `/health` e convenções de CI |
-| [PLANO_SINAL_E_DEFEITOS.md](PLANO_SINAL_E_DEFEITOS.md) | blocos 1 e 2 concluídos — sinal de falha, rollback no deploy, confirmação de operação destrutiva, varredura de vulnerabilidade e interface comum. **Só a Fase 5 (métricas) fica pendente** |
-| [INVENTARIO_OPERACOES_DESTRUTIVAS.md](INVENTARIO_OPERACOES_DESTRUTIVAS.md) | referência — 124 operações que mudam estado nos quatro apps, com reversibilidade |
+O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
+automático devolve o checkout ao SHA anterior, reconstrói a imagem e só registra
+o estado depois que o endpoint público confirma saúde. Mesmo quando a reversão
+recupera o site, o deploy original termina com erro e o commit defeituoso
+permanece em `main` até ser corrigido.
 
-Nenhum plano está aberto no momento. Os dois últimos são a leitura obrigatória
-antes de mexer em autenticação ou em política de segurança de qualquer um dos
-quatro apps.
+Teste hermético do fluxo, sem rede ou acesso ao VPS:
 
-**Um plano é histórico, não especificação.** Ele registra o estado do mundo
-quando foi escrito. Se o código discordar do plano, o código está certo e o
-plano está velho — confira antes de agir sobre o que estiver escrito aqui.
+```powershell
+docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/deploy_test.sh
+```
 
-## `vps/` — infraestrutura do servidor
+## Instalação e observabilidade
 
-Cinco arquivos que rodam no VPS e não pertencem a nenhum repositório de
-projeto, versionados aqui:
+Os scripts e unidades declaram no próprio arquivo o destino esperado no VPS.
+Copiar uma nova versão não habilita timers nem recarrega serviços por si só.
+Após instalação deliberada, confira permissões, sintaxe, estado das unidades e
+logs no `journalctl` antes de considerar a operação concluída.
 
-| Arquivo | Onde vive no servidor |
-|---|---|
-| `deploy.sh` | `/home/ubuntu/deploy.sh` |
-| `backup-agent.sh` | `/home/ubuntu/backup-agent.sh` — o agente restrito, preso por `command=` no `authorized_keys` |
-| `backup-db.sh` | `/home/ubuntu/backup-db.sh` |
-| `backup-db.service` · `backup-db.timer` | `/etc/systemd/system/` |
+Para Nginx, siga o procedimento de [`vps/nginx/README.md`](vps/nginx/README.md).
+O instalador salva a configuração atual, executa `nginx -t`, restaura o backup
+se a validação falhar e só então recarrega o serviço.
 
-**Editar aqui não implanta nada.** A cópia do servidor é a que roda; esta é
-para ter histórico e para poder reconstruir. Depois de mudar um destes,
-copie para o VPS e confira com `sha256sum` dos dois lados — foi assim que a
-igualdade foi verificada pela última vez em 2026-08-20.
+## Segredos
 
-## Nada de credencial aqui
-
-O `.gitignore` recusa `.env`, `.secrets/`, chaves e arquivos com "password" ou
-"token" no nome. Mas a guarda real é humana: o conteúdo daqui é texto corrido
-escrito à mão, e já aconteceu de uma senha de produção entrar num plano sem
-ninguém notar. Em Git isso é permanente — apagar depois não tira do histórico.
-
-Credencial vai para um gerenciador de senhas. Um plano pode dizer *que existe*
-uma conta administrativa; nunca a senha dela.
+Tokens, senhas, chaves e arquivos de autenticação não pertencem ao Git. Os
+scripts leem credenciais dos arquivos protegidos que indicam no VPS; este
+repositório contém apenas o contrato e a configuração sem valores secretos.

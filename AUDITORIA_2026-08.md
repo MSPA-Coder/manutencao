@@ -986,11 +986,32 @@ dentro de um commit rotulado "adotar" esconderia a mudança, e eu não consigo
 ver daqui se algum fluxo local seu aponta `*_FILE` para outro lugar. Fica como
 item a decidir — é um argumento por chamada.
 
-**Fase 3 — Endurecimento pontual e higiene (1 sessão)**
-S3 (Origin no BackupRestore), S8 (fechar `img-src data:` nos dois apps), S9 +
-H9 (trava e comentário do `CONFORTO_TESTING`), H3 (BOM), H6 (faixas de
-dependência). Itens independentes entre si; qualquer um pode cair sem afetar
-os outros.
+**Fase 3 — Endurecimento pontual e higiene — ✅ concluída em 28/08**
+
+S3, S8, H6 e P1 nesta fase; S9, H9 e H3 já tinham entrado na Fase 1.
+
+| Item | O que mudou |
+|---|---|
+| S3 | `web.py` do BackupRestore recusa `Host` fora do loopback em toda requisição e `Origin` estranha nos métodos mutantes. 7 testes novos; suíte em 65. |
+| S8 | Favicon vira `favicon.svg` no MegaSena e no ControleBancario; `img-src` fecha em `'self'` nos dois. A CSP dos quatro apps é agora a fechada da biblioteca, sem exceção. |
+| H6 | gunicorn do CRV sobe de `>=23,<24` para `>=25.1,<27` e ganha `--no-control-socket`; teto do Flask-Limiter vai a `<5` no CRV e no ConfortoTermico. |
+| P1 | Tema do CRV passa a viver na sessão — some uma consulta por render autenticado. |
+
+**Verificação:** SharedAuth 168, ConfortoTermico 155, CRV 117, MegaSena 72,
+BackupRestore 65 — todas sem falha. ControleBancario 150 passam com
+`collectstatic` prévio, e o `favicon.svg` foi confirmado no manifesto
+(`favicon.421bd717118b.svg`), o que prova S8 ponta a ponta. `ruff check` limpo
+nos quatro.
+
+**Uma falha pré-existente, não minha:**
+`test_annual_planning_partial_uses_summary_headers_without_transfer_card` do
+ControleBancario falha, e falha idêntica no commit anterior (verificado com a
+mesma montagem). É um bug de asserção no commit `feat: adiciona relatório de
+planejamento anual`, que estava sem push antes desta rodada: o teste injeta
+"Ana" em três lugares — a lista de titulares do filtro, o rótulo da conta e a
+coluna do relatório — e depois exige `rendered.count("Ana") == 1`. A asserção
+não acompanhou a chegada do painel de filtros ao partial. Deixado para o
+mantenedor: está fora do escopo da auditoria e é trabalho em andamento dele.
 
 **Fase 4 — A barra de endereço do CRV (1 sessão)**
 U1 na versão revisada: estado de expansão para a sessão, `hx-replace-url` nos
@@ -1080,35 +1101,35 @@ ainda precisam do seu aceite.
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
-| S1 | Cookie "lembrar-me" de 365 dias (CRV, MegaSena) | Alto | P | Baixo | Aceitar | **Aceito** — Fase 1 |
-| S2 | Sem expiração por inatividade (CRV, MegaSena) | Médio | P | Baixo | Aceitar | **Aceito** — Fase 1 |
-| S3 | BackupRestore aceita POST de qualquer origem | Médio | P | Baixo | Aceitar | **Aceito** — Fase 3 |
-| S4 | `_load_user` do CRV sem guarda | Baixo | P | Baixo | Aceitar | **Aceito** — Fase 1 |
-| S5 | Conforto fora do limiter compartilhado | Médio | P | Médio | Aceitar | **Aceito** — Fase 1 |
+| S1 | Cookie "lembrar-me" de 365 dias (CRV, MegaSena) | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| S2 | Sem expiração por inatividade (CRV, MegaSena) | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| S3 | BackupRestore aceita POST de qualquer origem | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| S4 | `_load_user` do CRV sem guarda | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| S5 | Conforto fora do limiter compartilhado | Médio | P | Médio | Aceitar | ✅ **Feito** 28/08 |
 | S6 | Rate limit por processo com 2 workers | Médio | M | Médio | Não agir | Registrado |
 | S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | MegaSena **recusado** 28/08; aberto só p/ CRV |
-| **S8** | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | **novo** |
-| **S9** | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | **novo** |
+| S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | U1 | Estado de UI na barra do CRV | Médio | M | Médio | **(b) direto**, revisado | **Aceito** — Fase 4 |
 | U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | **Aceito** — Fase 6 |
-| A1 | `sharedauth.secrets` | Alto | M | Baixo | Aceitar | **Aceito** — Fase 2 |
-| A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | **Aceito** — Fase 1 |
-| A3 | `iniciar_limiter` com política do consumidor | Médio | P | Baixo | Aceitar | **Aceito** — Fase 1 |
-| A4 | `aplicar_limite` / `isentar_limite` | Alto | P | Baixo | Aceitar | **Aceito** — Fase 1 |
+| A1 | `sharedauth.secrets` | Alto | M | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| A3 | `iniciar_limiter` com política do consumidor | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| A4 | `aplicar_limite` / `isentar_limite` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A5 | `sanitizar_log` compartilhado | Baixo | P | Baixo | Adiar (depende de S7) | Adiado |
-| **A7** | `ler_flag` no núcleo | Médio | P | Baixo | Aceitar | **novo** |
-| **A8** | `montar_url_postgres` em Python puro | Médio | P | Baixo | Aceitar | **novo** |
-| **A9** | `requer_papel` para o binário admin | Baixo | P | Baixo | Aceitar | **novo** |
+| A7 | `ler_flag` no núcleo | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| A8 | `montar_url_postgres` em Python puro | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| A9 | `requer_papel` para o binário admin | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H1 | Apagar `application.js`, consolidar em HTMX | Alto | G | Médio | Aceitar, em fases | **Aceito** — Fase 6 |
 | H2 | JS próprio do ConfortoTermico | Alto | G+ | Alto | Não agora | Registrado |
-| H3 | Doze arquivos com BOM | Baixo | P | Baixo | Aceitar | **Aceito** — Fase 3 |
+| H3 | Doze arquivos com BOM | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H4 | `gerar_zip_limpo.py` órfão | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H5 | Documentação do CRV | Médio | M | Baixo | Aceitar | **Aceito** — Fase 5 |
-| H6 | Faixas de dependência divergentes | Médio | P | Baixo | Aceitar | **Aceito** — Fase 3 |
+| H6 | Faixas de dependência divergentes | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H7 | Trabalho não commitado no BackupRestore | Baixo | — | — | Decisão sua | ✅ **Feito** 28/08 (`c838ebc`) |
 | H8 | Camada de compatibilidade de banco do Conforto | Médio | G+ | Alto | Não agora | Registrado |
-| **H9** | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | **novo** |
-| P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | **Aceito** — Fase 3 |
+| H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | P2 | Relatórios carregando tabela inteira | Baixo | G | Médio | Recusar | Recusado |
 
 ---

@@ -439,12 +439,26 @@ num select virava uma entrada de histórico e o botão "voltar" desfazia filtro
 por filtro em vez de sair da tela. Com `replace`, a URL continua refletindo o
 filtro e o histórico volta a ter uma entrada por tela.
 
-**O que NÃO foi feito, e por quê:** esvaziar a barra de vez exigiria mover os
-filtros para a sessão. Isso custa o que a URL hoje entrega de graça — link
-compartilhável, favorito, F5 — e faz duas abas da mesma tela disputarem o mesmo
-estado. Com a premissa corrigida, esse passo deixou de ser "tirar sujeira de
-interface da URL" e passou a ser "tirar filtros da URL", que é outra decisão.
-**Fica em aberto para o mantenedor.**
+**Feito depois (28/08), a pedido do mantenedor:** o ruído dos campos no padrão
+saiu da barra. Um formulário HTML serializa **todos** os seus campos, então a
+Carteira sem filtro nenhum chegava como
+`/?portfolio_id=all&broker=&return_days=365` — nada ali escolhido por ninguém.
+`app/url_limpa.py` monta o endereço equivalente sem esse ruído e o entrega em
+`HX-Replace-Url`; `/` voltou a ser `/`, e `?broker=XP` aparece exatamente
+quando alguém escolheu XP. Doze testes novos, incluindo dois que guardam a
+coerência das tabelas contra desvio.
+
+Decisão de desenho registrada no módulo: **parâmetro desconhecido é
+preservado, não descartado** — um filtro novo que alguém acrescente sem
+lembrar da tabela de padrões continua funcionando na barra, em vez de sumir do
+endereço em silêncio e quebrar favorito e link. Entre falha visível e
+silenciosa, a visível.
+
+**O que continua NÃO feito:** mover os *filtros* para a sessão. Isso custaria
+link compartilhável, favorito e F5, e faria duas abas da mesma tela disputarem
+o mesmo estado. Com o ruído já resolvido, o ganho restante seria só estético.
+**Fica em aberto para a revalidação geral**, depois que todas as fases
+estiverem concluídas.
 
 `group_by_broker` é o único campo pushado que é mais desenho que filtro. Ficou
 onde está: ele mora no formulário junto dos filtros, e "carteira agrupada por
@@ -466,7 +480,22 @@ atributo por elemento em vez de uma regra global no `application.js`.
 
 **Recomendação:** decidir U2 junto com H1, não separado.
 
-### U3 — MegaSena e ConfortoTermico: nada a fazer
+### U3 — MegaSena e ConfortoTermico
+
+**Atualizado em 28/08.** O ConfortoTermico segue sem nada a fazer: sem HTMX e
+sem `pushState`, a barra dele não recebe parâmetro nenhum.
+
+No MegaSena apareceu, ao implementar a Fase 4, o mesmo empilhamento de
+histórico do CRV — não na quantidade de parâmetros, mas no comportamento. Os
+dois controles que filtram (o formulário de concursos, disparado em `change`,
+e o seletor de período do painel) passaram a `hx-replace-url`.
+
+**A paginação de concursos ficou em `hx-push-url`, deliberadamente.** Paginar
+é navegação: sair da página 4 para a 5 e clicar em "voltar" tem de devolver a
+página 4. O motivo ficou escrito ao lado dos dois links, para ninguém
+"uniformizar" isso depois sem perceber o que perde.
+
+#### Registro original
 
 Registrado para fechar o inventário. A barra do MegaSena mostra só filtros
 legítimos de concursos; a do ConfortoTermico não mostra nada. O estado do

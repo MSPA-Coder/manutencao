@@ -250,9 +250,32 @@ e as ações não precisam ser auditáveis. Não é adiamento, é recusa; não
 reabrir.
 
 O item permanece aberto **somente para o ControleRendaVariavel**, onde o
-argumento era mais forte (multiusuário, dado financeiro pessoal). Se um dia
-for aceito só lá, [A5](#a5--sanitizar_log-anti-injeção-em-log) passaria a ter
-dois consumidores (Conforto e CRV) e valeria a pena.
+argumento era mais forte (multiusuário, dado financeiro pessoal).
+
+**Aceito e feito em 29/08, só no CRV.** Registra em duas frentes: explicitamente
+onde a ação tem nome (login, login recusado com motivo, logout, e as cinco
+operações de conta) e por evento `before_flush`/`after_flush` para as escritas
+que mudam a carteira — são dezoito pontos, e uma rota nova nasceria sem
+registro.
+
+`before_flush` coleta e `after_flush` grava por `insert()` do Core: um objeto
+acrescentado depois do flush não entraria nele, e a linha de criação sairia sem
+o id, que é justamente o campo pelo qual a trilha é consultada.
+
+Ficam **fora** de propósito: consulta, cadastro, e tudo que a coleta escreve —
+cotação chega do agente a cada poucos segundos e afogaria o registro com
+movimento que nenhuma pessoa fez.
+
+Três garantias com teste: a trilha não derruba a operação; `registrar` não faz
+commit (participa da transação de quem chamou); e todo texto de terceiro passa
+por `sanitizar_log`, chave e valor. A senha não entra nem redigida em
+`redefinir_senha`.
+
+`user_id` é `SET NULL` e não `CASCADE` — o oposto do resto do schema, e
+deliberado: apagar uma conta não pode apagar o registro do que ela fez.
+
+Consulta por `flask auditoria`. Sem tela nova: a trilha é consultada raramente
+e sob suspeita, e uma tela seria funcionalidade nova.
 
 ### S8 — Fechar `img-src data:` nos dois apps
 
@@ -619,6 +642,27 @@ sentido se [S7](#s7--crv-e-megasena-não-têm-trilha-de-auditoria) for aceito,
 porque aí nascem dois consumidores novos.
 
 **Recomendação:** não mover agora. Reavaliar se S7 for aceito.
+
+**Feito em 29/08 (SharedAuth v0.7.0),** quando o S7 foi aceito para o CRV e o
+segundo consumidor passou a existir.
+
+A versão compartilhada não é a cópia da local. A do Conforto redigia quatro
+chaves e **não cobria o ataque que o nome sugere**: injeção de linha. Um login
+como `joao
+2026-08-29 03:00:00 INFO login bem-sucedido usuario=admin` vira
+duas linhas no log, e a segunda é indistinguível de um registro verdadeiro —
+para quem for ler o log justamente depois de um incidente.
+
+Entraram também `Bearer`/`Basic` (que não têm `=` nem `:` e escapavam da regra
+de atribuição), senha dentro de URL de conexão (como aparece numa exceção de
+driver) e teto de tamanho.
+
+**Duas correções no caminho:** a ordem das regras estava errada — em
+`Authorization: Bearer abc` a regra de atribuição redigia só a palavra "Bearer"
+e deixava o token; e o único uso que existia no Conforto **descartava o
+retorno**, numa linha própria, com um comentário dizendo que sanitizava. Não
+sanitizava nada. O saneamento passou para dentro de `log_login_falha`, na
+fronteira do módulo de auditoria, o que cobre todo chamador.
 
 ### A7 — `ler_flag`: leitura de booleano de ambiente
 
@@ -1371,8 +1415,8 @@ conjunto:
 Estado em 28/08, depois da sua aprovação geral e da revalidação. Os itens
 marcados **novo** não estavam na versão que você aprovou; os que já foram
 executados perderam a marca ao longo do caminho. **Nenhum achado aguarda
-decisão minha.** O que resta são os cinco que você decidiu não fazer agora —
-H2, H8, S6, S7 e P2 — e o A5, adiado por depender do S7.
+decisão minha.** O que resta são os quatro que você decidiu não fazer — H2, H8,
+S6 e P2 — mais o S7 no MegaSena, recusado por você e que não se reabre.
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
@@ -1382,7 +1426,7 @@ H2, H8, S6, S7 e P2 — e o A5, adiado por depender do S7.
 | S4 | `_load_user` do CRV sem guarda | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S5 | Conforto fora do limiter compartilhado | Médio | P | Médio | Aceitar | ✅ **Feito** 28/08 |
 | S6 | Rate limit por processo com 2 workers | Médio | M | Médio | Não agir | Registrado |
-| S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | MegaSena **recusado** 28/08; aberto só p/ CRV |
+| S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | MegaSena **recusado**; ✅ **Feito no CRV** 29/08 |
 | S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | U1 | Estado de UI na barra do CRV | Baixo | P | Baixo | **Premissa corrigida** — ver o achado | ⚠️ **Parcial** 28/08 |
@@ -1391,7 +1435,7 @@ H2, H8, S6, S7 e P2 — e o A5, adiado por depender do S7.
 | A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A3 | `iniciar_limiter` com política do consumidor | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A4 | `aplicar_limite` / `isentar_limite` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| A5 | `sanitizar_log` compartilhado | Baixo | P | Baixo | Adiar (depende de S7) | Adiado |
+| A5 | `sanitizar_log` compartilhado | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 (SharedAuth v0.7.0) |
 | A7 | `ler_flag` no núcleo | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A8 | `montar_url_postgres` em Python puro | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A9 | `requer_papel` para o binário admin | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |

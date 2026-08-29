@@ -391,49 +391,64 @@ quatro.
 
 ### U1 — Estado de interface na barra do CRV
 
-**Impacto: Médio (é o seu incômodo declarado) · Esforço: M · Risco: Médio**
+**⚠️ CORRIGIDO EM 28/08 — a afirmação central deste achado estava errada.**
 
-Quatro parâmetros do CRV só descrevem como a tela está desenhada. Uma tela de
-proventos com dois ativos e um ano abertos produz algo como
+**O que eu afirmei:** que `expanded`, `expanded_tickers`, `expanded_years` e
+`group_by_broker` apareciam na barra de endereços por causa do
+`hx-push-url="true"` em oito templates, produzindo URLs como
 `?broker=XP&expanded_tickers=12,47&expanded_years=2025-BRL`.
 
-**Isto foi uma decisão consciente, não um descuido.** Os docstrings em
-[dividends.py:69-77](ControleRendaVariavel/app/routes/dividends.py) e
-[options.py:106-111](ControleRendaVariavel/app/routes/options.py) explicam: o
-estado vive na URL para sobreviver à troca do fragmento inteiro pelo HTMX — sem
-isso, atualizar o filtro fecharia tudo o que estava aberto.
+**O que é verdade:** os três primeiros **nunca chegam à barra**. Verificado ao
+começar a implementação:
 
-Três saídas, da mais barata para a mais completa:
+- os botões de `+` usam `hx-get` e **não** têm `hx-push-url` próprio
+  ([portfolio_results.html:33](ControleRendaVariavel/app/templates/partials/portfolio_results.html),
+  [dividends_results.html:38](ControleRendaVariavel/app/templates/partials/dividends_results.html));
+- o htmx resolve `hx-push-url` por **ancestral**, e esses botões não são
+  descendentes do formulário de filtro: em
+  [base.html:222-231](ControleRendaVariavel/app/templates/base.html) o
+  `header_controls` (onde vive o formulário) e o `content` (onde vive a tabela)
+  são irmãos;
+- as URLs de toggle são consumidas **exclusivamente** em `hx-get`, nunca em
+  `href` — confirmado por busca em todos os templates e no JS.
 
-- **(a) `hx-replace-url` no lugar de `hx-push-url`** — Esforço P, Risco Baixo.
-  A URL continua feia, mas para de empilhar histórico: o botão "voltar" deixa
-  de percorrer cada clique de `+`. Resolve metade do incômodo por quase nada.
-- **(b) mover a expansão para a sessão do servidor** — Esforço M, Risco Médio.
-  A barra fica com só o filtro (`?broker=XP`). O estado passa a viver em
-  `session["expanded"]`, o que sobrevive ao F5 igual. Custo real: duas abas da
-  mesma tela passam a compartilhar o estado de expansão e brigam entre si.
-- **(c) encurtar os nomes** (`exp`, `expt`, `expy`) — Esforço P, Risco Baixo.
-  Cosmético; não resolve nada de fundo.
+Ou seja: esses parâmetros viajam apenas na requisição do fragmento. A barra
+nunca os vê, e um F5 não os preserva — o que o docstring de
+[dividends.py:69-77](ControleRendaVariavel/app/routes/dividends.py) sempre
+disse, corretamente: o estado está lá para sobreviver à **troca do fragmento**,
+não ao recarregamento da página.
 
-**Recomendação original:** (a) agora, (b) depois e só em duas telas.
+**O que de fato aparece na barra** é exatamente o conjunto de campos dentro de
+cada formulário que empurra a URL:
 
-**Recomendação revisada (28/08):** fazer **(b) direto, nos quatro parâmetros e
-em todas as telas**, e usar `hx-replace-url` para os filtros de verdade que
-continuam na URL.
+| Tela | Campos que vão para a barra |
+|---|---|
+| `/` (carteira) | `portfolio_id`, `broker`, `group_by_broker`, `return_days` |
+| `/transactions` | `portfolio_id`, `broker`, `status` |
+| `/performance` | `portfolio_id`, `portfolio`, `broker`, `period`, `benchmark_ticker_id` |
+| `/dividends` | `broker` |
+| `/options` | `portfolio_id`, `broker` |
+| `/quotes` | `ticker_id`, `benchmark_ticker_id` |
 
-O que mudou: minha hesitação vinha dos docstrings que registravam a escolha
-como deliberada. Removido esse peso, o julgamento pelo mérito é simples —
-`expanded_tickers=12,47` não é informação sobre *quais dados* a tela mostra, é
-informação sobre *como ela está desenhada*, e não pertence a um endereço.
-Fazer (a) e depois (b) seria mexer duas vezes no mesmo lugar.
+São filtros — seleção de dados, não desenho de tela. É o caso em que a URL
+paga o que custa: F5, favorito e link continuam funcionando.
 
-O resultado: a barra passa a mostrar `?broker=XP` e nada mais, e o histórico
-para de registrar cada clique de `+`.
+**O que foi feito (Fase 4):** trocar `hx-push-url` por `hx-replace-url` nas
+oito ocorrências. O gatilho desses formulários é `change`, então cada mexida
+num select virava uma entrada de histórico e o botão "voltar" desfazia filtro
+por filtro em vez de sair da tela. Com `replace`, a URL continua refletindo o
+filtro e o histórico volta a ter uma entrada por tela.
 
-**O trade-off que permanece e não vem de documentação:** com o estado na
-sessão, duas abas da mesma tela passam a compartilhar quais linhas estão
-abertas e se sobrescrevem. Num sistema de um usuário só isso é aceitável, mas
-é uma perda real e você deve saber que ela existe antes de eu implementar.
+**O que NÃO foi feito, e por quê:** esvaziar a barra de vez exigiria mover os
+filtros para a sessão. Isso custa o que a URL hoje entrega de graça — link
+compartilhável, favorito, F5 — e faz duas abas da mesma tela disputarem o mesmo
+estado. Com a premissa corrigida, esse passo deixou de ser "tirar sujeira de
+interface da URL" e passou a ser "tirar filtros da URL", que é outra decisão.
+**Fica em aberto para o mantenedor.**
+
+`group_by_broker` é o único campo pushado que é mais desenho que filtro. Ficou
+onde está: ele mora no formulário junto dos filtros, e "carteira agrupada por
+corretora" é um estado que faz sentido guardar num favorito.
 
 ### U2 — Estado de interface na barra do ControleBancario
 
@@ -1013,9 +1028,20 @@ coluna do relatório — e depois exige `rendered.count("Ana") == 1`. A asserç�
 não acompanhou a chegada do painel de filtros ao partial. Deixado para o
 mantenedor: está fora do escopo da auditoria e é trabalho em andamento dele.
 
-**Fase 4 — A barra de endereço do CRV (1 sessão)**
-U1 na versão revisada: estado de expansão para a sessão, `hx-replace-url` nos
-filtros que ficam. Quatro parâmetros, oito templates.
+**Fase 4 — A barra de endereço do CRV — ⚠️ concluída com escopo reduzido em 28/08**
+
+A implementação começou por verificar a premissa, e a premissa estava errada:
+`expanded`, `expanded_tickers` e `expanded_years` nunca chegaram à barra de
+endereços. Ver [U1](#u1--estado-de-interface-na-barra-do-crv) para a apuração.
+
+Feito: `hx-push-url` → `hx-replace-url` nas oito ocorrências, o que resolve o
+empilhamento de histórico (cada mexida num select criava uma entrada). Suíte
+do CRV: 117 testes, 0 falhas; `ruff` limpo.
+
+Não feito: mover os filtros para a sessão. Com a premissa corrigida, isso
+deixou de ser higiene e virou uma troca — perder link compartilhável, favorito
+e F5 em nome de uma barra vazia. É decisão do mantenedor, não consequência do
+achado.
 
 **Fase 5 — Documentação do CRV (1 sessão)**
 H5: `architecture.md` e `development.md`.
@@ -1110,7 +1136,7 @@ ainda precisam do seu aceite.
 | S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | MegaSena **recusado** 28/08; aberto só p/ CRV |
 | S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| U1 | Estado de UI na barra do CRV | Médio | M | Médio | **(b) direto**, revisado | **Aceito** — Fase 4 |
+| U1 | Estado de UI na barra do CRV | Baixo | P | Baixo | **Premissa corrigida** — ver o achado | ⚠️ **Parcial** 28/08 |
 | U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | **Aceito** — Fase 6 |
 | A1 | `sharedauth.secrets` | Alto | M | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |

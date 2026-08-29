@@ -222,37 +222,31 @@ por rota do Conforto. Nenhum deles é crítico.
 é exatamente o tipo de sofisticação que os sistemas não pedem. Reavaliar se um
 dia a topologia mudar.
 
-### S7 — CRV e MegaSena não têm trilha de auditoria
+### S7 — Trilha de auditoria — ✅ **encerrado**
 
 **Impacto: Médio · Esforço: G · Risco: Baixo**
 
-ConfortoTermico tem [`app/audit_log.py`](ConfortoTermico/app/audit_log.py) e o
-ControleBancario tem tabela `audit_log` com registro em dez módulos. CRV e
-MegaSena não têm nada: quem entrou, quem mudou uma posição, quem desativou um
-usuário — não fica registrado em lugar nenhum.
+**Como estava:** ConfortoTermico tinha
+[`app/audit_log.py`](ConfortoTermico/app/audit_log.py) e o ControleBancario a
+tabela `audit_log`, com registro em dez módulos. CRV e MegaSena não tinham
+nada — quem entrou, quem mudou uma posição, quem desativou um usuário não
+ficava registrado em lugar nenhum.
 
-Isto é fronteira: pode ser lido como funcionalidade nova, e você disse que não
-há prioridade para funcionalidades novas. Fica listado porque é a única
-assimetria de segurança relevante entre os quatro, e porque o CRV é
-multiusuário com dado financeiro pessoal.
+**Como ficou:** o CRV passou a ter (ver abaixo). O MegaSena fica sem, por
+decisão de escopo do mantenedor. Os dois lados estão resolvidos; este achado
+não tem parte pendente.
 
 **Recomendação:** decisão sua. Se aceitar, a persistência fica em cada app (a
 carta do SharedAuth proíbe persistência na biblioteca) e só o contrato de
 sanitização é compartilhado — ver [A5](#a5--sanitizar_log-anti-injeção-em-log).
 
-*Nota da revalidação:* este item continua adiado, mas não por causa da
-documentação — e sim porque você disse que não há prioridade para
-funcionalidade nova, e uma trilha de auditoria é funcionalidade nova.
+**O MegaSena está fora do escopo deste achado, em definitivo.** O mantenedor
+determinou que aquele sistema não precisa de rastreabilidade: é simples e as
+ações não precisam ser auditáveis. Não é adiamento nem pendência — é o escopo
+do achado. Não reabrir, não relistar, não perguntar de novo.
 
-**Decisão de 28/08 — MegaSena está fora, definitivamente.** O mantenedor
-determinou que o MegaSena não precisa de rastreabilidade: é um sistema simples
-e as ações não precisam ser auditáveis. Não é adiamento, é recusa; não
-reabrir.
-
-O item permanece aberto **somente para o ControleRendaVariavel**, onde o
-argumento era mais forte (multiusuário, dado financeiro pessoal).
-
-**Aceito e feito em 29/08, só no CRV.** Registra em duas frentes: explicitamente
+**Feito em 29/08, no ControleRendaVariavel**, onde o argumento era mais forte:
+multiusuário, dado financeiro pessoal. Registra em duas frentes: explicitamente
 onde a ação tem nome (login, login recusado com motivo, logout, e as cinco
 operações de conta) e por evento `before_flush`/`after_flush` para as escritas
 que mudam a carteira — são dezoito pontos, e uma rota nova nasceria sem
@@ -1415,8 +1409,8 @@ conjunto:
 Estado em 28/08, depois da sua aprovação geral e da revalidação. Os itens
 marcados **novo** não estavam na versão que você aprovou; os que já foram
 executados perderam a marca ao longo do caminho. **Nenhum achado aguarda
-decisão minha.** O que resta são os quatro que você decidiu não fazer — H2, H8,
-S6 e P2 — mais o S7 no MegaSena, recusado por você e que não se reabre.
+decisão minha.** O que resta são os quatro que você decidiu não fazer: H2, H8,
+S6 e P2.
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
@@ -1426,7 +1420,7 @@ S6 e P2 — mais o S7 no MegaSena, recusado por você e que não se reabre.
 | S4 | `_load_user` do CRV sem guarda | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S5 | Conforto fora do limiter compartilhado | Médio | P | Médio | Aceitar | ✅ **Feito** 28/08 |
 | S6 | Rate limit por processo com 2 workers | Médio | M | Médio | Não agir | Registrado |
-| S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | MegaSena **recusado**; ✅ **Feito no CRV** 29/08 |
+| S7 | Trilha de auditoria | Médio | G | Baixo | Decisão sua | ✅ **Encerrado** 29/08 — feito no CRV, fora do escopo do MegaSena |
 | S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | U1 | Estado de UI na barra do CRV | Baixo | P | Baixo | **Premissa corrigida** — ver o achado | ⚠️ **Parcial** 28/08 |

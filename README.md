@@ -19,6 +19,7 @@ executar o procedimento correspondente no servidor.
 | Alerta | [`vps/alerta.sh`](vps/alerta.sh), [`vps/alerta@.service`](vps/alerta@.service), [`vps/certbot.service.d/alerta.conf`](vps/certbot.service.d/alerta.conf) | Envia falhas ao Telegram, inclui logs de unidades systemd e suprime repetições. O notificador sempre termina com sucesso para não criar cascata de falhas. |
 | Vigia | [`vps/vigia.sh`](vps/vigia.sh), [`vps/vigia.service`](vps/vigia.service), [`vps/vigia.timer`](vps/vigia.timer) | Verifica disco, `/health` público, certificados e frescor dos backups; alerta condições persistentes. |
 | Autocura | [`vps/autocura.sh`](vps/autocura.sh), [`vps/autocura.service`](vps/autocura.service), [`vps/autocura.timer`](vps/autocura.timer) | Reinicia contêineres `unhealthy` com teto de tentativas e alerta quando a recuperação automática não resolve. |
+| Limpeza do Docker | [`vps/docker-prune.sh`](vps/docker-prune.sh), [`vps/docker-prune.service`](vps/docker-prune.service), [`vps/docker-prune.timer`](vps/docker-prune.timer) | Poda semanalmente o cache de build acumulado pelos deploys; nunca toca imagem em uso por contêiner ativo. |
 | Monitor externo | [`vps/uptimerobot-monitores.sh`](vps/uptimerobot-monitores.sh) | Consulta ou aplica monitores UptimeRobot do tipo keyword para os quatro endpoints públicos `/health`, usando e-mail como canal independente do VPS. |
 | Entrada HTTP/TLS | [`vps/nginx/`](vps/nginx/) | Mantém os quatro vhosts, TLS/HSTS, proxy central, gzip, rejeição de host desconhecido e limite compartilhado somente para `POST /login`. |
 

@@ -4,6 +4,8 @@
 #   ./vigia.sh            faz o ciclo e alerta
 #   ./vigia.sh --estado   mostra tudo, sem alertar
 #
+# Cada verificação aqui cobre uma falha que hoje não tem quem a perceba.
+#
 # A de frescor do backup fecha um buraco do `OnFailure=`: ele só dispara se o
 # serviço RODAR e falhar. Timer desabilitado por engano, systemd que não
 # disparou, máquina desligada na hora — em nenhum desses casos existe falha
@@ -17,6 +19,7 @@ BACKUPS=/home/ubuntu/backups
 DISCO_TETO=80          # % de uso a partir do qual alerta
 BACKUP_MAX_HORAS=36    # ciclo é diário; 36h já é atraso, não variação
 CERT_MIN_DIAS=15       # certbot renova aos 30; 15 significa que falhou 2x
+REBOOT_MAX_DIAS=3      # tolera o fim de semana; não deixa acumular semanas
 
 DOMINIOS=(
     conforto-mspa.duckdns.org
@@ -142,6 +145,28 @@ rodar. Conferir o timer, não o script:
   systemctl list-timers backup-db.timer"
     fi
 done
+
+# --------------------------------------------------------------------------
+# Reboot pendente
+#
+# unattended-upgrades instala patches de segurança mas não reinicia sozinho
+# (Automatic-Reboot fica desligado de propósito — reboot dos 4 apps junto é
+# decisão de horário, não de script). Sem este aviso, um kernel corrigido
+# fica parado sem rodar por tempo indefinido e ninguém percebe.
+# --------------------------------------------------------------------------
+if [ -f /var/run/reboot-required ]; then
+    dias=$(( ( $(date +%s) - $(stat -c %Y /var/run/reboot-required) ) / 86400 ))
+    [ "$MODO" = "--estado" ] && echo "reboot pendente: há ${dias} dia(s)"
+    if [ "$dias" -ge "$REBOOT_MAX_DIAS" ]; then
+        alertar "REBOOT pendente há ${dias} dia(s)" \
+"$(cat /var/run/reboot-required.pkgs 2>/dev/null || echo '(lista de pacotes indisponível)')
+
+Containers têm restart automático (unless-stopped). Escolha um horário de
+baixo uso, reinicie e confira o menu do bot do Telegram em seguida."
+    fi
+else
+    [ "$MODO" = "--estado" ] && echo "reboot pendente: nao"
+fi
 
 if [ "$MODO" != "--estado" ]; then
     registrar "ciclo concluído — $falhas alerta(s)"

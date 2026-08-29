@@ -1,0 +1,11 @@
+[Unit]
+Description=Dispara a poda do cache de build do Docker semanalmente
+
+[Timer]
+OnCalendar=Sun 04:30
+RandomizedDelaySec=15min
+Persistent=true
+Unit=docker-prune.service
+
+[Install]
+WantedBy=timers.target

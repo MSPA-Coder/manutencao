@@ -1176,30 +1176,36 @@ tinha encontrado: o comentário errado de `compose.dev.yaml` (corrigido junto), 
 ausência de `Vary: HX-Request` (H10) e — o mais sério dos três — o comando de
 validação que roda a imagem antiga (H11, corrigido no CRV).
 
-**Fase 6 — ControleBancario sem a navegação própria — ✅ concluída em 29/08**
+**Fase 6 — ControleBancario sem a navegação própria — ❌ revertida em 29/08**
 
-H1, que resolveu o U2 junto. Saldo: **−518 linhas, +168**; `application.js`
-caiu de 969 para 428. Suíte: 169 testes, 0 falhas (eram 151).
+Implementada, merjada e **revertida no mesmo dia**. A primeira passagem no
+navegador com dados reais derrubou a premissa central: trocar o titular em
+Lançamentos zerava a tabela.
 
-O contrato passou a ser declarado no template por uma tag única
-(`{% nav_filtro %}`): `hx-select` recorta o conteúdo da página inteira que a
-view já devolve, então **nenhuma view precisou aprender a responder
-fragmento**. O U2 saiu por `HX-Replace-Url`, com o mesmo critério do CRV —
-parâmetro desconhecido preservado, falha visível em vez de silenciosa.
+**O erro.** Eu parti de "as views devolvem a página inteira, então `hx-select`
+recorta e nenhuma view precisa mudar". Não é o caso: há **27 ramos**
+`if request.headers.get("HX-Request")` no projeto, todos devolvendo o fragmento
+de conteúdo. A navegação antiga não caía neles porque mandava
+`X-Requested-With: XMLHttpRequest`, não `HX-Request` — recebia a página inteira
+e recortava. Ao virar HTMX, a mesma requisição passou a mandar `HX-Request`,
+caiu no ramo do fragmento, e `hx-select="#appMain"` não acha `#appMain` dentro
+de um fragmento que não o contém.
 
-Duas coisas ficaram em JavaScript, com o motivo escrito ao lado: a
-reconciliação de filtro que o servidor corrige em silêncio
-(`selected_context` anula conta que não é do titular), e o evento
-`app:contentLoaded`, que três arquivos consomem para reconstruir gráfico,
-calendário e atalhos.
+**Por que nada pegou antes.** A suíte não exercita o cliente; os 18 testes que
+escrevi verificavam o contrato *no template*, e ele estava correto. O fixture
+isolado com que verifiquei o HTMX 2.0.4 também estava correto — e servia página
+inteira, que era exatamente a premissa errada. **A verificação que faltava era
+a única que importava**, e foi o primeiro clique nela que revelou.
 
-`_syncSidebarLinks` foi apagado **sem substituto**: copiava hrefs do menu, e
-os hrefs do menu são literais estáticos, sem query. Copiava valor idêntico
-sobre valor idêntico — 14 linhas que nunca fizeram nada.
+**O que fica para refazer.** A direção continua certa e o caminho é *mais
+curto* do que o desenhado: as views já devolvem o fragmento certo, então o
+contrato é `hx-target="#appMain"` + `hx-swap="innerHTML"`, **sem `hx-select`**.
+Falta resolver a sincronia do `#appPageHeader` (os seletores dependentes), que
+os fragmentos não carregam — provavelmente uma cópia OOB, como as views já
+fazem com os cartões de resumo (`render_oob_summary`).
 
-O contrato do HTMX 2.0.4 foi verificado em fixture isolado, fora dos dados
-reais. Falta a passagem no navegador com dados reais, que nenhum teste
-substitui.
+Lição a registrar junto do achado: **premissa sobre o servidor não se verifica
+em fixture** — só contra o servidor.
 
 **Concluídos em 28/08:** H4 (script órfão removido), H7 (agendamento
 commitado).
@@ -1291,7 +1297,7 @@ precisa do seu aceite.
 | S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | U1 | Estado de UI na barra do CRV | Baixo | P | Baixo | **Premissa corrigida** — ver o achado | ⚠️ **Parcial** 28/08 |
-| U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | ✅ **Feito** 29/08 |
+| U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | ⏸ Volta com H1 |
 | A1 | `sharedauth.secrets` | Alto | M | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A3 | `iniciar_limiter` com política do consumidor | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1300,7 +1306,7 @@ precisa do seu aceite.
 | A7 | `ler_flag` no núcleo | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A8 | `montar_url_postgres` em Python puro | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A9 | `requer_papel` para o binário admin | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H1 | Apagar `application.js`, consolidar em HTMX | Alto | G | Médio | Aceitar, em fases | ✅ **Feito** 29/08 |
+| H1 | Apagar `application.js`, consolidar em HTMX | Alto | G | Médio | Aceitar, em fases | ⚠️ Tentado e **revertido** 29/08 |
 | H2 | JS próprio do ConfortoTermico | Alto | G+ | Alto | Não agora | Registrado |
 | H3 | Doze arquivos com BOM | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H4 | `gerar_zip_limpo.py` órfão | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |

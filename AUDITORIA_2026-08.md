@@ -951,6 +951,27 @@ idênticas de cada arquivo. `vary.add` preserva o que a rota já declarou.
 > projeto Django, a tupla sobe, por ser neutra de framework. Verificado:
 > `Vary: HX-Request, HX-Target, Cookie` nas quatro combinações.
 
+> **Terceira correção, em 29/08 — o ✅ vale para o repositório, não para o que
+> está no ar.** A correção acima foi para `registrar_cabecalhos`, e os três apps
+> Flask de fato a chamam no código. Mas os três contêineres em execução na
+> máquina do mantenedor têm **sharedauth 0.3.0** instalado, quatro versões antes
+> da que acrescentou o `Vary` — e código de aplicação igualmente anterior (o
+> `app/__init__.py` dentro da imagem do MegaSena não tem `sharedauth.config`,
+> `sharedauth.secrets` nem `aplicar_limite`).
+>
+> Medido no navegador contra o CRV: `/`, `/performance`, `/transactions` e
+> `/dividends` devolvem corpos de tamanhos completamente diferentes conforme
+> `HX-Request`, e o `Vary` só menciona `Cookie`. Isso não é defeito de código —
+> é a imagem. **O que falta neste achado deixou de ser programação e passou a
+> ser implantação**, e nenhum dos dois lados aparece sozinho: quem lê só o
+> repositório conclui que está feito; quem mede só o servidor conclui que não
+> começou.
+>
+> Vale como aviso para o método deste documento. A §14 registrou "um bump de
+> pino registrado como entrega, sem verificar se a função é invocada". Este é o
+> passo seguinte da mesma pergunta — **o pino descreve o que a próxima
+> construção instalará, não o que está instalado**. Ver T6 na §15.
+
 ### H11 — `run --rm quality` valida a imagem antiga — **novo**
 
 **Impacto: Alto · Esforço: P · Risco: Baixo**
@@ -1645,3 +1666,147 @@ combinação que `_validar_debug` já cobrava do `CONFORTO_DEBUG`.
 quatro apps afirma sobre esse tipo, e nos dois casos a falha continua
 derrubando a inicialização de forma visível. Fica registrado por ser uma
 diferença real de contrato, não por ter causado problema.
+
+---
+
+## 15. Revalidação de 29/08 (2ª parte) — os irmãos, sob as lições da §14
+
+Feita a pedido do mantenedor: *"use as lições aprendidas nesse chat e aplique
+nos outros projetos"*, com a observação de que muitos defeitos só apareceram
+"usando o sistema de verdade". Escopo: MegaSena, ControleRendaVariavel,
+ConfortoTermico e BackupRestore.
+
+Método: varredura dirigida pelos achados da §14 — permissão que não guarda
+nada, rota sem verificação, teste que acomoda defeito, docstring que promete o
+que o código não faz — mais uma passagem pelo navegador, com sessão real,
+contra os três servidores no ar.
+
+**O BackupRestore ficou de fora, e não por omissão:** não tem login por
+projeto (loopback mais checagem de `Host`/`Origin`, ver S3), não tem papéis e
+não usa HTMX. Nenhuma das lições tem onde pegar.
+
+### O que o navegador mudou no método
+
+Antes de qualquer achado, uma constatação que reordenou o resto:
+
+| Contêiner | sharedauth instalado | Pinado no repositório |
+|---|---|---|
+| `mega-sena-app-1` | 0.3.0 | v0.7.0 |
+| `controle-renda-variavel-web-1` | 0.3.0 | v0.7.0 |
+| `conforto-termico-ict-1` | 0.3.0 | v0.7.0 |
+
+**Isso derrubou um achado que eu já tinha escrito.** Medi no navegador que o
+CRV não declara `Vary: HX-Request` tendo dez pontos de decisão por esse
+cabeçalho, e ia registrar como defeito de código. Não é: a v0.7.0 põe o `Vary`
+em toda resposta HTML dentro de `registrar_cabecalhos`, que o CRV chama. O que
+eu media era a 0.3.0.
+
+É o erro da §14 na direção contrária. Lá, o pino subiu e ninguém conferiu se a
+função rodava. Aqui, olhei o que rodava e quase acusei o código de um defeito
+da imagem. As duas metades da pergunta — *o código chama?* e *o que está no ar
+é este código?* — precisam ser feitas juntas.
+
+### Achados
+
+| # | Achado | Projeto | Situação |
+|---|---|---|---|
+| T1 | Autorização por área liberava endpoint não mapeado; seis leituras abertas | ConfortoTermico | ✅ Corrigido |
+| T2 | A interface abre sem aba selecionada e sem painel visível | ConfortoTermico | ✅ Corrigido |
+| T3 | `POST /reset` apaga a base inteira sem exigir administrador | MegaSena | ✅ Corrigido |
+| T4 | CSS e JS do componente comum bloqueados na própria tela de login | MegaSena | ✅ Corrigido |
+| T5 | Teste de papel media `__wrapped__`, e numa rota só | CRV | ✅ Corrigido |
+| T6 | Três pilhas no ar com biblioteca e código anteriores ao repositório | os três | ⚠️ Aberto — depende de reconstrução |
+
+**T1 é o R1 deste projeto, com a mesma forma e outra mecânica.**
+`AREA_POR_ENDPOINT.get(endpoint)` devolvendo `None` **liberava**. Seis rotas de
+leitura ficaram fora do mapa: as quatro da aba Histórico (`historico_zona`,
+`historico_leituras`, `agregados_15min_zona`, `resumo_horario_zona`) e as duas
+da aba Operação (`status_operacao`, `eventos_operacao`). O perfil `operador`
+não tem a área `historico`, o template escondia a aba, e as quatro entregavam
+as medições assim mesmo. A **escrita** da mesma aba
+(`consolidar_historico_zona`) sempre exigiu área, no mesmo arquivo, duas linhas
+acima. E o docstring do módulo afirmava aplicar área "a TODA rota do app".
+
+Corrigido nos dois sentidos: as seis mapeadas, e o hook passou a **negar** o
+que não está mapeado, com `ENDPOINTS_ABERTOS_A_QUALQUER_PERFIL` listando com
+motivo escrito as quatro que são mesmo abertas. A `comum.index` está entre
+elas, e o motivo é o R9: ela é o destino de `_negar_acesso`, e exigir área ali
+seria o laço.
+
+**T2 é o achado que só o uso entrega.** Depois do login, os oito painéis vinham
+ocultos e nenhuma aba vinha marcada — a tela abria vazia até o primeiro clique.
+`rotas_comuns.index` renderizava `index.html` **sem passar `aba_inicial`**, e o
+template compara essa variável com o nome da aba; comparação com o `Undefined`
+do Jinja dá `False` em silêncio. `ativarAba`, no `app.js`, só está ligada ao
+clique. `git log -S` mostra que a variável entrou no template na "versão
+inicial consolidada V2.0" e **nunca teve produtor** — não é regressão, nunca
+funcionou. Do outro lado do mesmo recurso, `/api/configuracao-interface`
+devolve `"abaInicial": "principal"` e nenhum JS lê esse campo: uma variável
+consumida sem produtor e um valor produzido sem consumidor.
+
+Corrigido com `primeira_aba_permitida(perfil)`, derivando em vez de fixar em
+"Dashboard" — fixar funcionaria hoje só porque todo perfil tem a área
+`dashboard`, e essa dependência não ficaria escrita em lugar nenhum. É o R9
+outra vez, agora dentro da SPA.
+
+**T3 foi decisão do mantenedor**, consultado porque muda o que os operadores
+podem fazer: `/reset` apaga todos os concursos e apostas e não exigia papel, e
+`POST /settings` muda o padrão de geração de todo mundo. Os dois passaram a
+exigir administrador, junto com o `GET /settings` — deixar o formulário visível
+e recusar só o POST daria uma tela existindo para não funcionar.
+
+**T4 é uma lição que existia no irmão e não atravessou.** O `base.html` do
+MegaSena carrega o CSS e o JS do componente comum, e `auth/login.html` estende
+`base.html`; sem sessão, os dois são redirecionados para `/login` e o navegador
+os recusa por MIME. O efeito visível é o toast de "Sessão encerrada" nunca
+aparecer depois do logout, porque quem o monta é o JS bloqueado. **O CRV já
+tinha resolvido isso**, e o comentário na sua `PUBLIC_ENDPOINTS` descreve o
+sintoma com precisão — "sem isto `requer_login` bloquearia o próprio arquivo
+que renderiza 'Usuário ou senha inválidos'". O ConfortoTermico resolveu de
+outro jeito, mantendo o componente fora do layout de login. Dois irmãos
+resolveram; o terceiro não soube.
+
+### O tema que atravessa T1, T4 e T5: testes que medem a coisa errada
+
+Nenhum dos três defeitos passou por falta de teste. Passou por teste que
+respondia outra pergunta:
+
+- **ConfortoTermico** afirmava sobre o **código-fonte** do hook: que as
+  palavras `AREA_POR_ENDPOINT`, `area_permitida(` e `_negar_acesso()`
+  apareciam nele. Todas apareciam, o tempo inteiro em que seis rotas estavam
+  abertas. Conferir que a verificação está *escrita* não responde se ela
+  *alcança* as rotas.
+- **MegaSena e CRV** varriam a `url_map` exigindo sessão em toda rota, mas
+  **pulavam rotas com parâmetro**, com o motivo escrito no comentário: "as sem
+  parâmetro já cobrem a decisão, que é do `before_request` e não da rota". O
+  argumento é verdadeiro sobre onde a decisão mora e falso sobre o que a suíte
+  mede — e a única rota parametrizada não pública do MegaSena era justamente a
+  defeituosa (T4). O filtro descartava exatamente a rota errada.
+- **CRV** amarrava o papel a uma rota com
+  `getattr(view, "__wrapped__") is not None` — verdadeiro para qualquer
+  decorator que use `functools.wraps`, inclusive um `@login_required` sozinho.
+  Passava sem provar papel nenhum, e só olhava `/settings`.
+
+As três guardas foram trocadas por medições de resultado: varredura sem pulo,
+comparação do **conjunto** de rotas protegidas com uma lista declarada — e não
+rota a rota, que só encontra o que alguém já suspeitava — e requisições reais
+com sessão e perfil.
+
+### Verificação
+
+| Projeto | Suíte | Ruff |
+|---|---|---|
+| ConfortoTermico | 190 ✓ | limpo |
+| ControleRendaVariavel | 155 ✓ | limpo |
+| MegaSena | 77 ✓ | limpo |
+
+Um dos testes novos reprovou na primeira execução, e o defeito era do teste:
+afirmava que toda área vira aba, e `usuarios` é uma página fora da SPA. A
+asserção passou a declarar as áreas sem aba com o motivo, em vez de afrouxar.
+
+### T6 — o que continua aberto
+
+As três pilhas em execução precisam ser reconstruídas para receberem qualquer
+coisa registrada aqui, inclusive o H10, que no código já está resolvido. A
+reconstrução reinicia serviços e é decisão do mantenedor, não efeito colateral
+de uma auditoria.

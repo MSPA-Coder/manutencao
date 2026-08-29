@@ -927,6 +927,30 @@ garantido por construção, e o `render_vary` foi apagado.
 Só HTML: acrescentar `Vary` aos estáticos faria um cache guardar duas cópias
 idênticas de cada arquivo. `vary.add` preserva o que a rota já declarou.
 
+> **Corrigido em 29/08, depois da revalidação — o ✅ acima estava errado para o
+> ControleBancario.** A tabela deste achado lista como ausentes CRV,
+> ConfortoTermico e **ControleBancario**; a correção foi para
+> `registrar_cabecalhos`, "que os três apps Flask já chamam" — e os três Flask
+> são CRV, ConfortoTermico e **MegaSena**. O Bancário caiu no vão entre as duas
+> listas. `registrar_cabecalhos` é Flask-only por construção (recebe
+> `Flask | Blueprint` e escreve em `resposta.vary`, que `HttpResponse` não tem),
+> então o único app Django nunca a invocou. Medido contra o servidor: as
+> respostas saíam com `Vary: Cookie`.
+>
+> **A recomendação também estava desatualizada.** `Vary: HX-Request` não
+> descreve mais a variação do ControleBancario: a Fase 6 trocou a decisão de
+> "pelo cabeçalho" para "pelo alvo", e o achado, já com checkmark, não foi
+> reescrito. Com `HX-Request: true`, `/transactions/` devolve 63 KB para
+> `HX-Target: appMain` e 36 KB para outro alvo. O correto ali é
+> `Vary: HX-Request, HX-Target`.
+>
+> Corrigido no ControleBancario com constante local, seguindo o contrato que
+> `core/security.py` já documenta — a biblioteca guarda valores, o consumidor
+> aplica. Um middleware Django em `sharedauth` arrastaria o Django para dentro
+> do núcleo Python puro para servir um consumidor só; quando houver um segundo
+> projeto Django, a tupla sobe, por ser neutra de framework. Verificado:
+> `Vary: HX-Request, HX-Target, Cookie` nas quatro combinações.
+
 ### H11 — `run --rm quality` valida a imagem antiga — **novo**
 
 **Impacto: Alto · Esforço: P · Risco: Baixo**
@@ -1334,6 +1358,13 @@ em fixture, só contra o servidor. Três verificações verdes (183 testes, CI e
 fixture isolado) deram falsa sensação de cobertura; o primeiro clique real
 derrubou a premissa central.
 
+> **A lição valia mais do que se supôs.** A revalidação de 29/08 achou mais
+> três defeitos desta fase, todos invisíveis para a suíte e todos encontrados
+> no navegador: a classe `top-filter-row` perdida do formulário de filtros de
+> Lançamentos, o `<main>` aninhado a cada troca de tela, e a recomendação do
+> H10 tornada insuficiente pela própria mudança de decisão por alvo. Ver
+> [§14](#14-revalidação-de-2908--o-controlebancario-conferido-contra-o-código).
+
 **Concluídos em 28/08:** H4 (script órfão removido), H7 (agendamento
 commitado).
 
@@ -1412,6 +1443,12 @@ executados perderam a marca ao longo do caminho. **Nenhum achado aguarda
 decisão minha.** O que resta são os quatro que você decidiu não fazer: H2, H8,
 S6 e P2.
 
+> **Leia esta tabela junto da [§14](#14-revalidação-de-2908--o-controlebancario-conferido-contra-o-código).**
+> A revalidação de 29/08 conferiu os ✅ desta tabela contra o código do
+> ControleBancario e achou um errado (H10) e oito achados novos. Um checkmark
+> aqui significa "foi escrito e verificado então" — não "continua verdadeiro
+> agora". Os outros cinco repositórios não foram reconferidos.
+
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
 | S1 | Cookie "lembrar-me" de 365 dias (CRV, MegaSena) | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1442,7 +1479,7 @@ S6 e P2.
 | H7 | Trabalho não commitado no BackupRestore | Baixo | — | — | Decisão sua | ✅ **Feito** 28/08 (`c838ebc`) |
 | H8 | Camada de compatibilidade de banco do Conforto | Médio | G+ | Alto | Não agora | Registrado |
 | H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 (SharedAuth v0.6.0) |
+| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar | ⚠️ **Em duas etapas** — Flask 29/08 (v0.6.0); o Bancário ficou de fora e entrou na revalidação, com `HX-Request, HX-Target` |
 | H11 | `run --rm quality` valida imagem antiga — **novo** | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 (4 projetos) |
 | H12 | CSP bloqueia o estilo inline do próprio JS — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 |
 | P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1452,6 +1489,85 @@ S6 e P2.
 
 *Auditoria feita em 28/08/2026 sobre a base commitada localmente. Nenhum
 arquivo dos projetos foi alterado; nenhum commit foi criado.*
+
+---
+
+## 14. Revalidação de 29/08 — o ControleBancario, conferido contra o código
+
+Feita a pedido do mantenedor, depois de dois defeitos de interface aparecerem
+no uso normal — nenhum dos dois visível para a suíte, o CI ou o ✅ deste
+relatório. **Escopo: apenas o ControleBancario.** Os outros cinco repositórios
+não foram reexaminados; nada aqui os absolve nem os acusa.
+
+Método: dois revisores independentes — um confrontando cada ✅ com a
+implementação real, outro auditando do zero sem ler este documento — e uma
+passagem pelo navegador contra o servidor rodando. Todo achado abaixo foi
+reconferido com evidência própria antes de entrar.
+
+### O padrão que explica os dois ✅ falsos
+
+Os dois itens marcados como feitos e que não estavam caíram pela mesma via:
+**um bump de pino em `requirements.txt` foi registrado como entrega**, sem
+ninguém verificar se o Django chega a invocar a função por trás — que é
+Flask-only por construção nos dois casos. É a lição da Fase 6 ("premissa sobre
+o servidor não se verifica em fixture, só contra o servidor") repetida numa
+dependência de biblioteca em vez de num cliente.
+
+O corolário incomoda mais que os defeitos: **um achado com checkmark para de
+ser reexaminado**, inclusive quando outra fase invalida sua recomendação. Foi
+o que houve com o H10, cuja recomendação a Fase 6 tornou insuficiente sem que
+ninguém reabrisse o item.
+
+### Achados
+
+| # | Achado | Situação |
+|---|---|---|
+| R1 | Quatro telas com chave de permissão no catálogo e nenhuma verificação | ✅ Corrigido |
+| R2 | `<main id="appMain">` aninhado a cada troca de tela | ✅ Corrigido |
+| R3 | `Vary` ausente no Bancário, e `HX-Request` sozinho insuficiente (H10) | ✅ Corrigido |
+| R4 | Injeção de log pelo `username` do login (irmão do A5) | ✅ Corrigido |
+| R5 | Quatro permissões órfãs, além das três da `0005` | ✅ Removidas |
+| R6 | 138 linhas de código morto com bug de data latente | ✅ Removidas |
+| R7 | Arredondamento de parcelas não soma o total | Recusado — ver abaixo |
+| R8 | Dois docstrings descrevendo código que não existe | ✅ Corrigidos |
+
+**R1 é o mais grave, e não era hipótese.** Dashboard, Projeções, Posição por
+conta e Próximos movimentos tinham chave no catálogo, distribuída nos perfis e
+exibida na tela de Permissões — e nenhuma linha as verificava. Uma usuária
+tinha `reports.account_position.view` com `allowed=False`, isto é, alguém
+desmarcou a caixa de propósito, e ela abria a tela assim mesmo. A tela de
+Permissões mentia sobre o que controlava. Próximos movimentos segue aberta de
+propósito, por ser o `LOGIN_REDIRECT_URL` e o destino de negação das outras.
+
+**R2 é o terceiro defeito da Fase 6, e o mais instrutivo.** `hx-select="#appMain"`
+com `hx-swap="innerHTML"` depositava o `<main>` recortado DENTRO do alvo: id
+duplicado, dois landmarks, dois contêineres de rolagem e padding em dobro. O
+comentário do próprio teste já descrevia o sintoma anterior ("sem `hx-select` a
+página inteira entra dentro do `main`") — a correção parou no meio, e a
+constante do teste passou a proteger o estado intermediário, porque afirma que
+os cinco atributos existem, não que o DOM resultante seja válido.
+
+**R7 foi recusado com o mesmo critério do P2.** R$100,00 em 3x dá três parcelas
+de R$33,33, que somam R$99,99. Redistribuir o resíduo exigiria que os cinco
+caminhos de cálculo soubessem qual parcela é a última, e o escopo
+`current_future` reescreve um SUBCONJUNTO das parcelas, onde "última" não tem
+resposta óbvia. Um ou dois centavos por operação, que o mantenedor considera
+irrelevante para este uso. O que foi feito no lugar: os cinco caminhos passaram
+a chamar um helper único — um deles já divergia dos outros quatro sobre como
+decidir a recorrência, e a divergência é o risco real, não o centavo.
+
+### O que a revalidação confirmou
+
+H1, U2, H3, H11, S8, A1, H6 e as Fases 2, 3 e 6 conferem com o código. A
+decisão pelo alvo em `quer_fragmento` tem os 26 pontos de chamada que a Fase 6
+registrou, e a deduplicação de `htmx:afterSwap` funciona como descrito.
+
+### O que ficou registrado sem ação
+
+`reports.upcoming_movements.view` continua no catálogo sem ninguém que a
+verifique, porque a ausência é deliberada — a rota precisa ficar aberta. Está
+nomeada em `tests/test_permissoes_por_rota.py`, que agora reprova a suíte se
+uma órfã NOVA aparecer, por esquecimento, no meio das conhecidas.
 
 ---
 

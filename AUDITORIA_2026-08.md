@@ -881,7 +881,13 @@ critérios de entrada do SharedAuth — necessidade concreta em três consumidor
 contrato coeso e testável, núcleo neutro de framework e nenhuma dependência de
 banco ou domínio. Mover para lá e ligar nos três apps que não têm.
 
-Não é urgente e cabe na revalidação final, não numa fase própria.
+**Feito em 29/08 (SharedAuth v0.6.0).** Foi para `registrar_cabecalhos`, que os
+três apps Flask já chamam — e não como função a ser chamada por rota, que era o
+desenho do MegaSena: dezenove pontos, e uma rota nova nasceria sem. Agora é
+garantido por construção, e o `render_vary` foi apagado.
+
+Só HTML: acrescentar `Vary` aos estáticos faria um cache guardar duas cópias
+idênticas de cada arquivo. `vary.add` preserva o que a rota já declarou.
 
 ### H11 — `run --rm quality` valida a imagem antiga — **novo**
 
@@ -950,10 +956,31 @@ o código pretende, e ninguém notou porque o layout continua utilizável sem el
 Encontrado durante a validação da Fase 6, e **pré-existente** — nenhuma linha
 daquela mudança aplica estilo inline.
 
-**Recomendação:** mover cada caso para classe CSS (`.is-hidden`,
-`.table-scroll--limited` com a altura vinda de custom property). Não relaxar a
-CSP: o `unsafe-inline` resolveria o sintoma abrindo exatamente o buraco que a
-política existe para fechar.
+**Recomendação:** mover cada caso para classe CSS. Não relaxar a CSP: o
+`unsafe-inline` resolveria o sintoma abrindo exatamente o buraco que a política
+existe para fechar.
+
+**Feito em 29/08.** Os 20 pontos viraram classe, seguindo a convenção `data-ui`
+que o projeto já tinha, com varredura que reprova se um `.style.` voltar. Duas
+consequências escondidas apareceram no caminho:
+
+- a rolagem das tabelas **nunca** recebeu o `max-height` que o código calculava;
+- o `<style>` do indicador do HTMX também era bloqueado, então o "Importando..."
+  de `banking/imports.html` ficava visível o tempo todo. O
+  `includeIndicatorStyles = false` existia, mas num script que roda **depois**
+  de `htmx.min.js` — tarde demais. Virou `<meta name="htmx-config">`.
+
+**O caminho recusado, que vale registrar:** cheguei a introduzir um nonce para
+o único estilo que varia por usuário. Nonce exige `<style>` embutido; `<style>`
+no `<head>` faz o HTMX tentar reinjetá-lo a cada troca, perdendo o nonce; e a
+correção documentada seria expor o nonce num `<meta>` — entregando ao DOM
+justamente o segredo que ele é. A preferência virou uma folha de estilo servida
+da própria origem, e `style-src 'self'` voltou a bastar **sem exceção nenhuma**.
+
+Sobra no console a tentativa do próprio Chart.js de escrever no `style` dos
+`<canvas>`: biblioteca de terceiro, sem opção para desligar. As mesmas
+declarações ficam em CSS, então o resultado visual é o mesmo. A alternativa
+seria `'unsafe-hashes'` — abrir a política para calar um aviso.
 
 ### H6 — Faixas de dependência divergentes
 
@@ -1320,9 +1347,9 @@ conjunto:
 
 Estado em 28/08, depois da sua aprovação geral e da revalidação. Os itens
 marcados **novo** não estavam na versão que você aprovou; os que já foram
-executados perderam a marca ao longo do caminho. Restam **dois** aguardando
-decisão: **H10** (`Vary: HX-Request`) e **H12** (a CSP bloqueando o estilo
-inline do próprio JavaScript, achado durante a validação da Fase 6).
+executados perderam a marca ao longo do caminho. **Nenhum achado aguarda
+decisão minha.** O que resta são os cinco que você decidiu não fazer agora —
+H2, H8, S6, S7 e P2 — e o A5, adiado por depender do S7.
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
@@ -1354,9 +1381,9 @@ inline do próprio JavaScript, achado durante a validação da Fase 6).
 | H7 | Trabalho não commitado no BackupRestore | Baixo | — | — | Decisão sua | ✅ **Feito** 28/08 (`c838ebc`) |
 | H8 | Camada de compatibilidade de banco do Conforto | Médio | G+ | Alto | Não agora | Registrado |
 | H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar na revalidação | Aguarda seu aceite |
+| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 (SharedAuth v0.6.0) |
 | H11 | `run --rm quality` valida imagem antiga — **novo** | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 (4 projetos) |
-| H12 | CSP bloqueia o estilo inline do próprio JS — **novo** | Baixo | P | Baixo | Aceitar | Aguarda seu aceite |
+| H12 | CSP bloqueia o estilo inline do próprio JS — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 |
 | P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | P2 | Relatórios carregando tabela inteira | Baixo | G | Médio | Recusar | Recusado |
 

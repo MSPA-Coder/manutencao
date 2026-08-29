@@ -928,6 +928,33 @@ No ControleBancario o mesmo alerta cobre `manage.py check` e `showmigrations`,
 que também rodam `run --rm web` sobre a imagem. `makemigrations` é a exceção:
 passa `compose.dev.yaml` e enxerga o código do host.
 
+### H12 — CSP bloqueia, em silêncio, o estilo que o próprio JS aplica — **novo**
+
+**Impacto: Baixo · Esforço: P · Risco: Baixo**
+
+O console do ControleBancario acusa violações de `style-src 'self'` em **toda
+carga de página**, antes de qualquer interação. A política não admite
+`unsafe-inline` — o que é correto e deve continuar —, mas o JavaScript do
+próprio projeto aplica estilo inline por CSSOM, e o navegador bloqueia:
+
+| Onde | O que tenta aplicar |
+|---|---|
+| `application.js::_initTableScrollWrappers` | `maxHeight`, `overflowY`, `overflowX`, `width` |
+| `transactions.js` | `display` de modais e blocos condicionais |
+| `dashboard.js`, `permissions.js` | `cursor`, `display` |
+
+**A consequência não é só ruído no console:** o estilo simplesmente não é
+aplicado. A rolagem das tabelas provavelmente nunca recebeu o `max-height` que
+o código pretende, e ninguém notou porque o layout continua utilizável sem ele.
+
+Encontrado durante a validação da Fase 6, e **pré-existente** — nenhuma linha
+daquela mudança aplica estilo inline.
+
+**Recomendação:** mover cada caso para classe CSS (`.is-hidden`,
+`.table-scroll--limited` com a altura vinda de custom property). Não relaxar a
+CSP: o `unsafe-inline` resolveria o sintoma abrindo exatamente o buraco que a
+política existe para fechar.
+
 ### H6 — Faixas de dependência divergentes
 
 **Impacto: Médio · Esforço: P · Risco: Baixo**
@@ -1176,36 +1203,48 @@ tinha encontrado: o comentário errado de `compose.dev.yaml` (corrigido junto), 
 ausência de `Vary: HX-Request` (H10) e — o mais sério dos três — o comando de
 validação que roda a imagem antiga (H11, corrigido no CRV).
 
-**Fase 6 — ControleBancario sem a navegação própria — ❌ revertida em 29/08**
+**Fase 6 — ControleBancario sem a navegação própria — ✅ concluída em 29/08, na segunda tentativa**
 
-Implementada, merjada e **revertida no mesmo dia**. A primeira passagem no
-navegador com dados reais derrubou a premissa central: trocar o titular em
-Lançamentos zerava a tabela.
+Implementada, revertida e refeita no mesmo dia. Saldo final: `application.js`
+de **969 para 578 linhas**; suíte de **151 para 183 testes**.
 
-**O erro.** Eu parti de "as views devolvem a página inteira, então `hx-select`
-recorta e nenhuma view precisa mudar". Não é o caso: há **27 ramos**
-`if request.headers.get("HX-Request")` no projeto, todos devolvendo o fragmento
-de conteúdo. A navegação antiga não caía neles porque mandava
-`X-Requested-With: XMLHttpRequest`, não `HX-Request` — recebia a página inteira
-e recortava. Ao virar HTMX, a mesma requisição passou a mandar `HX-Request`,
-caiu no ramo do fragmento, e `hx-select="#appMain"` não acha `#appMain` dentro
-de um fragmento que não o contém.
+**A primeira tentativa foi revertida.** Parti de "as views devolvem a página
+inteira, então `hx-select` recorta e nenhuma view precisa mudar". Não era o
+caso: **26 ramos** respondiam fragmento a `HX-Request`, e a navegação antiga só
+não caía neles porque mandava `X-Requested-With`. A tela ficava vazia ao
+primeiro filtro. Nenhum teste pegou — a suíte não exercita o cliente, e o
+fixture isolado com que verifiquei o HTMX servia página inteira, que era
+exatamente a premissa errada.
 
-**Por que nada pegou antes.** A suíte não exercita o cliente; os 18 testes que
-escrevi verificavam o contrato *no template*, e ele estava correto. O fixture
-isolado com que verifiquei o HTMX 2.0.4 também estava correto — e servia página
-inteira, que era exatamente a premissa errada. **A verificação que faltava era
-a única que importava**, e foi o primeiro clique nela que revelou.
+**A correção foi na raiz, não no sintoma.** `core.htmx.quer_fragmento` decide
+pelo *alvo*, não pela presença do cabeçalho: desde a migração os dois clientes
+mandam `HX-Request`. A navegação mira `#appMain` e precisa da tela; todo
+fragmento preexistente mira o próprio contêiner. Verificado contra o servidor
+real: mesmo GET, `HX-Target: appMain` devolve 450 KB com `#appMain` e
+`#appPageHeader`; `HX-Target: transactions-table-container` devolve 424 KB sem
+nenhum dos dois.
 
-**O que fica para refazer.** A direção continua certa e o caminho é *mais
-curto* do que o desenhado: as views já devolvem o fragmento certo, então o
-contrato é `hx-target="#appMain"` + `hx-swap="innerHTML"`, **sem `hx-select`**.
-Falta resolver a sincronia do `#appPageHeader` (os seletores dependentes), que
-os fragmentos não carregam — provavelmente uma cópia OOB, como as views já
-fazem com os cartões de resumo (`render_oob_summary`).
+**A passagem no navegador achou mais dois defeitos**, ambos invisíveis para a
+suíte:
 
-Lição a registrar junto do achado: **premissa sobre o servidor não se verifica
-em fixture** — só contra o servidor.
+- `htmx:afterSwap` chega **duas vezes** por troca (dispara no elemento e sobe
+  até o `document`). `app:contentLoaded` saía em dobro, e os três consumidores
+  reconstroem gráfico e calendário — reconstruir duas vezes pisca;
+- a reconciliação de filtro que eu havia mantido em ~50 linhas de JavaScript
+  **estava quebrada**: comparava o formulário com a barra dentro do
+  `htmx:afterSwap` do `#appMain`, instante em que o cabeçalho ainda não foi
+  trocado. Lia o formulário antigo e concluía que estava tudo certo.
+
+O segundo virou uma simplificação: quem sabe o que foi descartado é o servidor.
+`selected_context` anota em `request.filtros_descartados` o filtro que anulou, e
+`core/navegacao.py` devolve a barra já sem ele. **Uma requisição só, sem
+JavaScript** — e resolve um caso que a navegação antiga só resolvia com uma
+segunda ida ao servidor.
+
+**A lição, que vale além desta fase:** premissa sobre o servidor não se verifica
+em fixture, só contra o servidor. Três verificações verdes (183 testes, CI e
+fixture isolado) deram falsa sensação de cobertura; o primeiro clique real
+derrubou a premissa central.
 
 **Concluídos em 28/08:** H4 (script órfão removido), H7 (agendamento
 commitado).
@@ -1281,9 +1320,9 @@ conjunto:
 
 Estado em 28/08, depois da sua aprovação geral e da revalidação. Os itens
 marcados **novo** não estavam na versão que você aprovou; os que já foram
-executados perderam a marca ao longo do caminho. Dos dois nascidos na Fase 5,
-**H11** já está resolvido nos quatro projetos e **H10** é o único que ainda
-precisa do seu aceite.
+executados perderam a marca ao longo do caminho. Restam **dois** aguardando
+decisão: **H10** (`Vary: HX-Request`) e **H12** (a CSP bloqueando o estilo
+inline do próprio JavaScript, achado durante a validação da Fase 6).
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
@@ -1297,7 +1336,7 @@ precisa do seu aceite.
 | S8 | Fechar `img-src data:` nos dois apps | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | S9 | `CONFORTO_TESTING` desliga o rate limit | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | U1 | Estado de UI na barra do CRV | Baixo | P | Baixo | **Premissa corrigida** — ver o achado | ⚠️ **Parcial** 28/08 |
-| U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | ⏸ Volta com H1 |
+| U2 | Estado de UI na barra do Bancário | Médio | M | Médio | Junto de H1 | ✅ **Feito** 29/08 |
 | A1 | `sharedauth.secrets` | Alto | M | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A2 | Duração do "lembrar-me" no `configurar_sessao` | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A3 | `iniciar_limiter` com política do consumidor | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1306,7 +1345,7 @@ precisa do seu aceite.
 | A7 | `ler_flag` no núcleo | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A8 | `montar_url_postgres` em Python puro | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | A9 | `requer_papel` para o binário admin | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H1 | Apagar `application.js`, consolidar em HTMX | Alto | G | Médio | Aceitar, em fases | ⚠️ Tentado e **revertido** 29/08 |
+| H1 | Apagar `application.js`, consolidar em HTMX | Alto | G | Médio | Aceitar, em fases | ✅ **Feito** 29/08 (2ª tentativa) |
 | H2 | JS próprio do ConfortoTermico | Alto | G+ | Alto | Não agora | Registrado |
 | H3 | Doze arquivos com BOM | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H4 | `gerar_zip_limpo.py` órfão | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1317,6 +1356,7 @@ precisa do seu aceite.
 | H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar na revalidação | Aguarda seu aceite |
 | H11 | `run --rm quality` valida imagem antiga — **novo** | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 (4 projetos) |
+| H12 | CSP bloqueia o estilo inline do próprio JS — **novo** | Baixo | P | Baixo | Aceitar | Aguarda seu aceite |
 | P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | P2 | Relatórios carregando tabela inteira | Baixo | G | Médio | Recusar | Recusado |
 

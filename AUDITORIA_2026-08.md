@@ -960,27 +960,50 @@ daquela mudança aplica estilo inline.
 `unsafe-inline` resolveria o sintoma abrindo exatamente o buraco que a política
 existe para fechar.
 
-**Feito em 29/08.** Os 20 pontos viraram classe, seguindo a convenção `data-ui`
-que o projeto já tinha, com varredura que reprova se um `.style.` voltar. Duas
-consequências escondidas apareceram no caminho:
+**O achado estava parcialmente errado, e a correção também.** A verificação no
+navegador desmentiu a premissa central:
 
-- a rolagem das tabelas **nunca** recebeu o `max-height` que o código calculava;
-- o `<style>` do indicador do HTMX também era bloqueado, então o "Importando..."
-  de `banking/imports.html` ficava visível o tempo todo. O
+```js
+w.style.maxHeight = '123px'   // aplicou, zero violações
+```
+
+`style-src` governa o **elemento** `<style>` (`style-src-elem`) e o **atributo**
+`style` do HTML (`style-src-attr`). **Não** governa a propriedade `style` de um
+objeto. Os `el.style.x = ...` do projeto sempre funcionaram — a rolagem das
+tabelas sempre teve o teto que o código calculava.
+
+Pior: a substituição que fiz **piorou** o resultado. A medição real dá 1138px
+onde minha aproximação em `rem` dava 761,6px, 33% menos. Revertida, junto com a
+folha `preferencias.css` que eu havia criado para levar a preferência ao CSS —
+uma requisição por página por algo que o JavaScript já fazia de graça.
+
+**O que era defeito de verdade, e continua corrigido** (aqui a CSP bloqueia
+mesmo):
+
+- o `<style>` do indicador que o HTMX injetava (`style-src-elem`): o
   `includeIndicatorStyles = false` existia, mas num script que roda **depois**
-  de `htmx.min.js` — tarde demais. Virou `<meta name="htmx-config">`.
+  de `htmx.min.js` — tarde demais. Virou `<meta name="htmx-config">`, lido na
+  inicialização. O "Importando..." de `banking/imports.html` ficava visível o
+  tempo todo;
+- o HTMX copiando o atributo `style` a cada troca (`style-src-attr`): seis
+  violações por vez no painel. `attributesToSettle` saiu com `style` de fora.
 
-**O caminho recusado, que vale registrar:** cheguei a introduzir um nonce para
-o único estilo que varia por usuário. Nonce exige `<style>` embutido; `<style>`
+As classes CSS que substituíram os `display` alternados ficaram, por um motivo
+que **só passou a existir** depois disso: sem `style` em `attributesToSettle`,
+estilo inline não sobrevive a uma troca de tela. Estado em classe virou o
+desenho correto, não só o mais limpo.
+
+**O caminho recusado, que vale registrar:** cheguei a introduzir um nonce, e a
+fazê-lo funcionar. Abandonei porque nonce exige `<style>` embutido; `<style>`
 no `<head>` faz o HTMX tentar reinjetá-lo a cada troca, perdendo o nonce; e a
 correção documentada seria expor o nonce num `<meta>` — entregando ao DOM
-justamente o segredo que ele é. A preferência virou uma folha de estilo servida
-da própria origem, e `style-src 'self'` voltou a bastar **sem exceção nenhuma**.
+justamente o segredo que ele é. A CSP continua fechada, **sem exceção nenhuma**.
 
-Sobra no console a tentativa do próprio Chart.js de escrever no `style` dos
-`<canvas>`: biblioteca de terceiro, sem opção para desligar. As mesmas
-declarações ficam em CSS, então o resultado visual é o mesmo. A alternativa
-seria `'unsafe-hashes'` — abrir a política para calar um aviso.
+**A lição, que custou duas idas:** `style-src` tem três alvos distintos
+(`-elem`, `-attr`, e CSSOM, que não é alvo). Tratá-los como um só produziu um
+achado meio certo e uma correção meio errada. A mensagem do console não
+distingue — só o evento `securitypolicyviolation`, que traz
+`violatedDirective`, distingue.
 
 ### H6 — Faixas de dependência divergentes
 

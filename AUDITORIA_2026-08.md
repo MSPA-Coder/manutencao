@@ -835,6 +835,99 @@ maiúsculas e português, os outros três usam minúsculas e inglês.
 **Recomendação:** escrever `architecture.md` e `development.md` do CRV. Deixar
 a divergência de nomes como está — renomear arquivos quebra links e não paga.
 
+**Feito em 28/08 (Fase 5).** Os dois documentos seguem a estrutura do MegaSena
+e cobrem o que estava só em convenção não escrita: o contrato HTMX de uma URL
+por tela, o endereço canônico da barra, o trio `Position`/`PositionMovement`/
+`Transaction` que os módulos de encerramento mantêm juntos, o desenho do agente
+RTD e a razão de `create_app()` não tocar o banco. `README.md` e `AGENTS.md`
+passaram a apontar para eles.
+
+Dois defeitos apareceram enquanto eu escrevia — que é, em boa medida, o motivo
+de documentar valer a pena:
+
+- o cabeçalho de `compose.dev.yaml` afirmava que o Compose mescla o arquivo
+  automaticamente. Não mescla: só `compose.override.yaml` é lido sozinho, e o
+  próprio `README.md` já mandava passar `-f` explícito. Provado com
+  `docker compose config`, que não mostra bind mount nenhum sem os dois `-f`.
+  Comentário corrigido;
+- `Vary: HX-Request` está ausente — ver H10, abaixo, que nasceu daqui.
+
+### H10 — `Vary: HX-Request` só existe no MegaSena — **novo**
+
+**Impacto: Baixo · Esforço: P · Risco: Baixo**
+
+Nos quatro apps, a mesma URL devolve a página inteira ou só um fragmento,
+conforme o cabeçalho `HX-Request`. Isso é o desenho certo — preserva favorito,
+F5 e link —, mas cria uma obrigação para qualquer cache no caminho: sem
+`Vary: HX-Request`, um cache que guardasse o fragmento poderia servi-lo como
+documento inteiro para a requisição seguinte, e a tela apareceria sem casca.
+
+| Projeto | Situação |
+|---|---|
+| MegaSena | `app/web/helpers.py::render_vary` — único ponto que produz essas respostas |
+| ControleRendaVariavel | ausente |
+| ConfortoTermico | ausente |
+| ControleBancario | ausente |
+
+**Hoje não é exploração nem falha visível:** o Nginx do VPS faz proxy sem
+`proxy_cache` — confirmei que a diretiva não aparece em lugar nenhum de
+`vps/nginx/` —, e as respostas são autenticadas. O risco é de futuro: qualquer
+cache introduzido à frente (um `proxy_cache`, uma CDN, um Service Worker) passa
+a poder embaralhar página e fragmento, e o sintoma seria intermitente e difícil
+de rastrear.
+
+**Recomendação:** aceitar, com escopo pequeno. `render_vary` cumpre os quatro
+critérios de entrada do SharedAuth — necessidade concreta em três consumidores,
+contrato coeso e testável, núcleo neutro de framework e nenhuma dependência de
+banco ou domínio. Mover para lá e ligar nos três apps que não têm.
+
+Não é urgente e cabe na revalidação final, não numa fase própria.
+
+### H11 — `run --rm quality` valida a imagem antiga — **novo**
+
+**Impacto: Alto · Esforço: P · Risco: Baixo**
+
+O comando que os quatro projetos declaram como *a* interface de validação:
+
+```powershell
+docker compose --profile quality run --rm quality
+```
+
+O serviço `quality` **não monta o código do host** em nenhum dos quatro — ele
+constrói a imagem por `context: .`, e o que executa é o que foi copiado para
+dentro dela. E `docker compose run` só constrói quando a imagem **não existe**:
+se ela já existe, o comando roda a versão anterior do código.
+
+O resultado é o pior tipo de falha — silenciosa e na direção da confiança. A
+suíte passa em verde sem ter visto nenhuma das alterações que se queria
+validar, e nada no output diz isso.
+
+**Como apareci nisto:** ao fechar a Fase 5, rodei o comando no CRV e ele
+respondeu `131 passed`. O número não batia com os 125 que eu tinha medido. A
+imagem em cache não continha `app/url_limpa.py` nem `tests/test_url_limpa.py`,
+e ainda continha os testes de `secret_files` que `728e4d1` havia removido — daí
+os seis a mais. Contra a árvore real: **125 passed**.
+
+A CI dos quatro não corre esse risco: todas reconstroem com `build --no-cache`
+antes de executar. A exposição é só local — que é onde a decisão de seguir em
+frente costuma ser tomada.
+
+**Recomendação:** acrescentar `--build` ao comando documentado. Uma palavra em
+`README.md`, `AGENTS.md` e no documento de desenvolvimento de cada projeto.
+
+**Feito nos quatro em 28/08.** `README.md`, `AGENTS.md`, o documento de
+desenvolvimento e o comentário do serviço `quality` em `compose.yaml` de cada
+projeto. Uma varredura confirma que não sobrou nenhuma ocorrência documentada
+sem `--build`.
+
+As oito invocações nos workflows de CI ficaram como estavam, de propósito: os
+quatro já executam `build --no-cache quality` antes da primeira, e a segunda
+(o `pip-audit`) reutiliza deliberadamente a imagem recém-construída.
+
+No ControleBancario o mesmo alerta cobre `manage.py check` e `showmigrations`,
+que também rodam `run --rm web` sobre a imagem. `makemigrations` é a exceção:
+passa `compose.dev.yaml` e enxerga o código do host.
+
 ### H6 — Faixas de dependência divergentes
 
 **Impacto: Médio · Esforço: P · Risco: Baixo**
@@ -1072,8 +1165,16 @@ deixou de ser higiene e virou uma troca — perder link compartilhável, favorit
 e F5 em nome de uma barra vazia. É decisão do mantenedor, não consequência do
 achado.
 
-**Fase 5 — Documentação do CRV (1 sessão)**
-H5: `architecture.md` e `development.md`.
+**Fase 5 — Documentação do CRV — ✅ concluída em 28/08**
+
+H5: `architecture.md` e `development.md` escritos, mais os ponteiros em
+`README.md` e `AGENTS.md`. Suíte do CRV: 131 testes, 0 falhas; `ruff` limpo;
+`docker compose config` válido nas duas composições.
+
+Escrever a documentação encontrou três defeitos que nenhuma leitura de código
+tinha encontrado: o comentário errado de `compose.dev.yaml` (corrigido junto), a
+ausência de `Vary: HX-Request` (H10) e — o mais sério dos três — o comando de
+validação que roda a imagem antiga (H11, corrigido no CRV).
 
 **Fase 6 — ControleBancario sem `application.js` (várias sessões)**
 H1, que resolve U2. Por seção, com parada possível a qualquer momento.
@@ -1150,9 +1251,11 @@ conjunto:
 
 ## 11. Registro de decisão
 
-Estado em 28/08, depois da sua aprovação geral e da revalidação. Os seis itens
-marcados **novo** não estavam na versão que você aprovou — são os únicos que
-ainda precisam do seu aceite.
+Estado em 28/08, depois da sua aprovação geral e da revalidação. Os itens
+marcados **novo** não estavam na versão que você aprovou; os que já foram
+executados perderam a marca ao longo do caminho. Dos dois nascidos na Fase 5,
+**H11** já está resolvido nos quatro projetos e **H10** é o único que ainda
+precisa do seu aceite.
 
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
@@ -1179,11 +1282,13 @@ ainda precisam do seu aceite.
 | H2 | JS próprio do ConfortoTermico | Alto | G+ | Alto | Não agora | Registrado |
 | H3 | Doze arquivos com BOM | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H4 | `gerar_zip_limpo.py` órfão | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H5 | Documentação do CRV | Médio | M | Baixo | Aceitar | **Aceito** — Fase 5 |
+| H5 | Documentação do CRV | Médio | M | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H6 | Faixas de dependência divergentes | Médio | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | H7 | Trabalho não commitado no BackupRestore | Baixo | — | — | Decisão sua | ✅ **Feito** 28/08 (`c838ebc`) |
 | H8 | Camada de compatibilidade de banco do Conforto | Médio | G+ | Alto | Não agora | Registrado |
 | H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
+| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar na revalidação | Aguarda seu aceite |
+| H11 | `run --rm quality` valida imagem antiga — **novo** | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 (4 projetos) |
 | P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
 | P2 | Relatórios carregando tabela inteira | Baixo | G | Médio | Recusar | Recusado |
 

@@ -1715,7 +1715,8 @@ da imagem. As duas metades da pergunta — *o código chama?* e *o que está no 
 | T3 | `POST /reset` apaga a base inteira sem exigir administrador | MegaSena | ✅ Corrigido |
 | T4 | CSS e JS do componente comum bloqueados na própria tela de login | MegaSena | ✅ Corrigido |
 | T5 | Teste de papel media `__wrapped__`, e numa rota só | CRV | ✅ Corrigido |
-| T6 | Três pilhas no ar com biblioteca e código anteriores ao repositório | os três | ⚠️ Aberto — depende de reconstrução |
+| T6 | Três pilhas no ar com biblioteca e código anteriores ao repositório | os três | ✅ Reconstruídas |
+| T7 | Duas funções sem nenhum chamador, uma com docstring citando consumidor inexistente | CRV | ✅ Removidas |
 
 **T1 é o R1 deste projeto, com a mesma forma e outra mecânica.**
 `AREA_POR_ENDPOINT.get(endpoint)` devolvendo `None` **liberava**. Seis rotas de
@@ -1804,9 +1805,32 @@ Um dos testes novos reprovou na primeira execução, e o defeito era do teste:
 afirmava que toda área vira aba, e `usuarios` é uma página fora da SPA. A
 asserção passou a declarar as áreas sem aba com o motivo, em vez de afrouxar.
 
-### T6 — o que continua aberto
+### T6 — reconstruído, e o que a reconstrução provou
 
-As três pilhas em execução precisam ser reconstruídas para receberem qualquer
-coisa registrada aqui, inclusive o H10, que no código já está resolvido. A
-reconstrução reinicia serviços e é decisão do mantenedor, não efeito colateral
-de uma auditoria.
+As três pilhas foram reconstruídas com autorização do mantenedor, e as
+correções foram conferidas contra os servidores, não só contra a suíte:
+
+| Verificação | Antes | Depois |
+|---|---|---|
+| `sharedauth` instalado nos três | 0.3.0 | 0.7.0 |
+| `Vary` nas telas do MegaSena | só em 3 das 7 | `HX-Request, Cookie` nas 7 |
+| `Vary` nas telas do CRV | ausente | `HX-Request, Cookie` nas 6 medidas |
+| Estáticos que o login do MegaSena carrega, sem sessão | 302 para `/login` | 200, os cinco |
+| ConfortoTermico ao abrir | 0 abas marcadas, 0 painéis visíveis | 1 e 1, o Dashboard |
+| As seis leituras agora com área, para o administrador | 200 | 200 |
+
+**O `Vary` do CRV fechou sem uma linha de código.** É a prova limpa do que a
+terceira nota do H10 afirma: o achado estava resolvido no repositório e ausente
+na máquina. Quem lesse só o repositório teria dito "feito" e estaria certo
+sobre o código e errado sobre o serviço.
+
+A recusa por perfil das seis rotas não foi medida no navegador: exigiria uma
+segunda conta, e criar uma passa por digitar senha. Está coberta pela suíte,
+que faz requisição HTTP real com sessão e perfil para as seis rotas em dois
+perfis sem a área — doze casos, mais os seis da contraprova.
+
+Uma varredura de função sem chamador fechou o T7: `accumulate_signed_quantity`
+e `normalize_theme`, no CRV, citadas em lugar nenhum além da própria definição.
+A primeira tem docstring explicando que existe para o relatório de performance
+mensal, que nunca a chamou — a mesma forma dos dois docstrings corrigidos na
+§14: texto preciso, verificável e falso.

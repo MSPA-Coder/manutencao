@@ -1530,6 +1530,7 @@ ninguém reabrisse o item.
 | R6 | 138 linhas de código morto com bug de data latente | ✅ Removidas |
 | R7 | Arredondamento de parcelas não soma o total | Recusado — ver abaixo |
 | R8 | Dois docstrings descrevendo código que não existe | ✅ Corrigidos |
+| R9 | O destino do login impedia uma quinta tela de exigir permissão | ✅ Corrigido |
 
 **R1 é o mais grave, e não era hipótese.** Dashboard, Projeções, Posição por
 conta e Próximos movimentos tinham chave no catálogo, distribuída nos perfis e
@@ -1562,12 +1563,38 @@ H1, U2, H3, H11, S8, A1, H6 e as Fases 2, 3 e 6 conferem com o código. A
 decisão pelo alvo em `quer_fragmento` tem os 26 pontos de chamada que a Fase 6
 registrou, e a deduplicação de `htmx:afterSwap` funciona como descrito.
 
-### O que ficou registrado sem ação
+### R9 — o destino do login ditava o modelo de permissões
 
-`reports.upcoming_movements.view` continua no catálogo sem ninguém que a
-verifique, porque a ausência é deliberada — a rota precisa ficar aberta. Está
-nomeada em `tests/test_permissoes_por_rota.py`, que agora reprova a suíte se
-uma órfã NOVA aparecer, por esquecimento, no meio das conhecidas.
+Sobrou de R1 uma quinta tela sem verificação: Próximos movimentos. A primeira
+resposta foi registrá-la como exceção conhecida no teste de varredura, com o
+motivo escrito — a rota precisa ficar aberta por ser o `LOGIN_REDIRECT_URL` e
+o destino de qualquer negação.
+
+**Estava errado, e o mantenedor apontou:** teste existe para validar a
+aplicação, não para acomodar um defeito dela até a suíte ficar verde. Uma
+exceção necessária para o teste passar é quase sempre sinal de que quem deve
+mudar é a aplicação.
+
+E era. A tela não podia exigir permissão porque estava fixa como destino do
+login e da negação — quem não a tivesse cairia num lugar que não pode abrir.
+Navegação ditando modelo de permissões, com o preço no catálogo: a chave
+aparecia na tela de Permissões, era distribuída nos três perfis, e desmarcá-la
+não restringia nada.
+
+`core.views.inicio_view` passou a resolver o destino a partir do que a pessoa
+pode ver. Com isso toda tela exige a sua permissão, o `fallback` padrão do
+decorator nunca aponta para porta fechada, e **não sobrou exceção nenhuma** —
+o teste de catálogo agora afirma o simples, sem lista de perdão.
+
+Verificado nos três caminhos: pouso normal, usuário sem permissão alguma (cai
+em Alterar senha, sem laço) e negação numa tela (`/dashboard/` → `/inicio/` →
+`/transactions/`).
+
+Uma página "Sem acesso" chegou a ser escrita para o usuário sem permissão
+nenhuma, e foi removida antes de entrar: a varredura do menu já para em
+Alterar senha, então a página era inalcançável. Código morto escrito no mesmo
+dia em que 138 linhas de código morto foram removidas — a medição é que evitou
+a ironia.
 
 ---
 

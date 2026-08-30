@@ -927,6 +927,51 @@ garantido por construção, e o `render_vary` foi apagado.
 Só HTML: acrescentar `Vary` aos estáticos faria um cache guardar duas cópias
 idênticas de cada arquivo. `vary.add` preserva o que a rota já declarou.
 
+> **Corrigido em 29/08, depois da revalidação — o ✅ acima estava errado para o
+> ControleBancario.** A tabela deste achado lista como ausentes CRV,
+> ConfortoTermico e **ControleBancario**; a correção foi para
+> `registrar_cabecalhos`, "que os três apps Flask já chamam" — e os três Flask
+> são CRV, ConfortoTermico e **MegaSena**. O Bancário caiu no vão entre as duas
+> listas. `registrar_cabecalhos` é Flask-only por construção (recebe
+> `Flask | Blueprint` e escreve em `resposta.vary`, que `HttpResponse` não tem),
+> então o único app Django nunca a invocou. Medido contra o servidor: as
+> respostas saíam com `Vary: Cookie`.
+>
+> **A recomendação também estava desatualizada.** `Vary: HX-Request` não
+> descreve mais a variação do ControleBancario: a Fase 6 trocou a decisão de
+> "pelo cabeçalho" para "pelo alvo", e o achado, já com checkmark, não foi
+> reescrito. Com `HX-Request: true`, `/transactions/` devolve 63 KB para
+> `HX-Target: appMain` e 36 KB para outro alvo. O correto ali é
+> `Vary: HX-Request, HX-Target`.
+>
+> Corrigido no ControleBancario com constante local, seguindo o contrato que
+> `core/security.py` já documenta — a biblioteca guarda valores, o consumidor
+> aplica. Um middleware Django em `sharedauth` arrastaria o Django para dentro
+> do núcleo Python puro para servir um consumidor só; quando houver um segundo
+> projeto Django, a tupla sobe, por ser neutra de framework. Verificado:
+> `Vary: HX-Request, HX-Target, Cookie` nas quatro combinações.
+
+> **Terceira correção, em 29/08 — o ✅ vale para o repositório, não para o que
+> está no ar.** A correção acima foi para `registrar_cabecalhos`, e os três apps
+> Flask de fato a chamam no código. Mas os três contêineres em execução na
+> máquina do mantenedor têm **sharedauth 0.3.0** instalado, quatro versões antes
+> da que acrescentou o `Vary` — e código de aplicação igualmente anterior (o
+> `app/__init__.py` dentro da imagem do MegaSena não tem `sharedauth.config`,
+> `sharedauth.secrets` nem `aplicar_limite`).
+>
+> Medido no navegador contra o CRV: `/`, `/performance`, `/transactions` e
+> `/dividends` devolvem corpos de tamanhos completamente diferentes conforme
+> `HX-Request`, e o `Vary` só menciona `Cookie`. Isso não é defeito de código —
+> é a imagem. **O que falta neste achado deixou de ser programação e passou a
+> ser implantação**, e nenhum dos dois lados aparece sozinho: quem lê só o
+> repositório conclui que está feito; quem mede só o servidor conclui que não
+> começou.
+>
+> Vale como aviso para o método deste documento. A §14 registrou "um bump de
+> pino registrado como entrega, sem verificar se a função é invocada". Este é o
+> passo seguinte da mesma pergunta — **o pino descreve o que a próxima
+> construção instalará, não o que está instalado**. Ver T6 na §15.
+
 ### H11 — `run --rm quality` valida a imagem antiga — **novo**
 
 **Impacto: Alto · Esforço: P · Risco: Baixo**
@@ -1334,6 +1379,13 @@ em fixture, só contra o servidor. Três verificações verdes (183 testes, CI e
 fixture isolado) deram falsa sensação de cobertura; o primeiro clique real
 derrubou a premissa central.
 
+> **A lição valia mais do que se supôs.** A revalidação de 29/08 achou mais
+> três defeitos desta fase, todos invisíveis para a suíte e todos encontrados
+> no navegador: a classe `top-filter-row` perdida do formulário de filtros de
+> Lançamentos, o `<main>` aninhado a cada troca de tela, e a recomendação do
+> H10 tornada insuficiente pela própria mudança de decisão por alvo. Ver
+> [§14](#14-revalidação-de-2908--o-controlebancario-conferido-contra-o-código).
+
 **Concluídos em 28/08:** H4 (script órfão removido), H7 (agendamento
 commitado).
 
@@ -1412,6 +1464,12 @@ executados perderam a marca ao longo do caminho. **Nenhum achado aguarda
 decisão minha.** O que resta são os quatro que você decidiu não fazer: H2, H8,
 S6 e P2.
 
+> **Leia esta tabela junto da [§14](#14-revalidação-de-2908--o-controlebancario-conferido-contra-o-código).**
+> A revalidação de 29/08 conferiu os ✅ desta tabela contra o código do
+> ControleBancario e achou um errado (H10) e oito achados novos. Um checkmark
+> aqui significa "foi escrito e verificado então" — não "continua verdadeiro
+> agora". Os outros cinco repositórios não foram reconferidos.
+
 | # | Achado | Impacto | Esforço | Risco | Recomendação | Situação |
 |---|---|---|---|---|---|---|
 | S1 | Cookie "lembrar-me" de 365 dias (CRV, MegaSena) | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1442,7 +1500,7 @@ S6 e P2.
 | H7 | Trabalho não commitado no BackupRestore | Baixo | — | — | Decisão sua | ✅ **Feito** 28/08 (`c838ebc`) |
 | H8 | Camada de compatibilidade de banco do Conforto | Médio | G+ | Alto | Não agora | Registrado |
 | H9 | Comentário obsoleto em `app_factory.py:206` | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
-| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 (SharedAuth v0.6.0) |
+| H10 | `Vary: HX-Request` só no MegaSena — **novo** | Baixo | P | Baixo | Aceitar | ⚠️ **Em duas etapas** — Flask 29/08 (v0.6.0); o Bancário ficou de fora e entrou na revalidação, com `HX-Request, HX-Target` |
 | H11 | `run --rm quality` valida imagem antiga — **novo** | Alto | P | Baixo | Aceitar | ✅ **Feito** 28/08 (4 projetos) |
 | H12 | CSP bloqueia o estilo inline do próprio JS — **novo** | Baixo | P | Baixo | Aceitar | ✅ **Feito** 29/08 |
 | P1 | Consulta de tema por render no CRV | Baixo | P | Baixo | Aceitar | ✅ **Feito** 28/08 |
@@ -1452,6 +1510,112 @@ S6 e P2.
 
 *Auditoria feita em 28/08/2026 sobre a base commitada localmente. Nenhum
 arquivo dos projetos foi alterado; nenhum commit foi criado.*
+
+---
+
+## 14. Revalidação de 29/08 — o ControleBancario, conferido contra o código
+
+Feita a pedido do mantenedor, depois de dois defeitos de interface aparecerem
+no uso normal — nenhum dos dois visível para a suíte, o CI ou o ✅ deste
+relatório. **Escopo: apenas o ControleBancario.** Os outros cinco repositórios
+não foram reexaminados; nada aqui os absolve nem os acusa.
+
+Método: dois revisores independentes — um confrontando cada ✅ com a
+implementação real, outro auditando do zero sem ler este documento — e uma
+passagem pelo navegador contra o servidor rodando. Todo achado abaixo foi
+reconferido com evidência própria antes de entrar.
+
+### O padrão que explica os dois ✅ falsos
+
+Os dois itens marcados como feitos e que não estavam caíram pela mesma via:
+**um bump de pino em `requirements.txt` foi registrado como entrega**, sem
+ninguém verificar se o Django chega a invocar a função por trás — que é
+Flask-only por construção nos dois casos. É a lição da Fase 6 ("premissa sobre
+o servidor não se verifica em fixture, só contra o servidor") repetida numa
+dependência de biblioteca em vez de num cliente.
+
+O corolário incomoda mais que os defeitos: **um achado com checkmark para de
+ser reexaminado**, inclusive quando outra fase invalida sua recomendação. Foi
+o que houve com o H10, cuja recomendação a Fase 6 tornou insuficiente sem que
+ninguém reabrisse o item.
+
+### Achados
+
+| # | Achado | Situação |
+|---|---|---|
+| R1 | Quatro telas com chave de permissão no catálogo e nenhuma verificação | ✅ Corrigido |
+| R2 | `<main id="appMain">` aninhado a cada troca de tela | ✅ Corrigido |
+| R3 | `Vary` ausente no Bancário, e `HX-Request` sozinho insuficiente (H10) | ✅ Corrigido |
+| R4 | Injeção de log pelo `username` do login (irmão do A5) | ✅ Corrigido |
+| R5 | Quatro permissões órfãs, além das três da `0005` | ✅ Removidas |
+| R6 | 138 linhas de código morto com bug de data latente | ✅ Removidas |
+| R7 | Arredondamento de parcelas não soma o total | Recusado — ver abaixo |
+| R8 | Dois docstrings descrevendo código que não existe | ✅ Corrigidos |
+| R9 | O destino do login impedia uma quinta tela de exigir permissão | ✅ Corrigido |
+
+**R1 é o mais grave, e não era hipótese.** Dashboard, Projeções, Posição por
+conta e Próximos movimentos tinham chave no catálogo, distribuída nos perfis e
+exibida na tela de Permissões — e nenhuma linha as verificava. Uma usuária
+tinha `reports.account_position.view` com `allowed=False`, isto é, alguém
+desmarcou a caixa de propósito, e ela abria a tela assim mesmo. A tela de
+Permissões mentia sobre o que controlava. Próximos movimentos segue aberta de
+propósito, por ser o `LOGIN_REDIRECT_URL` e o destino de negação das outras.
+
+**R2 é o terceiro defeito da Fase 6, e o mais instrutivo.** `hx-select="#appMain"`
+com `hx-swap="innerHTML"` depositava o `<main>` recortado DENTRO do alvo: id
+duplicado, dois landmarks, dois contêineres de rolagem e padding em dobro. O
+comentário do próprio teste já descrevia o sintoma anterior ("sem `hx-select` a
+página inteira entra dentro do `main`") — a correção parou no meio, e a
+constante do teste passou a proteger o estado intermediário, porque afirma que
+os cinco atributos existem, não que o DOM resultante seja válido.
+
+**R7 foi recusado com o mesmo critério do P2.** R$100,00 em 3x dá três parcelas
+de R$33,33, que somam R$99,99. Redistribuir o resíduo exigiria que os cinco
+caminhos de cálculo soubessem qual parcela é a última, e o escopo
+`current_future` reescreve um SUBCONJUNTO das parcelas, onde "última" não tem
+resposta óbvia. Um ou dois centavos por operação, que o mantenedor considera
+irrelevante para este uso. O que foi feito no lugar: os cinco caminhos passaram
+a chamar um helper único — um deles já divergia dos outros quatro sobre como
+decidir a recorrência, e a divergência é o risco real, não o centavo.
+
+### O que a revalidação confirmou
+
+H1, U2, H3, H11, S8, A1, H6 e as Fases 2, 3 e 6 conferem com o código. A
+decisão pelo alvo em `quer_fragmento` tem os 26 pontos de chamada que a Fase 6
+registrou, e a deduplicação de `htmx:afterSwap` funciona como descrito.
+
+### R9 — o destino do login ditava o modelo de permissões
+
+Sobrou de R1 uma quinta tela sem verificação: Próximos movimentos. A primeira
+resposta foi registrá-la como exceção conhecida no teste de varredura, com o
+motivo escrito — a rota precisa ficar aberta por ser o `LOGIN_REDIRECT_URL` e
+o destino de qualquer negação.
+
+**Estava errado, e o mantenedor apontou:** teste existe para validar a
+aplicação, não para acomodar um defeito dela até a suíte ficar verde. Uma
+exceção necessária para o teste passar é quase sempre sinal de que quem deve
+mudar é a aplicação.
+
+E era. A tela não podia exigir permissão porque estava fixa como destino do
+login e da negação — quem não a tivesse cairia num lugar que não pode abrir.
+Navegação ditando modelo de permissões, com o preço no catálogo: a chave
+aparecia na tela de Permissões, era distribuída nos três perfis, e desmarcá-la
+não restringia nada.
+
+`core.views.inicio_view` passou a resolver o destino a partir do que a pessoa
+pode ver. Com isso toda tela exige a sua permissão, o `fallback` padrão do
+decorator nunca aponta para porta fechada, e **não sobrou exceção nenhuma** —
+o teste de catálogo agora afirma o simples, sem lista de perdão.
+
+Verificado nos três caminhos: pouso normal, usuário sem permissão alguma (cai
+em Alterar senha, sem laço) e negação numa tela (`/dashboard/` → `/inicio/` →
+`/transactions/`).
+
+Uma página "Sem acesso" chegou a ser escrita para o usuário sem permissão
+nenhuma, e foi removida antes de entrar: a varredura do menu já para em
+Alterar senha, então a página era inalcançável. Código morto escrito no mesmo
+dia em que 138 linhas de código morto foram removidas — a medição é que evitou
+a ironia.
 
 ---
 
@@ -1502,3 +1666,171 @@ combinação que `_validar_debug` já cobrava do `CONFORTO_DEBUG`.
 quatro apps afirma sobre esse tipo, e nos dois casos a falha continua
 derrubando a inicialização de forma visível. Fica registrado por ser uma
 diferença real de contrato, não por ter causado problema.
+
+---
+
+## 15. Revalidação de 29/08 (2ª parte) — os irmãos, sob as lições da §14
+
+Feita a pedido do mantenedor: *"use as lições aprendidas nesse chat e aplique
+nos outros projetos"*, com a observação de que muitos defeitos só apareceram
+"usando o sistema de verdade". Escopo: MegaSena, ControleRendaVariavel,
+ConfortoTermico e BackupRestore.
+
+Método: varredura dirigida pelos achados da §14 — permissão que não guarda
+nada, rota sem verificação, teste que acomoda defeito, docstring que promete o
+que o código não faz — mais uma passagem pelo navegador, com sessão real,
+contra os três servidores no ar.
+
+**O BackupRestore ficou de fora, e não por omissão:** não tem login por
+projeto (loopback mais checagem de `Host`/`Origin`, ver S3), não tem papéis e
+não usa HTMX. Nenhuma das lições tem onde pegar.
+
+### O que o navegador mudou no método
+
+Antes de qualquer achado, uma constatação que reordenou o resto:
+
+| Contêiner | sharedauth instalado | Pinado no repositório |
+|---|---|---|
+| `mega-sena-app-1` | 0.3.0 | v0.7.0 |
+| `controle-renda-variavel-web-1` | 0.3.0 | v0.7.0 |
+| `conforto-termico-ict-1` | 0.3.0 | v0.7.0 |
+
+**Isso derrubou um achado que eu já tinha escrito.** Medi no navegador que o
+CRV não declara `Vary: HX-Request` tendo dez pontos de decisão por esse
+cabeçalho, e ia registrar como defeito de código. Não é: a v0.7.0 põe o `Vary`
+em toda resposta HTML dentro de `registrar_cabecalhos`, que o CRV chama. O que
+eu media era a 0.3.0.
+
+É o erro da §14 na direção contrária. Lá, o pino subiu e ninguém conferiu se a
+função rodava. Aqui, olhei o que rodava e quase acusei o código de um defeito
+da imagem. As duas metades da pergunta — *o código chama?* e *o que está no ar
+é este código?* — precisam ser feitas juntas.
+
+### Achados
+
+| # | Achado | Projeto | Situação |
+|---|---|---|---|
+| T1 | Autorização por área liberava endpoint não mapeado; seis leituras abertas | ConfortoTermico | ✅ Corrigido |
+| T2 | A interface abre sem aba selecionada e sem painel visível | ConfortoTermico | ✅ Corrigido |
+| T3 | `POST /reset` apaga a base inteira sem exigir administrador | MegaSena | ✅ Corrigido |
+| T4 | CSS e JS do componente comum bloqueados na própria tela de login | MegaSena | ✅ Corrigido |
+| T5 | Teste de papel media `__wrapped__`, e numa rota só | CRV | ✅ Corrigido |
+| T6 | Três pilhas no ar com biblioteca e código anteriores ao repositório | os três | ✅ Reconstruídas |
+| T7 | Duas funções sem nenhum chamador, uma com docstring citando consumidor inexistente | CRV | ✅ Removidas |
+
+**T1 é o R1 deste projeto, com a mesma forma e outra mecânica.**
+`AREA_POR_ENDPOINT.get(endpoint)` devolvendo `None` **liberava**. Seis rotas de
+leitura ficaram fora do mapa: as quatro da aba Histórico (`historico_zona`,
+`historico_leituras`, `agregados_15min_zona`, `resumo_horario_zona`) e as duas
+da aba Operação (`status_operacao`, `eventos_operacao`). O perfil `operador`
+não tem a área `historico`, o template escondia a aba, e as quatro entregavam
+as medições assim mesmo. A **escrita** da mesma aba
+(`consolidar_historico_zona`) sempre exigiu área, no mesmo arquivo, duas linhas
+acima. E o docstring do módulo afirmava aplicar área "a TODA rota do app".
+
+Corrigido nos dois sentidos: as seis mapeadas, e o hook passou a **negar** o
+que não está mapeado, com `ENDPOINTS_ABERTOS_A_QUALQUER_PERFIL` listando com
+motivo escrito as quatro que são mesmo abertas. A `comum.index` está entre
+elas, e o motivo é o R9: ela é o destino de `_negar_acesso`, e exigir área ali
+seria o laço.
+
+**T2 é o achado que só o uso entrega.** Depois do login, os oito painéis vinham
+ocultos e nenhuma aba vinha marcada — a tela abria vazia até o primeiro clique.
+`rotas_comuns.index` renderizava `index.html` **sem passar `aba_inicial`**, e o
+template compara essa variável com o nome da aba; comparação com o `Undefined`
+do Jinja dá `False` em silêncio. `ativarAba`, no `app.js`, só está ligada ao
+clique. `git log -S` mostra que a variável entrou no template na "versão
+inicial consolidada V2.0" e **nunca teve produtor** — não é regressão, nunca
+funcionou. Do outro lado do mesmo recurso, `/api/configuracao-interface`
+devolve `"abaInicial": "principal"` e nenhum JS lê esse campo: uma variável
+consumida sem produtor e um valor produzido sem consumidor.
+
+Corrigido com `primeira_aba_permitida(perfil)`, derivando em vez de fixar em
+"Dashboard" — fixar funcionaria hoje só porque todo perfil tem a área
+`dashboard`, e essa dependência não ficaria escrita em lugar nenhum. É o R9
+outra vez, agora dentro da SPA.
+
+**T3 foi decisão do mantenedor**, consultado porque muda o que os operadores
+podem fazer: `/reset` apaga todos os concursos e apostas e não exigia papel, e
+`POST /settings` muda o padrão de geração de todo mundo. Os dois passaram a
+exigir administrador, junto com o `GET /settings` — deixar o formulário visível
+e recusar só o POST daria uma tela existindo para não funcionar.
+
+**T4 é uma lição que existia no irmão e não atravessou.** O `base.html` do
+MegaSena carrega o CSS e o JS do componente comum, e `auth/login.html` estende
+`base.html`; sem sessão, os dois são redirecionados para `/login` e o navegador
+os recusa por MIME. O efeito visível é o toast de "Sessão encerrada" nunca
+aparecer depois do logout, porque quem o monta é o JS bloqueado. **O CRV já
+tinha resolvido isso**, e o comentário na sua `PUBLIC_ENDPOINTS` descreve o
+sintoma com precisão — "sem isto `requer_login` bloquearia o próprio arquivo
+que renderiza 'Usuário ou senha inválidos'". O ConfortoTermico resolveu de
+outro jeito, mantendo o componente fora do layout de login. Dois irmãos
+resolveram; o terceiro não soube.
+
+### O tema que atravessa T1, T4 e T5: testes que medem a coisa errada
+
+Nenhum dos três defeitos passou por falta de teste. Passou por teste que
+respondia outra pergunta:
+
+- **ConfortoTermico** afirmava sobre o **código-fonte** do hook: que as
+  palavras `AREA_POR_ENDPOINT`, `area_permitida(` e `_negar_acesso()`
+  apareciam nele. Todas apareciam, o tempo inteiro em que seis rotas estavam
+  abertas. Conferir que a verificação está *escrita* não responde se ela
+  *alcança* as rotas.
+- **MegaSena e CRV** varriam a `url_map` exigindo sessão em toda rota, mas
+  **pulavam rotas com parâmetro**, com o motivo escrito no comentário: "as sem
+  parâmetro já cobrem a decisão, que é do `before_request` e não da rota". O
+  argumento é verdadeiro sobre onde a decisão mora e falso sobre o que a suíte
+  mede — e a única rota parametrizada não pública do MegaSena era justamente a
+  defeituosa (T4). O filtro descartava exatamente a rota errada.
+- **CRV** amarrava o papel a uma rota com
+  `getattr(view, "__wrapped__") is not None` — verdadeiro para qualquer
+  decorator que use `functools.wraps`, inclusive um `@login_required` sozinho.
+  Passava sem provar papel nenhum, e só olhava `/settings`.
+
+As três guardas foram trocadas por medições de resultado: varredura sem pulo,
+comparação do **conjunto** de rotas protegidas com uma lista declarada — e não
+rota a rota, que só encontra o que alguém já suspeitava — e requisições reais
+com sessão e perfil.
+
+### Verificação
+
+| Projeto | Suíte | Ruff |
+|---|---|---|
+| ConfortoTermico | 190 ✓ | limpo |
+| ControleRendaVariavel | 155 ✓ | limpo |
+| MegaSena | 77 ✓ | limpo |
+
+Um dos testes novos reprovou na primeira execução, e o defeito era do teste:
+afirmava que toda área vira aba, e `usuarios` é uma página fora da SPA. A
+asserção passou a declarar as áreas sem aba com o motivo, em vez de afrouxar.
+
+### T6 — reconstruído, e o que a reconstrução provou
+
+As três pilhas foram reconstruídas com autorização do mantenedor, e as
+correções foram conferidas contra os servidores, não só contra a suíte:
+
+| Verificação | Antes | Depois |
+|---|---|---|
+| `sharedauth` instalado nos três | 0.3.0 | 0.7.0 |
+| `Vary` nas telas do MegaSena | só em 3 das 7 | `HX-Request, Cookie` nas 7 |
+| `Vary` nas telas do CRV | ausente | `HX-Request, Cookie` nas 6 medidas |
+| Estáticos que o login do MegaSena carrega, sem sessão | 302 para `/login` | 200, os cinco |
+| ConfortoTermico ao abrir | 0 abas marcadas, 0 painéis visíveis | 1 e 1, o Dashboard |
+| As seis leituras agora com área, para o administrador | 200 | 200 |
+
+**O `Vary` do CRV fechou sem uma linha de código.** É a prova limpa do que a
+terceira nota do H10 afirma: o achado estava resolvido no repositório e ausente
+na máquina. Quem lesse só o repositório teria dito "feito" e estaria certo
+sobre o código e errado sobre o serviço.
+
+A recusa por perfil das seis rotas não foi medida no navegador: exigiria uma
+segunda conta, e criar uma passa por digitar senha. Está coberta pela suíte,
+que faz requisição HTTP real com sessão e perfil para as seis rotas em dois
+perfis sem a área — doze casos, mais os seis da contraprova.
+
+Uma varredura de função sem chamador fechou o T7: `accumulate_signed_quantity`
+e `normalize_theme`, no CRV, citadas em lugar nenhum além da própria definição.
+A primeira tem docstring explicando que existe para o relatório de performance
+mensal, que nunca a chamou — a mesma forma dos dois docstrings corrigidos na
+§14: texto preciso, verificável e falso.

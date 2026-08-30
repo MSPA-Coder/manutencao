@@ -43,8 +43,14 @@ DESTINO_SCRIPTS=${DESTINO_SCRIPTS:-/home/ubuntu}
 DESTINO_SYSTEMD=${DESTINO_SYSTEMD:-/etc/systemd/system}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 SUDO=${SUDO-sudo}
+# Dono de cada destino. Declarado, e nao herdado de quem roda o instalador:
+# a primeira versao deste arquivo fazia `chown root:root` em tudo e deixou
+# cinco scripts de /home/ubuntu com dono root e os outros quatro com dono
+# ubuntu -- efeito colateral silencioso, e arvore inconsistente.
+DONO_SCRIPTS=${DONO_SCRIPTS:-ubuntu:ubuntu}
+DONO_SYSTEMD=${DONO_SYSTEMD:-root:root}
 
-# Inventário: "origem relativa|destino absoluto|modo".
+# Inventário: "origem relativa|destino absoluto|modo|dono".
 #
 # É a lista COMPLETA do que este repositório instala. O que não está aqui não é
 # tocado -- o instalador nunca remove nem sobrescreve arquivo que não declarou.
@@ -52,25 +58,25 @@ SUDO=${SUDO-sudo}
 # `nginx/instalar.sh` vira `instalar-nginx.sh` no destino: o servidor já o
 # chama assim, e renomear no servidor quebraria a memória de quem opera.
 INVENTARIO=(
-    "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755"
-    "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755"
-    "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755"
-    "backup-db.sh|$DESTINO_SCRIPTS/backup-db.sh|755"
-    "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755"
-    "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755"
-    "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755"
-    "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755"
-    "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755"
-    "alerta@.service|$DESTINO_SYSTEMD/alerta@.service|644"
-    "autocura.service|$DESTINO_SYSTEMD/autocura.service|644"
-    "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644"
-    "backup-db.service|$DESTINO_SYSTEMD/backup-db.service|644"
-    "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644"
-    "docker-prune.service|$DESTINO_SYSTEMD/docker-prune.service|644"
-    "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644"
-    "vigia.service|$DESTINO_SYSTEMD/vigia.service|644"
-    "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644"
-    "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644"
+    "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755|$DONO_SCRIPTS"
+    "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755|$DONO_SCRIPTS"
+    "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755|$DONO_SCRIPTS"
+    "backup-db.sh|$DESTINO_SCRIPTS/backup-db.sh|755|$DONO_SCRIPTS"
+    "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
+    "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
+    "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755|$DONO_SCRIPTS"
+    "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
+    "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755|$DONO_SCRIPTS"
+    "alerta@.service|$DESTINO_SYSTEMD/alerta@.service|644|$DONO_SYSTEMD"
+    "autocura.service|$DESTINO_SYSTEMD/autocura.service|644|$DONO_SYSTEMD"
+    "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644|$DONO_SYSTEMD"
+    "backup-db.service|$DESTINO_SYSTEMD/backup-db.service|644|$DONO_SYSTEMD"
+    "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644|$DONO_SYSTEMD"
+    "docker-prune.service|$DESTINO_SYSTEMD/docker-prune.service|644|$DONO_SYSTEMD"
+    "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
+    "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
+    "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644|$DONO_SYSTEMD"
+    "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644|$DONO_SYSTEMD"
 )
 
 #: Timers a reiniciar quando a unidade correspondente mudar. `alerta@.service` é
@@ -133,12 +139,17 @@ exigir_checkout_limpo() {
 # Comparação e instalação
 # --------------------------------------------------------------------------
 
-# 0 = já igual (conteúdo e modo), 1 = precisa instalar.
+# 0 = já igual (conteúdo, modo e dono), 1 = precisa instalar.
+#
+# O dono entra na comparação porque entra na instalação: verificar só o que é
+# barato de verificar deixaria um `chown` que falhou passar em silêncio, e a
+# conferência final existe justamente para não confiar no que foi tentado.
 esta_igual() {
-    local origem=$1 destino=$2 modo=$3
+    local origem=$1 destino=$2 modo=$3 dono=$4
     [ -f "$destino" ] || return 1
     cmp -s "$origem" "$destino" || return 1
     [ "$(stat -c '%a' "$destino" 2>/dev/null)" = "$modo" ] || return 1
+    [ "$(stat -c '%U:%G' "$destino" 2>/dev/null)" = "$dono" ] || return 1
 }
 
 # Grava por arquivo temporário no MESMO diretório e renomeia: o `mv` dentro do
@@ -146,14 +157,16 @@ esta_igual() {
 # arquivo que o systemd pode disparar a qualquer segundo, seria pior do que a
 # versão velha.
 instalar_um() {
-    local origem=$1 destino=$2 modo=$3 dir temporario
+    local origem=$1 destino=$2 modo=$3 dono=$4 dir temporario
     dir=$(dirname -- "$destino")
 
     $SUDO install -d -m 755 "$dir"
     temporario=$($SUDO mktemp "$dir/.instalar.XXXXXX")
     $SUDO cp -- "$origem" "$temporario"
     $SUDO chmod "$modo" "$temporario"
-    $SUDO chown root:root "$temporario" 2>/dev/null || true
+    # Sem `|| true`: um dono errado é diferença de verdade, e a conferência
+    # final o apanharia de todo jeito -- melhor falhar onde a causa está.
+    $SUDO chown "$dono" "$temporario"
     $SUDO mv -f -- "$temporario" "$destino"
 }
 
@@ -165,7 +178,7 @@ instalar_um() {
 
 declare -a diferentes=()
 for item in "${INVENTARIO[@]}"; do
-    IFS='|' read -r relativo destino modo <<<"$item"
+    IFS='|' read -r relativo destino modo dono <<<"$item"
     origem="$ORIGEM/$relativo"
 
     if [ ! -f "$origem" ]; then
@@ -174,7 +187,7 @@ for item in "${INVENTARIO[@]}"; do
     fi
     recusar_cr "$origem"
 
-    if esta_igual "$origem" "$destino" "$modo"; then
+    if esta_igual "$origem" "$destino" "$modo" "$dono"; then
         printf '  igual      %s\n' "$destino"
     else
         printf '  DIFERENTE  %s\n' "$destino"
@@ -198,8 +211,8 @@ fi
 declare -a timers=()
 recarregar_systemd=0
 for item in "${diferentes[@]}"; do
-    IFS='|' read -r relativo destino modo <<<"$item"
-    instalar_um "$ORIGEM/$relativo" "$destino" "$modo"
+    IFS='|' read -r relativo destino modo dono <<<"$item"
+    instalar_um "$ORIGEM/$relativo" "$destino" "$modo" "$dono"
     echo "  instalado  $destino"
 
     case "$destino" in
@@ -236,8 +249,8 @@ echo
 echo "-- conferindo --"
 restaram=0
 for item in "${INVENTARIO[@]}"; do
-    IFS='|' read -r relativo destino modo <<<"$item"
-    if ! esta_igual "$ORIGEM/$relativo" "$destino" "$modo"; then
+    IFS='|' read -r relativo destino modo dono <<<"$item"
+    if ! esta_igual "$ORIGEM/$relativo" "$destino" "$modo" "$dono"; then
         echo "  AINDA DIFERENTE  $destino" >&2
         restaram=$((restaram + 1))
     fi

@@ -55,8 +55,8 @@ quatro aplicativos. A interface é:
 
 ```bash
 cd ~/manutencao && git pull --ff-only
-./vps/instalar.sh --check   # o que está diferente, sem escrever
-./vps/instalar.sh           # instala e confere
+bash vps/instalar.sh --check   # o que está diferente, sem escrever
+bash vps/instalar.sh           # instala e confere
 ```
 
 `--check` sai diferente de zero quando há deriva, para que uma verificação

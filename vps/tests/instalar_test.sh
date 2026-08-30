@@ -88,6 +88,7 @@ run_instalar() {
     set +e
     PATH="$CASE_TMP/bin:$PATH" \
     DESTINO_SCRIPTS="$CASE_TMP/scripts" DESTINO_SYSTEMD="$CASE_TMP/systemd" \
+    DONO_SCRIPTS="$DONO_DO_TESTE" DONO_SYSTEMD="$DONO_DO_TESTE" \
     SYSTEMCTL=systemctl SUDO= \
     CALL_LOG="$CASE_TMP/calls.log" FAKE_GIT_STATUS="$CASE_TMP/git-status" \
         bash "$1" ${2:-} >"$CASE_TMP/output" 2>&1
@@ -118,6 +119,9 @@ end_case() {
 set -e
 printf 'TAP version 13\n'
 ESPERADOS=$(total_do_inventario)
+# O teste roda sem privilégio, então o dono declarado tem de ser o próprio
+# usuário -- é por isso que `DONO_SCRIPTS`/`DONO_SYSTEMD` vêm do ambiente.
+DONO_DO_TESTE="$(id -un):$(id -gn)"
 
 # --------------------------------------------------------------------------
 begin_case
@@ -127,6 +131,7 @@ instalados=$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -type f | wc -l | tr -
 assert_eq "$ESPERADOS" "$instalados" 'deve instalar todos os artefatos do inventário'
 assert_eq 755 "$(stat -c '%a' "$CASE_TMP/scripts/deploy.sh")" 'script deve ficar 755'
 assert_eq 644 "$(stat -c '%a' "$CASE_TMP/systemd/vigia.timer")" 'unidade deve ficar 644'
+assert_eq "$DONO_DO_TESTE" "$(stat -c '%U:%G' "$CASE_TMP/scripts/deploy.sh")" 'dono deve ser o declarado'
 [ -f "$CASE_TMP/scripts/instalar-nginx.sh" ] || fail 'nginx/instalar.sh deve virar instalar-nginx.sh'
 [ -f "$CASE_TMP/systemd/certbot.service.d/alerta.conf" ] || fail 'drop-in do certbot deve entrar em subdiretório'
 assert_log 'systemctl <daemon-reload>' 'unidade nova deve recarregar o systemd'
@@ -212,6 +217,24 @@ run_instalar "$COPIA/instalar.sh"
 [ "$EXIT_CODE" -ne 0 ] || fail 'fonte com CR deve recusar'
 grep -q 'contém CR' "$CASE_TMP/output" || fail 'deve dizer que o problema é CR'
 end_case 'fonte com CR é recusado em vez de instalar shebang quebrado'
+
+# --------------------------------------------------------------------------
+# Modo e dono divergentes sao diferenca, e nao detalhe: a primeira versao do
+# instalador fazia `chown root:root` em tudo e deixou metade dos scripts de
+# /home/ubuntu com dono trocado, sem nada acusar. Por isso `esta_igual`
+# compara os tres -- conteudo, modo e dono.
+begin_case
+run_instalar "$INSTALAR"
+chmod 700 "$CASE_TMP/scripts/vigia.sh"
+: >"$CALL_LOG"
+run_instalar "$INSTALAR" --check
+[ "$EXIT_CODE" -ne 0 ] || fail 'modo divergente deve contar como deriva'
+grep -q 'DIFERENTE  .*vigia.sh' "$CASE_TMP/output" || fail 'deve apontar o arquivo de modo errado'
+: >"$CALL_LOG"
+run_instalar "$INSTALAR"
+assert_eq 0 "$EXIT_CODE" 'reinstalar deve corrigir o modo'
+assert_eq 755 "$(stat -c '%a' "$CASE_TMP/scripts/vigia.sh")" 'modo deve voltar ao declarado'
+end_case 'modo divergente conta como deriva e e corrigido'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

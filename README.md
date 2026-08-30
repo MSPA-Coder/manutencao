@@ -4,14 +4,16 @@ Este repositório versiona a fonte da infraestrutura compartilhada do VPS. Os
 arquivos que executam no servidor ficam em [`vps/`](vps/); cada aplicação
 mantém seu próprio código, Compose, migrações e documentação operacional.
 
-Editar este repositório não implanta nem altera o VPS. A instalação exige
-copiar deliberadamente o artefato para o destino indicado, validar a cópia e
-executar o procedimento correspondente no servidor.
+Editar este repositório não implanta nem altera o VPS. A instalação é um passo
+deliberado e separado: [`vps/instalar.sh`](vps/instalar.sh), executado no
+servidor a partir do clone local, entrega os artefatos declarados no inventário
+e confere o resultado.
 
 ## Operação atual
 
 | Componente | Fonte | Contrato operacional |
 |---|---|---|
+| Instalação da infraestrutura | [`vps/instalar.sh`](vps/instalar.sh) | Entrega no servidor os 19 artefatos do inventário a partir do clone de `main`, por rename atômico e com modo explícito. Recusa checkout sujo e fonte com CR, recarrega o systemd e reinicia apenas os timers cujas unidades mudaram, e relê tudo ao final — só sai com sucesso quando o servidor espelha o checkout. `--check` responde "em dia ou à deriva" sem escrever, saindo diferente de zero quando há diferença. |
 | Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main`, recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. |
 | Limite do rollback | [`vps/deploy.sh`](vps/deploy.sh) | Migrações e dados não são revertidos automaticamente. Deploy com mudança de schema exige backup verificado, compatibilidade retroativa ou procedimento manual de reversão. |
 | Backup dos bancos | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. O timer agenda o ciclo diário. |
@@ -45,16 +47,49 @@ Teste hermético do fluxo, sem rede ou acesso ao VPS:
 docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/deploy_test.sh
 ```
 
-## Instalação e observabilidade
+## Instalação da infraestrutura
 
-Os scripts e unidades declaram no próprio arquivo o destino esperado no VPS.
-Copiar uma nova versão não habilita timers nem recarrega serviços por si só.
-Após instalação deliberada, confira permissões, sintaxe, estado das unidades e
-logs no `journalctl` antes de considerar a operação concluída.
+O servidor mantém um clone deste repositório em `~/manutencao`, com chave de
+deploy própria (`github-manutencao` no `~/.ssh/config`) — mesmo padrão dos
+quatro aplicativos. A interface é:
 
-Para Nginx, siga o procedimento de [`vps/nginx/README.md`](vps/nginx/README.md).
-O instalador salva a configuração atual, executa `nginx -t`, restaura o backup
-se a validação falhar e só então recarrega o serviço.
+```bash
+cd ~/manutencao && git pull --ff-only
+./vps/instalar.sh --check   # o que está diferente, sem escrever
+./vps/instalar.sh           # instala e confere
+```
+
+`--check` sai diferente de zero quando há deriva, para que uma verificação
+periódica consiga distinguir "em dia" de "à deriva" sem interpretar texto.
+
+**Por que isto existe.** Até 30/08/2026 os artefatos chegavam ao servidor por
+cópia manual, e não havia nada garantindo que o instalado fosse o versionado.
+Uma comparação arquivo a arquivo mostrou o `deploy.sh` do servidor 160 linhas
+de código atrás — sem o registro do último SHA saudável que a tabela acima já
+descrevia como se existisse, e sem as variáveis de ambiente pelas quais
+`tests/deploy_test.sh` dirige o script. **A suíte do deploy validava um arquivo
+que não era o que rodaria num incidente.** Os demais artefatos coincidiam por
+sorte: ninguém tinha mexido no código deles desde a cópia.
+
+Teste hermético do instalador, sem rede nem acesso ao VPS:
+
+```powershell
+docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/instalar_test.sh
+```
+
+O Nginx fica fora do inventário de conteúdo de propósito: tem instalador
+próprio, [`vps/nginx/instalar.sh`](vps/nginx/instalar.sh), que salva a
+configuração atual, executa `nginx -t`, restaura o backup se a validação falhar
+e só então recarrega o serviço. O `instalar.sh` apenas o entrega em
+`~/instalar-nginx.sh`; o procedimento continua em
+[`vps/nginx/README.md`](vps/nginx/README.md).
+
+## Observabilidade
+
+Depois de instalar, confira estado das unidades e logs no `journalctl`. O
+`vigia.timer` verifica disco, `/health` público, certificados e frescor dos
+backups; o `autocura.timer` reinicia contêiner `unhealthy` com teto de
+tentativas.
 
 ## Segredos
 

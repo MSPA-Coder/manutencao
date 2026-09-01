@@ -488,3 +488,48 @@ revalidação.
 As prioridades de quebra, sucesso falso e dado enganoso estão encerradas. A
 fila seguinte concentra validação de autorização, cobertura de uploads,
 auditoria transversal e consistência de produto.
+
+## 8. Execução das decisões de produto — retomada em 01/09/2026
+
+O mantenedor aprovou as recomendações de produto e autorizou a implementação
+completa, preservando a decisão anterior de não configurar ou validar a conta
+de teste `Claudia`. A implementação local ficou assim:
+
+1. **Acesso por papel:** continua como lacuna explícita. A configuração da
+   conta de teste deixou de ser requisito; a matriz completa depende de contas
+   estáveis, com credenciais conhecidas, e de login manual do mantenedor.
+2. **Falha fechada em operações financeiras:** o ControleBancario já recusa
+   escopo ausente ou inválido com HTTP 400 e mantém as defesas de servidor.
+3. **Modo discreto:** RendaVariavel e ControleBancario assumem explicitamente
+   o objetivo de evitar leitura casual da tela. No RendaVariavel, números são
+   mascarados e os canvases dos gráficos são ocultos; não é uma promessa de
+   confidencialidade contra inspeção do HTML.
+4. **Eventos auditáveis:** o escopo decidido para lançamentos e fechamento
+   mensal permanece no Bancário. MegaSena ganhou uma trilha persistente para
+   apostas, importações, configurações, gestão de contas e senhas. O
+   ConfortoTermico passou a registrar e expor a revisão administrativa de
+   cadastros, configurações, limpeza de histórico e atualização de agregados,
+   sempre com ator e contexto mínimo, sem segredos.
+5. **Ciclo de vida dos cadastros:** MegaSena permite excluir aposta salva sem
+   apagar concursos; RendaVariavel exclui referência sem uso ou a arquiva se
+   tiver histórico, com reativação; ControleBancario exclui tag, projeto ou
+   orçamento sem dependência e arquiva o item que preserva histórico.
+6. **Histórico e frescor:** no ConfortoTermico, a ação agora atualiza somente
+   agregados pendentes, sem apagar leituras brutas. O limite de frescor é
+   configurável por zona entre dois e três ciclos, com padrão de três.
+
+### Validação final desta retomada
+
+| Sistema | Verificação | Resultado |
+|---|---|---|
+| ControleRendaVariavel | Quality Docker, migração aplicada e fluxo autenticado | Ruff e 195 testes aprovados; health saudável; modo discreto conferido no navegador |
+| ControleBancario | Quality Docker e bootstrap PostgreSQL isolado | lint e 243 testes aprovados; migrate e collectstatic concluídos |
+| MegaSena | Quality Docker e ciclo de migração em PostgreSQL isolado | Ruff e 115 testes aprovados; upgrade, downgrade e novo upgrade aprovados |
+| ConfortoTermico | Quality Docker e bootstrap PostgreSQL isolado | Ruff e 225 testes aprovados; pilha saudável e `verificar_postgres` aprovado |
+
+Total desta validação: **778 testes aprovados**, além dos lint, health checks e
+bootstraps documentados acima. Não foi feito backup do RendaVariavel, por
+decisão expressa do mantenedor e com aceitação do risco; as demais validações
+de banco usaram somente ambientes temporários já removidos. A próxima etapa
+autorizada é commitar localmente, publicar os ramos e atualizar o VPS a partir
+de `main`.

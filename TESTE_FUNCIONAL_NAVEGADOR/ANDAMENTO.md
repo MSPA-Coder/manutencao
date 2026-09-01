@@ -186,3 +186,21 @@ Commits locais dos sistemas:
 Nenhum commit foi enviado a remoto e nenhum VPS foi alterado. A análise geral
 foi revalidada em `CONCLUSOES_TRANSVERSAIS.md`, seção 7; a próxima prioridade é
 montar contas estáveis por papel e executar a matriz de autorização.
+
+## Retomada: decisões de produto e validação final — 01/09/2026
+
+As seis decisões de produto aprovadas foram implementadas localmente e
+consolidadas em `CONCLUSOES_TRANSVERSAIS.md`, seção 8. A configuração de
+`Claudia` foi retirada do escopo por decisão do mantenedor; a lacuna de teste
+por papel permanece registrada, sem simular credenciais.
+
+Validação final: **778 testes aprovados** (RV 195, CB 243, MS 115, CT 225),
+Ruff aprovado nos quatro repositórios, migrações de todos os sistemas
+verificadas em pilhas saudáveis, e upgrade/downgrade/upgrade do MegaSena
+confirmado em PostgreSQL isolado. A pilha do RendaVariavel também foi
+confirmada autenticada no navegador, incluindo o modo discreto. Os ambientes
+temporários foram removidos; nenhum dado existente foi usado nos bootstraps.
+
+Backup do RendaVariavel foi deliberadamente omitido com autorização expressa
+do mantenedor e aceitação do risco. Aguardam-se somente commits locais,
+publicação dos ramos e atualização do VPS a partir de `main`, já autorizados.

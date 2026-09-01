@@ -95,3 +95,27 @@ Foi criado e removido um parcelamento `ZZTESTE-REVALIDACAO-100-3`. O banco
 voltou a **714 lançamentos**, a operação temporária foi removida e há zero
 lançamento `ZZTESTE`. Permanecem apenas os eventos esperados de criação e
 exclusão na trilha de auditoria. Nenhum commit foi criado.
+
+## Lacunas exercitadas depois da auditoria — 01/09/2026
+
+- Claudia foi configurada como usuária ativa com o perfil Operador: 12
+  permissões funcionais (`dashboard`, lançamentos, relatórios, configurações
+  visíveis e tema), sem permissões críticas administrativas.
+- Com login real de Claudia, o Dashboard, os relatórios e os controles de
+  incluir, editar e realizar lançamentos ficaram acessíveis. Não há controle de
+  excluir. As rotas de importação, conciliação, comprovantes, permissões,
+  fechamento mensal e otimização do banco foram negadas no servidor com
+  redirecionamento ao Dashboard.
+- Uploads antes não exercitados foram confirmados: CSV de extrato duplicado
+  resultou em 0 linhas novas e 1 duplicada ignorada; comprovante `.txt` válido
+  foi salvo e removido, sem resíduo.
+- A otimização `VACUUM ANALYZE` foi executada e a interface confirmou as 12
+  tabelas processadas.
+
+O ciclo de senha temporária/troca obrigatória não foi acionado: fazê-lo exige
+alterar a credencial de uma conta real e uma nova decisão do mantenedor.
+
+Depois da validação no navegador, a suíte focada de autorização, acesso
+anônimo obrigatório e troca de senha também passou no contêiner de qualidade.
+Ela cobre a negação no servidor e o ciclo pendente/liberado sem alterar a senha
+de Claudia ou de qualquer outra conta existente.

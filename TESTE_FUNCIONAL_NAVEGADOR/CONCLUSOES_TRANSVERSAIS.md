@@ -533,3 +533,27 @@ decisão expressa do mantenedor e com aceitação do risco; as demais validaçõ
 de banco usaram somente ambientes temporários já removidos. A próxima etapa
 autorizada é commitar localmente, publicar os ramos e atualizar o VPS a partir
 de `main`.
+
+## 9. Fechamento posterior das lacunas de sessão e upload — 01/09/2026
+
+Com login manual do mantenedor, o fluxo de upload foi confirmado no MegaSena e
+no ControleBancario. A importação de XLSX da MegaSena processou um concurso
+idêntico como ignorado; o CSV bancário processou uma linha duplicada sem criar
+movimento; e o ciclo de comprovante aceitou arquivo válido. O comprovante de
+teste foi removido, portanto não deixou resíduo.
+
+A matriz por papel foi exercitada no ControleBancario com Claudia no perfil
+Operador. A aplicação confirmou as permissões permitidas e recusou no servidor
+as rotas administrativas, incluindo importação, conciliação, comprovantes,
+permissões, fechamento mensal e otimização. O teste não demonstra isolamento
+por titular: Claudia possui acesso amplo aos três titulares por configuração
+deliberada, e não por herança do perfil funcional.
+
+Persistem duas lacunas deliberadas: os fluxos de senha temporária/troca
+obrigatória, pois mudariam uma credencial real, e a matriz de autorização nos
+demais sistemas, que ainda requer contas estáveis e login manual por papel.
+
+As suítes focadas posteriores de cada projeto passaram para autorização,
+autenticação obrigatória e troca de senha. Portanto, os contratos de servidor
+estão exercitados nos quatro sistemas; o que não foi repetido é somente a
+digitação manual de uma senha temporária na interface de uma conta real.

@@ -204,3 +204,41 @@ temporários foram removidos; nenhum dado existente foi usado nos bootstraps.
 Backup do RendaVariavel foi deliberadamente omitido com autorização expressa
 do mantenedor e aceitação do risco. Aguardam-se somente commits locais,
 publicação dos ramos e atualização do VPS a partir de `main`, já autorizados.
+
+## Fechamento das lacunas de navegador — 01/09/2026
+
+As alterações foram posteriormente integradas em `main` e implantadas no VPS.
+No ambiente local, as lacunas que dependiam de sessão e de upload foram
+retomadas com autorização explícita do mantenedor.
+
+- MegaSena: importação manual de XLSX autenticada confirmou `0` novos, `0`
+  atualizados e `1` concurso idêntico ignorado.
+- ControleBancario: importação autenticada de CSV confirmou `0` linhas novas e
+  `1` duplicada ignorada. Um comprovante `.txt` válido foi anexado a um
+  lançamento existente e removido logo em seguida; nenhum comprovante de teste
+  permaneceu.
+- ControleBancario: Claudia foi restabelecida como `user`, ativa, com o perfil
+  Operador (12 permissões funcionais). O login real confirmou Dashboard,
+  lançamentos (incluir/editar/realizar) e relatórios disponíveis; importação,
+  conciliação, comprovantes, permissões, fechamento mensal e otimização do
+  banco redirecionaram para o Dashboard. Não há permissão funcional de excluir
+  lançamento. Os acessos aos três titulares continuam amplos por configuração
+  deliberada de acesso por titular.
+- ControleBancario: `VACUUM ANALYZE` foi executado com sucesso como
+  administrador.
+- ConfortoTermico: as 65.088 medições e seis gerações do schema
+  `dados_entrada` foram apagadas pela rotina oficial autorizada. A ação manual
+  anterior também zerou as leituras históricas; zonas, equipamentos e usuários
+  foram preservados. Não havia backup, por decisão expressa do mantenedor.
+
+Restam somente os fluxos que exigem uma nova decisão de credenciais: criação ou
+reset de conta com senha temporária e troca obrigatória de senha, além da matriz
+por papel nos outros três sistemas. Nenhuma senha foi lida, registrada ou
+digitada por agente.
+
+Em seguida, as suítes focadas de autorização, autenticação obrigatória e troca
+de senha passaram nos quatro contêineres. Elas cobrem as permissões de papel,
+as negativas de rota, o redirecionamento enquanto a troca está pendente e a
+liberação após a nova senha. A única diferença que permanece é visual e manual:
+o agente não pode inserir a senha temporária nem concluir a troca em uma conta
+real no navegador.

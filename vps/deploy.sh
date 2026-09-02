@@ -49,7 +49,7 @@ projeto_info() {
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
             DOMINIO=bancario-mspa.duckdns.org ;;
         conforto|conforto-termico)
-            DIR=conforto-termico;       ENVF=.env.docker; PORTA=5401
+            DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
             DOMINIO=conforto-mspa.duckdns.org ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101

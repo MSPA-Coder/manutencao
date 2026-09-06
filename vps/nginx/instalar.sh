@@ -17,7 +17,7 @@ set -uo pipefail
 ORIGEM="${1:-/home/ubuntu/nginx}"
 BACKUP="/home/ubuntu/nginx-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
 
-VHOSTS=(conforto-termico controle-bancario controle-renda-variavel megasena)
+VHOSTS=(conforto-termico controle-bancario controle-renda-variavel megasena mp-solucoes)
 
 # --------------------------------------------------------------------------
 # Conferências antes de tocar em qualquer coisa
@@ -81,7 +81,8 @@ echo "nginx: $(systemctl is-active nginx)"
 echo
 echo "== conferindo o resultado =="
 for d in conforto-mspa.duckdns.org megasena-mspa.duckdns.org \
-         bancario-mspa.duckdns.org renda-mspa.duckdns.org; do
+         bancario-mspa.duckdns.org renda-mspa.duckdns.org \
+         mp-solucoes.duckdns.org; do
     versao=$(curl -sS --max-time 10 -o /dev/null -w '%{http_version}' "https://$d/health" 2>/dev/null || echo '?')
     saude=$(curl -sSL --max-time 10 "https://$d/health" 2>/dev/null | head -c 60)
     printf '  %-30s HTTP/%s  %s\n' "$d" "$versao" "$saude"

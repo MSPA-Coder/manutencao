@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `mp-solucoes` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. O `mp-solucoes` serve um site estático (contêiner nginx) e não tem o limitador de `/login`. |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |
@@ -44,7 +44,7 @@ sudo -v
 ```
 
 O script precisa de `sudo` para escrever em `/etc/nginx` e recarregar o
-serviço. Ao final, ele verifica `/health` dos quatro domínios, negociação
+serviço. Ao final, ele verifica `/health` de cada domínio, negociação
 HTTP/2, compressão e recusa de host desconhecido. Se alguma conferência
 operacional falhar apesar de `nginx -t` passar, use o caminho de backup exibido
 pelo próprio instalador para restaurar a configuração anterior.

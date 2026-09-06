@@ -1,0 +1,42 @@
+# Vhost do site MP Soluções. Cópia de /etc/nginx/sites-available/mp-solucoes.
+#
+# Diferente dos outros vhosts: o backend é um contêiner nginx servindo um site
+# estático (porta 5501), não uma aplicação com login. Por isso não há o
+# `location ~ ^/login` com o limitador — não existe rota de autenticação a
+# proteger. O resto (redirect 80->443, ACME, TLS, HSTS, proxy) é idêntico.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name mp-solucoes.duckdns.org;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    # `listen ... ssl http2` e não `http2 on;`: a diretiva separada só existe a
+    # partir do nginx 1.25.1; a forma abaixo preserva compatibilidade com 1.24.
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name mp-solucoes.duckdns.org;
+
+    ssl_certificate /etc/letsencrypt/live/mp-solucoes.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mp-solucoes.duckdns.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Site estático: nenhum upload. Corpo pequeno rejeita POST grande cedo.
+    client_max_body_size 1m;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:5501;
+        include snippets/proxy-app.conf;
+    }
+}

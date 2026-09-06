@@ -3,7 +3,7 @@
 #
 #   ./deploy.sh <projeto>          implanta
 #   ./deploy.sh <projeto> --check  só mostra o que mudaria
-#   ./deploy.sh --status           estado dos quatro projetos
+#   ./deploy.sh --status           estado de todos os projetos
 #
 # Recusa implantar se houver alteração não commitada no servidor: o código do
 # servidor é sempre um espelho do main, nunca a origem de uma mudança. O
@@ -57,8 +57,11 @@ projeto_info() {
         renda|controle-renda-variavel)
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
             DOMINIO=renda-mspa.duckdns.org ;;
+        mp|mp-solucoes)
+            DIR=mp-solucoes;            ENVF=.env.vps;    PORTA=5501
+            DOMINIO=mp-solucoes.duckdns.org ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda" >&2
+            echo "Use: bancario | conforto | megasena | renda | mp" >&2
             return 1 ;;
     esac
 }
@@ -203,8 +206,11 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda; do
+    for p in bancario conforto megasena renda mp; do
         projeto_info "$p"
+        # Um projeto ainda não clonado no servidor não deve derrubar o --status
+        # dos demais.
+        [ -d "$APPS/$DIR/.git" ] || { printf '%-26s %s\n' "$DIR" '(não clonado)'; continue; }
         cd "$APPS/$DIR"
         local loc rem limpo saude
         loc=$(git rev-parse --short HEAD)
@@ -218,7 +224,7 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda> [--check]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|mp> [--check]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi

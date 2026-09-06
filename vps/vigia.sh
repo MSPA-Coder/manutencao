@@ -26,6 +26,7 @@ DOMINIOS=(
     megasena-mspa.duckdns.org
     bancario-mspa.duckdns.org
     renda-mspa.duckdns.org
+    mp-solucoes.duckdns.org
 )
 
 MODO="${1:-alertar}"

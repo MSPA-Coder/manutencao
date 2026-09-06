@@ -22,16 +22,16 @@ e confere o resultado.
 | Vigia | [`vps/vigia.sh`](vps/vigia.sh), [`vps/vigia.service`](vps/vigia.service), [`vps/vigia.timer`](vps/vigia.timer) | Verifica disco, `/health` público, certificados e frescor dos backups; alerta condições persistentes. |
 | Autocura | [`vps/autocura.sh`](vps/autocura.sh), [`vps/autocura.service`](vps/autocura.service), [`vps/autocura.timer`](vps/autocura.timer) | Reinicia contêineres `unhealthy` com teto de tentativas e alerta quando a recuperação automática não resolve. |
 | Limpeza do Docker | [`vps/docker-prune.sh`](vps/docker-prune.sh), [`vps/docker-prune.service`](vps/docker-prune.service), [`vps/docker-prune.timer`](vps/docker-prune.timer) | Poda semanalmente o cache de build acumulado pelos deploys; nunca toca imagem em uso por contêiner ativo. |
-| Monitor externo | [`vps/uptimerobot-monitores.sh`](vps/uptimerobot-monitores.sh) | Consulta ou aplica monitores UptimeRobot do tipo keyword para os quatro endpoints públicos `/health`, usando e-mail como canal independente do VPS. |
-| Entrada HTTP/TLS | [`vps/nginx/`](vps/nginx/) | Mantém os quatro vhosts, TLS/HSTS, proxy central, gzip, rejeição de host desconhecido e limite compartilhado somente para `POST /login`. |
+| Monitor externo | [`vps/uptimerobot-monitores.sh`](vps/uptimerobot-monitores.sh) | Consulta ou aplica monitores UptimeRobot do tipo keyword para os endpoints públicos `/health`, usando e-mail como canal independente do VPS. |
+| Entrada HTTP/TLS | [`vps/nginx/`](vps/nginx/) | Mantém os vhosts dos aplicativos, TLS/HSTS, proxy central, gzip, rejeição de host desconhecido e limite compartilhado somente para `POST /login`. |
 
 ## Deploy
 
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda> --check
-~/deploy.sh <bancario|conforto|megasena|renda>
+~/deploy.sh <bancario|conforto|megasena|renda|mp> --check
+~/deploy.sh <bancario|conforto|megasena|renda|mp>
 ~/deploy.sh --status
 ```
 
@@ -51,7 +51,7 @@ docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/deploy_test.s
 
 O servidor mantém um clone deste repositório em `~/manutencao`, com chave de
 deploy própria (`github-manutencao` no `~/.ssh/config`) — mesmo padrão dos
-quatro aplicativos. A interface é:
+aplicativos. A interface é:
 
 ```bash
 cd ~/manutencao && git pull --ff-only

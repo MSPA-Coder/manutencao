@@ -38,6 +38,11 @@
 
 set -euo pipefail
 
+# shellcheck disable=SC1007  # `CDPATH=` não é assinalamento com espaço sobrando:
+# é prefixo de ambiente para UM comando. Sem ele, um `CDPATH` herdado do
+# operador faria o `cd` pular para outro diretório e imprimir o destino, e o
+# script passaria a instalar a partir da pasta errada. O ShellCheck não
+# distingue esse idioma de um `VAR= valor` digitado errado.
 ORIGEM=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DESTINO_SCRIPTS=${DESTINO_SCRIPTS:-/home/ubuntu}
 DESTINO_SYSTEMD=${DESTINO_SYSTEMD:-/etc/systemd/system}

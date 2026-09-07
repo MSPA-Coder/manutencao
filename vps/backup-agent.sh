@@ -55,6 +55,11 @@ resolver_dump() {
 
 mais_recente() {
     local dir="$1"
+    # shellcheck disable=SC2012  # os nomes são gerados por backup-db.sh (slug e
+    # carimbo de tempo, sem espaço nem quebra de linha), então o `ls` não tem o
+    # que quebrar. A alternativa com `find -printf '%T@ %p'` compraria robustez
+    # contra nomes que este diretório nunca terá, ao preço de ilegibilidade na
+    # linha que decide qual dump é o mais novo.
     ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true
 }
 

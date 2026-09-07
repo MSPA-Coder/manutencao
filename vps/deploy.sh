@@ -43,6 +43,11 @@ TENTATIVAS_SAUDE=12
 # quem tem de ser tolerante é o verificador.
 PADRAO_OK='"status"[[:space:]]*:[[:space:]]*"ok"'
 
+# shellcheck disable=SC2034  # `PORTA` não é lida por este script -- a sonda de
+# saúde bate na URL pública, não em 127.0.0.1, de propósito. Ela fica aqui
+# porque este `case` é o único lugar do repositório onde a numeração da frota
+# (51/52/53/54/55) aparece ao lado do projeto correspondente, e essa
+# correspondência já precisou ser consultada mais de uma vez.
 projeto_info() {
     case "$1" in
         bancario|controle-bancario)
@@ -238,6 +243,9 @@ echo "== $DIR =="
 sujo=$(git status --porcelain)
 if [ -n "$sujo" ]; then
     echo "ABORTADO: há alteração não commitada no servidor." >&2
+    # shellcheck disable=SC2001  # `${var//}` não sabe prefixar linha a linha:
+    # ele veria a saída inteira como uma string só. O que se quer aqui é indentar
+    # cada linha do `git status`, e é para isso que o `sed` existe.
     echo "$sujo" | sed 's/^/  /' >&2
     echo >&2
     echo "O servidor espelha o main; ele não é lugar de editar código." >&2

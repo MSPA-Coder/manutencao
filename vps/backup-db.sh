@@ -52,6 +52,9 @@ lsn_atual() { consultar "$1" 'SELECT pg_current_wal_lsn()'; }
 motivo_backup() {
     local dir="$1" lsn="$2" ultimo guardado idade_s idade_d
 
+    # shellcheck disable=SC2012  # este script é quem nomeia os dumps, e o nome
+    # é slug + carimbo de tempo: sem espaço, sem quebra de linha, nada que o
+    # `ls` possa quebrar. Vale para as três ocorrências deste arquivo.
     ultimo=$(ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true)
     [ -z "$ultimo" ] && { echo "primeiro backup"; return 0; }
 
@@ -73,6 +76,9 @@ motivo_backup() {
 
 aplicar_retencao() {
     local dir="$1" mais_novo
+    # shellcheck disable=SC2012  # ver o motivo em `motivo_backup`. Aqui há uma
+    # segunda rede: quem protege o dump mais novo é o `! -samefile` do `find`
+    # abaixo, que compara inode e não nome.
     mais_novo=$(ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true)
     [ -z "$mais_novo" ] && return 0
 
@@ -185,6 +191,7 @@ estado() {
         local -a arquivos=()
         shopt -s nullglob; arquivos=("$dir"/*.dump); shopt -u nullglob
         n=${#arquivos[@]}
+        # shellcheck disable=SC2012  # ver o motivo em `motivo_backup`.
         ultimo=$(ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true)
         if [ -n "$ultimo" ]; then
             quando=$(date -u -d "@$(stat -c %Y "$ultimo")" '+%Y-%m-%d %H:%MZ')

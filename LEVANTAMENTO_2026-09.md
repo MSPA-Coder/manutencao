@@ -952,6 +952,24 @@ não existe mais PAT do `SharedAuth` no VPS, na CI nem na sua máquina.
   Esse item era folha no fim da árvore que `primeira_tela_permitida` percorre:
   um `is_staff` sem permissão nenhuma seria mandado para o 404 ao entrar.
   Corrigidos, com uma guarda nova que cruza a URLconf com a árvore do menu.
+- **O achado mais caro não veio do percurso: veio de conferir o percurso.** A
+  segunda passagem, a de escrita, voltou verde em tudo — inclusive na
+  idempotência da projeção recorrente, que ela testou rodando duas vezes e
+  vendo "0 gerados" na segunda. Conferindo o banco por fora, havia **8
+  lançamentos duplicados e R$ 7.660,00 de projeção inflada**, iguais no banco
+  local e em produção. `_extend_operation` usava como molde todas as linhas da
+  maior data e criava uma por molde: onde um mês tinha duas iguais, todo mês
+  seguinte nascia com duas, e o seguinte com quatro. A idempotência que a
+  suíte garantia — e que o percurso mediu — é **dentro do mês**; a duplicação
+  acontece **entre** meses. Os pares originais são de 31/07 e 06/08/2026,
+  anteriores ao módulo atual (16/08), então o código de hoje não criava o
+  primeiro par, só propagava o que encontrasse. Corrigido no PR #59 do
+  `sistema-financeiro`, com cinco testes de banco conferidos por mutação, e o
+  resíduo removido de produção por
+  `vps/limpezas/2026-09-08-projecoes-recorrentes-duplicadas.sql`, com backup
+  verificado antes. **A lição vale além deste defeito:** um teste verde sobre
+  a propriedade errada é indistinguível de um teste verde, e agente nenhum
+  detecta isso de dentro do próprio percurso.
 - **Um teste da CI era corrida, e ficou verde por sorte por muito tempo.** A
   guarda de thread do coletor do ControleRendaVariavel comparava
   `threading.enumerate()` antes e depois de `create_app`, e reprovava qualquer

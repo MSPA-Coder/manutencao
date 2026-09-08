@@ -4,6 +4,8 @@
 
 set -u
 
+# shellcheck disable=SC1007  # `CDPATH=` é prefixo de ambiente para um comando,
+# não assinalamento com espaço sobrando. Mesmo motivo escrito em `instalar.sh`.
 TESTS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DEPLOY="$TESTS_DIR/../deploy.sh"
 OLD_SHA=1111111111111111111111111111111111111111
@@ -42,6 +44,10 @@ assert_log_count() {
 }
 
 read_file() {
+    # shellcheck disable=SC2015  # o alerta é sobre `C` rodar quando `A` é
+    # verdadeiro. Aqui `C` é `true`, então rodar não muda nada: a função devolve
+    # o conteúdo quando o arquivo existe e string vazia quando não existe, que é
+    # exatamente o contrato desejado.
     [ -f "$1" ] && cat "$1" || true
 }
 

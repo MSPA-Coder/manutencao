@@ -9,7 +9,10 @@
 
 set -u
 
+# shellcheck disable=SC1007  # `CDPATH=` é prefixo de ambiente para um comando,
+# não assinalamento com espaço sobrando. Mesmo motivo escrito em `instalar.sh`.
 TESTS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck disable=SC1007
 VPS_DIR=$(CDPATH= cd -- "$TESTS_DIR/.." && pwd)
 INSTALAR="$VPS_DIR/instalar.sh"
 TOTAL=0
@@ -86,6 +89,11 @@ EOF
 
 run_instalar() {
     set +e
+    # shellcheck disable=SC1007  # `SUDO=` esvazia a variável só para esta
+    # invocação: é assim que o teste faz o instalador rodar sem `sudo`.
+    # shellcheck disable=SC2086  # `${2:-}` fica sem aspas de propósito. Com
+    # aspas, chamar sem o segundo argumento passaria uma string vazia como
+    # argumento de verdade, e o instalador a leria como um modo desconhecido.
     PATH="$CASE_TMP/bin:$PATH" \
     DESTINO_SCRIPTS="$CASE_TMP/scripts" DESTINO_SYSTEMD="$CASE_TMP/systemd" \
     DONO_SCRIPTS="$DONO_DO_TESTE" DONO_SYSTEMD="$DONO_DO_TESTE" \

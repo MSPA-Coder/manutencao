@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - main
+  # Sem filtro de `branches`, de proposito: assim a verificacao roda em PR para
+  # QUALQUER base, e nao so para `main`.
+  #
+  # Com o filtro, um PR empilhado sobre outro branch nao disparava check
+  # nenhum -- e o sintoma e a ausencia de sinal, nao um vermelho: a pagina do
+  # PR fica limpa e parece aprovada. Aconteceu na fase F1.
+  #
+  # O `push` acima continua restrito a `main`: o que interessa la e o estado
+  # do branch que a producao espelha.
   pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -17,12 +24,22 @@ concurrency:
 
 jobs:
   qualidade:
+    # `Qualidade` é o nome exigido pelo ruleset do `main` como status check
+    # obrigatório. Renomear o job derruba a proteção do branch em silêncio.
     name: Qualidade
-    runs-on: ubuntu-latest
+    # Fixado, e não `ubuntu-latest`: o `latest` migra de imagem sem aviso e
+    # muda ferramenta debaixo do teste. Os outros repositórios já usavam a
+    # forma fixa; este era o único fora.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Baixar o código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # O `bash -n` continua aqui mesmo com o ShellCheck abaixo, e não é
+      # redundância: ele usa o parser do próprio bash, enquanto o ShellCheck
+      # usa um parser independente. Onde os dois divergirem, quem manda no
+      # servidor é o bash.
       - name: Validar sintaxe dos scripts Bash
         shell: bash
         run: |
@@ -31,5 +48,44 @@ jobs:
             bash -n "$script"
           done < <(find vps -type f -name '*.sh' -print0)
 
+      # RODA COMO CONTÊINER, NÃO COMO ACTION -- mesma política dos repositórios
+      # irmãos: `allowed_actions: selected` com apenas `github_owned_allowed`.
+      # Uma action de terceiro é barrada antes de o workflow rodar, e o sintoma
+      # é `startup_failure` sem log nenhum.
+      #
+      # Imagem fixada por digest, pelo mesmo motivo que as actions são fixadas
+      # por SHA.
+      #
+      # REPROVA EM QUALQUER ACHADO, de propósito. As exceções que existem hoje
+      # são treze `# shellcheck disable=` no código, cada uma com o motivo
+      # escrito ao lado -- decisão explícita, no lugar onde ela se aplica, em
+      # vez de um vermelho permanente que se aprende a ignorar.
+      - name: Analisar os scripts com ShellCheck
+        run: |
+          set -euo pipefail
+          find vps -type f -name '*.sh' -print0 \
+            | xargs -0 docker run --rm \
+                -v "$PWD:/mnt:ro" -w /mnt \
+                koalaman/shellcheck-alpine:v0.10.0@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
+                shellcheck -f gcc
+
+      # `nginx -t` sobre os vhosts versionados, num andaime com certificados
+      # autoassinados. Até aqui, o primeiro a descobrir um erro de sintaxe ou
+      # um `include` quebrado era o servidor de produção.
+      #
+      # A imagem é `1.24` porque é a versão do Ubuntu 24.04 do VPS, e é a
+      # compatibilidade que os vhosts declaram ao usar `listen ... ssl http2`.
+      # Ver o cabeçalho de `vps/tests/nginx_test.sh`.
+      - name: Conferir a configuração do Nginx
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" \
+            nginx:1.24@sha256:f6daac2445b0ce70e64d77442ccf62839f3f1b4c24bf6746a857eff014e798c8 \
+            sh /repo/vps/tests/nginx_test.sh
+
       - name: Testar o deploy
         run: bash vps/tests/deploy_test.sh
+
+      # O instalador tinha suíte hermética desde que foi escrito, mas ela nunca
+      # havia sido ligada à CI -- rodava só quando alguém lembrava.
+      - name: Testar o instalador
+        run: bash vps/tests/instalar_test.sh

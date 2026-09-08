@@ -1,0 +1,24 @@
+# Este repositório não tem dependência de linguagem: o que ele versiona é
+# shell, unidades systemd e configuração de Nginx. Sobra um ecossistema, e ele
+# não é decorativo -- a `actions/checkout` do workflow está fixada por SHA, e
+# um SHA fixo nunca se atualiza sozinho.
+#
+# LACUNA CONHECIDA: as imagens de contêiner usadas pela CI (`shellcheck-alpine`
+# e `nginx`) também estão fixadas por digest, mas aparecem dentro de comandos
+# `run:` do workflow, não num Dockerfile nem num Compose. O Dependabot não lê
+# comando de shell, então esses dois digests continuam sendo atualização
+# manual. Estão citados no `ci.yml` com o motivo do pino ao lado; o do Nginx
+# acompanha deliberadamente a versão do Ubuntu do VPS, e não a mais nova.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]

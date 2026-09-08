@@ -196,7 +196,7 @@ $(printf '%s\n' "$linhas" | head -n "$AMOSTRA")
 
 Como ler o campo upstream:
   upstream=502  o nginx tentou e nao conseguiu conectar -- contêiner parado
-                ou worker morto. Comece por `~/deploy.sh --status`.
+                ou worker morto. Comece pelo estado da frota, abaixo.
   upstream=500  a aplicacao estava viva e respondeu o erro. O motivo esta no
                 log dela, nao aqui.
   upstream=-    o nginx respondeu sozinho, sem tentar a aplicacao.

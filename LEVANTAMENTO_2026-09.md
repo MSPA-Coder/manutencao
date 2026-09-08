@@ -883,15 +883,27 @@ cobertura, assim como concorrência. Isso é piso, não teto — e está escrito
   e que `consecutive_count` é o comprimento da maior sequência, e não a
   contagem de pares. Cada erro virou comentário no teste.
 
-**O que NAO foi feito, e por quê.** O quarto item da fase era decidir os
-pisos de Python ([L03](#l03--o-piso-de-python-declarado-não-é-testado-por-ninguém--médio--p--ativo)).
-Ele continua em aberto porque é decisão do mantenedor, não execução: subir os
-pisos para `>=3.14` declara que o suporte a 3.12 e 3.13 acabou, e a política de
-faixas diz que elevar piso exige justificativa. A alternativa — matriz de
-Python na CI — preserva a intenção e custa mais. Nenhuma das duas foi
-escolhida ainda.
+**O quarto item, decidido em seguida.** O mantenedor optou por **elevar os
+pisos para `>=3.14`**, e não pela matriz de Python. Feito em MegaSena,
+ControleRendaVariavel, ConfortoTermico e SharedAuth (o ControleBancario já
+estava), com o `target-version` do Ruff acompanhando.
 
-**Pronto quando — e está, para L01 e L02:** uma migração deliberadamente quebrada reprova na
+A política da casa — alargar o teto, preservar o piso — continua valendo; o
+motivo aqui é outro: o piso declarava uma compatibilidade que **ninguém
+verificava**. Um detalhe do ajuste mostra por que ele era necessário: a CI do
+SharedAuth instalava Python **3.13**, e elevar só o `pyproject.toml` teria
+quebrado o próprio `pip install` de lá. Piso e ambiente testado passaram a ser
+a mesma coisa, que era o ponto do achado.
+
+**As três armadilhas da execução também foram fechadas.** O `fileConfig` do
+ConfortoTermico recebeu `disable_existing_loggers=False`, fechando o último dos
+três projetos que tinham o padrão. E a CI dos **oito** repositórios perdeu o
+filtro `branches: [main]` do gatilho de `pull_request`, de modo que PR
+empilhado passa a rodar verificação — o `push` continua restrito a `main`. A
+armadilha da permissão de segredo já havia sido corrigida nas três CIs onde
+mordia.
+
+**Pronto quando — e está:** uma migração deliberadamente quebrada reprova na
 CI. Verificado também por mutação no ControleBancario: remover
 `@db_transaction.atomic` de `close_month` faz o teste de atomicidade reprovar,
 apontando a linha órfã.
@@ -1025,9 +1037,11 @@ segue não tem prazo atado às fases e é sugestão, não plano.
   processo — inclusive o da aplicação. No contêiner nunca aparece, porque o
   job `schema` roda como processo separado; aparece no instante em que alguém
   aplicar migração dentro do mesmo processo, e o sintoma é a aplicação parar
-  de registrar log em silêncio. A correção é uma palavra:
-  `disable_existing_loggers=False`. Foi o que MegaSena e ControleRendaVariavel
-  receberam.
+  de registrar log em silêncio. **Corrigido em 07/09**, junto com MegaSena e
+  ControleRendaVariavel: a correção é uma palavra,
+  `disable_existing_loggers=False`. Foi a única intervenção deste levantamento
+  no código do ConfortoTermico além das correções factuais de documentação —
+  o defeito era idêntico ao dos irmãos e independe da arquitetura.
 
 **O que muda de status:** nada do ConfortoTermico entra nas fases F0–F7,
 exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
@@ -1040,7 +1054,7 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 |---|---|---|---|---|---|
 | L01 | Verificação | Nenhuma app testa contra banco | Alto | G | **✅ F1** |
 | L02 | Verificação | Teste de migração não aplica migração | Alto | M | **✅ F1** |
-| L03 | Verificação | Piso de Python declarado e não testado | Médio | P | **decisão pendente** |
+| L03 | Verificação | Piso de Python declarado e não testado | Médio | P | **✅ F1** |
 | L04 | Processo | 5 commits parados em branches locais | Médio | P | **✅ F0** |
 | L05 | Persistência | `media_volume` sem backup no VPS | Alto | M | risco aceito |
 | L06 | Persistência | RTO nunca medido | Médio | M | risco aceito |
@@ -1065,9 +1079,9 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 † Alto assim que houver cliente.
 
-**24 achados: 9 concluídos (7 no F0, 2 no F1), 7 no plano, 5 riscos aceitos
-com gatilho, 1 indisponível na plataforma, 1 sem ação e 1 aguardando decisão
-(L03).** Zero críticos. Zero vulnerabilidades exploráveis.
+**24 achados: 10 concluídos (7 no F0, 3 no F1), 7 no plano, 5 riscos aceitos
+com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero críticos. Zero
+vulnerabilidades exploráveis.
 
 ---
 

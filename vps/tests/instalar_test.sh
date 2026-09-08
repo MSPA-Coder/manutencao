@@ -55,6 +55,20 @@ total_do_inventario() {
     awk '/^INVENTARIO=\(/{dentro=1; next} dentro && /^\)/{exit} dentro && /\|/{n++} END{print n+0}' "$INSTALAR"
 }
 
+#: Quantos timers DISTINTOS o `TIMER_DE` mapeia. Sai daqui, e não de um número
+#: escrito à mão, porque o número à mão media a coisa errada: ele dizia
+#: "quatro", que era o tamanho do inventário na época, e reprovou na primeira
+#: vez que um timer legítimo entrou -- sem que o instalador tivesse feito nada
+#: errado. O que a asserção quer garantir continua garantido: cada timer é
+#: reiniciado UMA vez, então reiniciar o mesmo duas vezes ainda reprova.
+total_de_timers() {
+    # Sem `length(array)`: é extensão, e o awk padrão do Ubuntu é o mawk.
+    awk '/^declare -A TIMER_DE=\(/{dentro=1; next} dentro && /^\)/{exit}
+         dentro && /\]=/{sub(/.*\]=/, ""); sub(/[ \t].*/, "");
+                         if (!($0 in vistos)) {vistos[$0]=1; n++}}
+         END{print n+0}' "$INSTALAR"
+}
+
 make_fakes() {
     mkdir -p "$CASE_TMP/bin" "$CASE_TMP/scripts" "$CASE_TMP/systemd"
     : >"$CASE_TMP/calls.log"
@@ -127,6 +141,7 @@ end_case() {
 set -e
 printf 'TAP version 13\n'
 ESPERADOS=$(total_do_inventario)
+TIMERS_ESPERADOS=$(total_de_timers)
 # O teste roda sem privilégio, então o dono declarado tem de ser o próprio
 # usuário -- é por isso que `DONO_SCRIPTS`/`DONO_SYSTEMD` vêm do ambiente.
 DONO_DO_TESTE="$(id -un):$(id -gn)"
@@ -144,7 +159,7 @@ assert_eq "$DONO_DO_TESTE" "$(stat -c '%U:%G' "$CASE_TMP/scripts/deploy.sh")" 'd
 [ -f "$CASE_TMP/systemd/certbot.service.d/alerta.conf" ] || fail 'drop-in do certbot deve entrar em subdiretório'
 assert_log 'systemctl <daemon-reload>' 'unidade nova deve recarregar o systemd'
 assert_log 'systemctl <restart> <vigia.timer>' 'deve reiniciar o timer da unidade mudada'
-assert_log_count 'systemctl <restart>' 4 'deve reiniciar os quatro timers, uma vez cada'
+assert_log_count 'systemctl <restart>' "$TIMERS_ESPERADOS" 'deve reiniciar cada timer do mapa uma vez'
 assert_log 'mv <-f> <-->' 'publicação deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -name '.instalar.*' -print)" ] || fail 'rename atômico não deve deixar temporário'
 grep -q '^OK: ' "$CASE_TMP/output" || fail 'deve confirmar a conferência final'

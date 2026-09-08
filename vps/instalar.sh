@@ -69,6 +69,7 @@ INVENTARIO=(
     "backup-db.sh|$DESTINO_SCRIPTS/backup-db.sh|755|$DONO_SCRIPTS"
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
     "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
+    "sentinela.sh|$DESTINO_SCRIPTS/sentinela.sh|755|$DONO_SCRIPTS"
     "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755|$DONO_SCRIPTS"
     "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
     "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755|$DONO_SCRIPTS"
@@ -79,6 +80,8 @@ INVENTARIO=(
     "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644|$DONO_SYSTEMD"
     "docker-prune.service|$DESTINO_SYSTEMD/docker-prune.service|644|$DONO_SYSTEMD"
     "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
+    "sentinela.service|$DESTINO_SYSTEMD/sentinela.service|644|$DONO_SYSTEMD"
+    "sentinela.timer|$DESTINO_SYSTEMD/sentinela.timer|644|$DONO_SYSTEMD"
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
     "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644|$DONO_SYSTEMD"
     "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644|$DONO_SYSTEMD"
@@ -94,6 +97,8 @@ declare -A TIMER_DE=(
     [backup-db.timer]=backup-db.timer
     [docker-prune.service]=docker-prune.timer
     [docker-prune.timer]=docker-prune.timer
+    [sentinela.service]=sentinela.timer
+    [sentinela.timer]=sentinela.timer
     [vigia.service]=vigia.timer
     [vigia.timer]=vigia.timer
 )

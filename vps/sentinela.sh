@@ -194,9 +194,12 @@ $por_rota
 Primeiras linhas:
 $(printf '%s\n' "$linhas" | head -n "$AMOSTRA")
 
-upstream=- significa que o nginx nao chegou a falar com a aplicacao (worker
-morto, contêiner parado); upstream com numero significa que a aplicacao
-respondeu o erro por conta propria.
+Como ler o campo upstream:
+  upstream=502  o nginx tentou e nao conseguiu conectar -- contêiner parado
+                ou worker morto. Comece por `~/deploy.sh --status`.
+  upstream=500  a aplicacao estava viva e respondeu o erro. O motivo esta no
+                log dela, nao aqui.
+  upstream=-    o nginx respondeu sozinho, sem tentar a aplicacao.
 
 Estado da frota:  ~/deploy.sh --status"
 done

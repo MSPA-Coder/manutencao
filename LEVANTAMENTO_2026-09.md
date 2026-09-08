@@ -980,9 +980,10 @@ produção.
 | 2 | Avaliar Sentry gratuito ou GlitchTip quando o portal subir | L08 | ⏸ continua para quando o portal subir |
 
 **Pronto quando:** provocar um 500 numa rota qualquer chega no Telegram.
-**Falta o último passo:** rodar `~/instalar.sh` e `~/instalar-nginx.sh` no VPS.
-Enquanto isso não acontecer, o mecanismo está pronto e testado, mas nenhuma
-mensagem chega — o critério de pronto não está cumprido.
+**Cumprido em 08/09, em produção.** O contêiner do site foi parado por alguns
+segundos, três requisições receberam 502, o site voltou a 200, e o sentinela
+mandou `5xx em mp-solucoes.duckdns.org` para o Telegram. A segunda execução,
+sem linha nova, não realertou.
 
 **Por que o mecanismo ficou diferente do recomendado.** O achado sugeria um
 handler de 500 dentro de cada aplicação. Ao implementar, três coisas pesaram
@@ -1023,9 +1024,24 @@ pedia.
   a dependência explícita.
 - **O filtro foi conferido com nginx de verdade, não só com `nginx -t`.** Com
   as quatro rotas de teste (200, 404, 500, 503), o arquivo recebeu exatamente
-  duas linhas — o 500 e o 503. E `$upstream_status` sai como `-`, não vazio,
-  quando o nginx responde sem falar com a aplicação: a mensagem de alerta
-  explica os dois casos com o texto certo.
+  duas linhas — o 500 e o 503.
+- **O ensaio em produção corrigiu o texto do próprio alerta.** Eu havia escrito
+  que `upstream=-` significaria "o nginx não conseguiu falar com a aplicação".
+  Ao parar o contêiner de verdade, o que apareceu foi `upstream=502`: o nginx
+  *tentou* e não conectou. O `-` é outra coisa — é o nginx respondendo sozinho,
+  sem tentar upstream nenhum. A mensagem agora explica os três casos, e cada um
+  foi observado, não deduzido.
+- **O instalador nunca habilitava timer, só reiniciava.** `systemctl restart`
+  faz rodar agora; `systemctl enable` faz voltar depois do reboot. Enquanto só
+  havia timers habilitados à mão, a diferença não aparecia — o `sentinela.timer`
+  é o primeiro timer a entrar depois que o `instalar.sh` foi escrito, e nasceria
+  funcionando para sumir na primeira reinicialização, sem nada acusar (o
+  `--check` compara arquivos, e o arquivo estaria lá, correto). Corrigido antes
+  de instalar; a instalação real imprimiu o `Created symlink` que prova.
+- **O servidor estava três scripts atrás do `main`.** O clone do VPS parou no
+  PR #16, então `deploy.sh`, `backup-db.sh` e `backup-agent.sh` continuavam nas
+  versões anteriores às correções da F0. Foram junto nesta instalação, e o
+  instalador confirma: "os 22 artefatos espelham 8ce9c3f".
 - **A tabela da frota não foi duplicada.** Anexar o log do contêiner ao alerta
   exigiria a correspondência entre apelido, diretório, porta e domínio — e o
   `deploy.sh` declara por escrito ser o único lugar dela. Uma segunda cópia
@@ -1168,8 +1184,9 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero
 críticos. Zero vulnerabilidades exploráveis.
 
-Dois desses concluídos ainda pedem uma ação no servidor para valerem de fato:
-apagar o `.secrets/github_token.txt` (F3) e instalar o sentinela (F4).
+Os dois que ainda pediam ação no servidor foram feitos em 08/09: os quatro
+`.secrets/github_token.txt` foram apagados do VPS (F3) e o sentinela está
+instalado, habilitado e provado em produção (F4).
 
 Os itens 1 e 2 da F3 não têm número de achado — vieram da §3.2, e também estão
 feitos.

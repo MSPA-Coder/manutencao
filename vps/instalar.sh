@@ -243,7 +243,20 @@ if [ "$recarregar_systemd" -eq 1 ]; then
     $SUDO "$SYSTEMCTL" daemon-reload
     for timer in "${timers[@]-}"; do
         [ -n "$timer" ] || continue
-        echo "  reiniciando $timer"
+        # `enable` ANTES do `restart`, e não só o `restart`.
+        #
+        # `restart` faz o timer rodar agora; `enable` faz ele voltar depois do
+        # reboot. Enquanto só havia timers já habilitados à mão, a diferença
+        # não aparecia -- mas um timer NOVO nascia funcionando e sumia na
+        # primeira reinicialização, sem nada acusar. O `--check` deste
+        # instalador compara arquivos, e o arquivo estaria lá, correto.
+        # Descoberto ao instalar o `sentinela.timer`, que é o primeiro timer
+        # a entrar depois que este script foi escrito.
+        #
+        # `enable` é idempotente: nos timers que já estavam habilitados, não
+        # muda nada.
+        echo "  habilitando e reiniciando $timer"
+        $SUDO "$SYSTEMCTL" enable "$timer"
         $SUDO "$SYSTEMCTL" restart "$timer"
     done
 fi

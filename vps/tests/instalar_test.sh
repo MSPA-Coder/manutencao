@@ -160,6 +160,11 @@ assert_eq "$DONO_DO_TESTE" "$(stat -c '%U:%G' "$CASE_TMP/scripts/deploy.sh")" 'd
 assert_log 'systemctl <daemon-reload>' 'unidade nova deve recarregar o systemd'
 assert_log 'systemctl <restart> <vigia.timer>' 'deve reiniciar o timer da unidade mudada'
 assert_log_count 'systemctl <restart>' "$TIMERS_ESPERADOS" 'deve reiniciar cada timer do mapa uma vez'
+# `restart` faz rodar agora; `enable` faz voltar depois do reboot. Sem os dois,
+# um timer novo funciona até a primeira reinicialização e some sem aviso -- o
+# `--check` compara arquivos, e o arquivo continuaria lá, correto.
+assert_log 'systemctl <enable> <vigia.timer>' 'timer instalado tem de ser habilitado, não só reiniciado'
+assert_log_count 'systemctl <enable>' "$TIMERS_ESPERADOS" 'deve habilitar cada timer do mapa uma vez'
 assert_log 'mv <-f> <-->' 'publicação deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -name '.instalar.*' -print)" ] || fail 'rename atômico não deve deixar temporário'
 grep -q '^OK: ' "$CASE_TMP/output" || fail 'deve confirmar a conferência final'

@@ -660,7 +660,7 @@ rascunho. Se quiser fechar isso também, é uma linha —
 `<meta name="robots" content="noindex">` no `<head>`, removida junto com os
 asteriscos quando o conteúdo for real.
 
-#### L17 · SPA por hash: a decisão mais consequente do site · Alto · M · **ativo (F5)**
+#### L17 · SPA por hash: a decisão mais consequente do site · Alto · M · **corrigido (F5, 08/09)**
 
 `site/assets/js/site.js:96-115`: sete "páginas" (`#/home`, `#/solucoes`,
 `#/metodo`, `#/segmentos`, `#/parceiros`, `#/empresa`, `#/contato`) vivem todas
@@ -699,7 +699,7 @@ divide em duas metades com retornos diferentes:
 O ganho de SEO só se materializa quando o domínio próprio entrar. A estrutura
 feita agora é o que torna esse dia barato.
 
-#### L18 · Imagens sem `lazy` e sem dimensão · Médio · P · **ativo (F5)**
+#### L18 · Imagens sem `lazy` e sem dimensão · Médio · P · **corrigido (F5, 08/09)**
 
 10 `<img>`, **0** com `loading="lazy"`, **5** sem `width`/`height`, 1,3 MB de
 WebP (a maior com 220 KB). Como as sete seções estão no mesmo documento, o
@@ -1067,22 +1067,61 @@ pedia.
   errado. O alerta leva as linhas do próprio nginx e manda seguir de
   `~/deploy.sh --status`.
 
-### F5 — Estrutura do site (1–2 dias) · Risco Baixo
+### F5 — Estrutura do site · **EXECUTADA em 08/09** · Risco Baixo
 
 Encolhida: domínio próprio e GitHub Pro saíram. Sobra a parte que independe
 dos dois — e que fica mais barata agora do que depois.
 
-| # | Ação | Achado |
-|---|---|---|
-| 1 | Converter para multipágina estática, uma URL por rota | L17 |
-| 2 | `<title>` e `<meta description>` próprios por página; Open Graph por rota | L17 |
-| 3 | `loading="lazy"`, `width`/`height`, `fetchpriority` na hero | L18 |
-| 4 | `robots.txt` e JSON-LD `Organization` (não dependem de domínio) | L17 |
-| 5 | *Parametrizar* `sitemap.xml`, `canonical` e `og:url` por uma constante de URL base — ou adiá-los até o domínio | L17, L19 |
-| 6 | Analytics respeitando a CSP (Plausible ou Umami, sem cookie → sem banner) | L17 |
+| # | Ação | Achado | Estado |
+|---|---|---|---|
+| 1 | Converter para multipágina estática, uma URL por rota | L17 | ✅ sete documentos em URL limpa |
+| 2 | `<title>` e `<meta description>` próprios por página; Open Graph por rota | L17 | ✅ escritos a partir do H1 e da abertura de cada seção |
+| 3 | `loading="lazy"`, `width`/`height`, `fetchpriority` na hero | L18 | ✅ nas dez imagens |
+| 4 | `robots.txt` e JSON-LD `Organization` (não dependem de domínio) | L17 | ✅ JSON-LD só na home |
+| 5 | *Parametrizar* `sitemap.xml`, `canonical` e `og:url` por uma constante de URL base — ou adiá-los até o domínio | L17, L19 | ✅ resolvidos pelo nginx no momento de servir |
+| 6 | Analytics respeitando a CSP (Plausible ou Umami, sem cookie → sem banner) | L17 | ⏸️ **não feito** — ver abaixo |
 
 **Pronto quando:** cada rota tem URL própria, título próprio e prévia própria
 ao ser compartilhada — e trocar de domínio depois é editar uma constante.
+**Cumprido** (`mp-solucoes` PR #4, em produção em `f2598aa`).
+
+**Como a constante de URL ficou** (item 5). Não virou constante em arquivo:
+nenhum arquivo do site escreve o domínio. O nginx monta `url_base` a partir do
+`X-Forwarded-Proto` que o nginx central envia e do `Host` da requisição, e
+substitui no `canonical`, no `og:url`, no `sitemap.xml` e no `robots.txt` ao
+servir. Trocar de domínio (L19) deixou de ser edição de constante: passa a ser
+zero edição no repositório do site.
+
+**A casca não foi copiada sete vezes.** Cabeçalho e rodapé ficam em
+`site/partials/` e o nginx monta com `ssi on`. O item ativo do menu vem de um
+`<!--#set var="pagina" -->` no topo de cada página — decidido no servidor,
+então o `aria-current` está correto para leitor de tela e para quem chega sem
+JavaScript. A primeira tentativa foi derivar isso de um `map $uri`: não
+funciona, porque o `include` do SSI é subrequisição e lá `$uri` vale
+`/partials/topo.html`.
+
+**Duas coisas que a divisão obrigou a arrumar:**
+
+- `site.js` é um arquivo só carregado nas sete páginas. Sem checagem de
+  existência, o primeiro `qs` nulo — o player do método fora de `/metodo`, o
+  formulário fora de `/contato` — interromperia o script inteiro e levaria
+  junto o menu, o relógio e o rodapé.
+- `.rv` e `.lm-i` nasciam invisíveis e só apareciam quando o JavaScript
+  acrescentava `.on`. Com o roteador fora, quem chega sem script veria página
+  em branco; `@media(scripting:none)` devolve o estado final.
+
+**O que a CI passou a garantir:** a matriz de rotas (sete em 200, seis `.html`
+em 301, `/partials/*` em 404), que o SSI montou, e que cada página marca
+exatamente um item de menu como ativo. A asserção do SSI foi verificada por
+mutação: comentando `ssi on`, **as rotas continuam em 200** — só a asserção
+nova pega. O verificador de links deixou de ser lista fixa e virou glob sobre
+`site/**/*.html`.
+
+**Item 6 (analytics) não foi feito, de propósito.** Plausible ou Umami são
+host externo: exigem afrouxar `script-src` e `connect-src` numa CSP hoje em
+`default-src 'none'`, e violam o invariante de autossuficiência que a CI
+reprova. É decisão do mantenedor, não detalhe de execução — fica registrado
+como pendência da F5, não como esquecimento.
 
 ### F6 — Separar o ConfortoTermico · **EXECUTADA em 08/09** · Risco Baixo
 
@@ -1209,8 +1248,8 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 | L14 | Padroniz. | `manutencao` sem ShellCheck/Dependabot | Médio | P | **✅ F0** |
 | L15 | Performance | Adequada; gatilho documentado | Baixo | — | nada a fazer |
 | L16 | Site | Dados de contato de exemplo em produção | Alto | P | **✅ F0** |
-| L17 | Site | SPA por hash mata o SEO | Alto | M | **F5** |
-| L18 | Site | Imagens sem `lazy`/dimensão | Médio | P | **F5** |
+| L17 | Site | SPA por hash mata o SEO | Alto | M | ✅ F5 (08/09) |
+| L18 | Site | Imagens sem `lazy`/dimensão | Médio | P | ✅ F5 (08/09) |
 | L19 | Site | Domínio DuckDNS para cliente | Alto | P | risco aceito |
 | L20 | Site | LGPD entra com o formulário | Médio | M | **F7** |
 | L21 | Site | Portal nasce em Django, repo novo | — | G | **F7** |
@@ -1220,17 +1259,22 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 † Alto assim que houver cliente.
 
-**24 achados: 13 concluídos (7 no F0, 3 no F1, 1 no F3, 1 no F4, 1 no F6), 4 no
-plano, 5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1 sem
-ação.** Zero críticos. Zero vulnerabilidades exploráveis.
+**24 achados: 15 concluídos (7 no F0, 3 no F1, 1 no F3, 1 no F4, 2 no F5, 1 no
+F6), 2 no plano, 5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1
+sem ação.** Zero críticos. Zero vulnerabilidades exploráveis.
 
-Restam duas fases: a **F5** (estrutura do site), que tem de acontecer antes do
-primeiro cliente ver a página, e a **F7** (portal do cliente), que depende de o
-site amadurecer.
+Resta uma fase: a **F7** (portal do cliente), que depende de o site amadurecer.
+A F2 continua adiada por decisão registrada na §2.
 
 Os dois que ainda pediam ação no servidor foram feitos em 08/09: os quatro
 `.secrets/github_token.txt` foram apagados do VPS (F3) e o sentinela está
 instalado, habilitado e provado em produção (F4).
+
+**Pendência que a F5 deixou por decisão, não por esquecimento:** o item 6
+(analytics). Plausible e Umami são host externo — exigiriam afrouxar
+`script-src` e `connect-src` numa CSP hoje em `default-src 'none'` e violariam
+o invariante de autossuficiência que a CI do site reprova. É escolha do
+mantenedor.
 
 Os itens 1 e 2 da F3 não têm número de achado — vieram da §3.2, e também estão
 feitos.

@@ -824,23 +824,78 @@ F2 aparece explicitamente adiada em vez de removida.
 - **Dois achados novos:** L23 e L24.
 
 
-### F1 — Fechar o buraco de verificação (2–3 dias) · Risco Baixo · **prioridade máxima** · ◀ *fase corrente*
+### F1 — Fechar o buraco de verificação · **EXECUTADA em 07/09** · Risco Baixo
 
-Agora cobre **três** aplicações: ControleBancario, ControleRendaVariavel e
-MegaSena. O ConfortoTermico saiu para a §7.
+Cobriu as três aplicações da frota. O ConfortoTermico ficou de fora, na §7.
 
-| # | Ação | Achado |
-|---|---|---|
-| 1 | `depends_on: postgres` e `POSTGRES_HOST` no serviço `quality` das três | L01 |
-| 2 | Teste que aplica `upgrade head` em banco vazio + `downgrade` um passo | L02 |
-| 3 | 5–10 testes de invariante por app, começando pelo ControleBancario | L01 |
-| 4 | Decidir os pisos de Python: subir para 3.14 ou testar em matriz | L03 |
+| Projeto | Testes | Antes | PR |
+|---|---:|---:|---|
+| ControleBancario | 282 | 281 | sistema-financeiro#56 |
+| ControleRendaVariavel | 267 | 253 | ControleRendaVariavel#54 |
+| MegaSena | 135 | 121 | mega-sena#47 |
 
-**Pronto quando:** uma migração deliberadamente quebrada reprova na CI, em vez
-de reprovar no `deploy.sh`.
+Os três sobem um PostgreSQL efêmero em tmpfs no perfil `quality`,
+deliberadamente separado do banco com dados reais, e **aplicam a cadeia inteira
+de migrações a um banco vazio a cada execução**. Confirmado no runner, e não
+só localmente: as contagens acima são as da CI, com zero testes pulados.
 
-Faça o ControleBancario primeiro e pare para avaliar. Se o padrão ficar bom
-lá, os outros dois são repetição.
+**O encadeamento do §1 está cortado nos três.** Uma migração que falha ao
+executar agora reprova na CI, e não mais no `deploy.sh` — que reverte código e
+imagem, mas não reverte migração.
+
+**O que ficou coberto, e o que não ficou.** As `CheckConstraint` e as
+`UniqueConstraint` dos três, o tipo `numeric` das colunas de valor, a volta do
+`Decimal` exato, a aplicação das migrações e a revisão em que o banco parou. A
+**atomicidade** só tem teste no ControleBancario, onde a falha simulada no meio
+de `close_month` prova que a transação desfaz; nos dois Flask ela continua sem
+cobertura, assim como concorrência. Isso é piso, não teto — e está escrito nos
+`conftest.py`.
+
+**O que a execução ensinou, e não estava previsto:**
+
+- **Um defeito latente em `migrations/env.py`.** O `fileConfig(...)` roda com o
+  padrão `disable_existing_loggers=True`, que **desliga todo logger já
+  existente no processo**, inclusive o da aplicação. No contêiner nunca
+  apareceu, porque a migração roda como processo separado que morre em
+  seguida. Aplicando-a no mesmo processo, como a fixture faz, um teste do
+  MegaSena **sem relação nenhuma** com a mudança passou a falhar. Corrigido no
+  MegaSena e no ControleRendaVariavel; **o ConfortoTermico tem o mesmo padrão**
+  (§7).
+- **O CodeQL pegou um defeito real — meu.** Severidade alta, "uncontrolled data
+  used in path expression": a fixture lia o caminho do segredo de uma variável
+  de ambiente para depois abri-lo. O alerta não foi dispensado; a variável
+  intermediária saiu, porque `/run/secrets/<nome>` é constante. Vale notar de
+  onde veio a rede: o CodeQL era o [L12](#l12--agentsmd-do-megasena-afirma-que-não-há-codeql--e-há--baixo--p--ativo), o achado em que o
+  `AGENTS.md` afirmava que ele não existia.
+- **Permissão de segredo, três vezes.** Um segredo de arquivo do Compose é
+  montado preservando dono e modo do host — `uid`, `gid` e `mode` na sintaxe
+  longa são ignorados fora do Swarm. Com `umask 077`, o arquivo fica ilegível
+  para o uid 70 do PostgreSQL, e o serviço só reporta "dependency failed to
+  start". No Docker Desktop do Windows não aparece: lá tudo chega 0777. Os
+  três projetos precisaram do mesmo ajuste na CI, e o MegaSena nem criava o
+  arquivo — nunca precisara.
+- **PR empilhado não roda CI.** O PR da F1 do CRV foi aberto contra o branch da
+  F0, e as CIs disparam só em PR para `main`: ele ficou sem verificação nenhuma
+  até ser reapontado.
+- **Os testes corrigiram seis suposições minhas** — entre elas que `NaN > 0` é
+  **verdadeiro** em `numeric` (que é justamente por que existe a constraint
+  `quantity_finite`), que `Infinity` é barrado antes, pela precisão da coluna,
+  e que `consecutive_count` é o comprimento da maior sequência, e não a
+  contagem de pares. Cada erro virou comentário no teste.
+
+**O que NAO foi feito, e por quê.** O quarto item da fase era decidir os
+pisos de Python ([L03](#l03--o-piso-de-python-declarado-não-é-testado-por-ninguém--médio--p--ativo)).
+Ele continua em aberto porque é decisão do mantenedor, não execução: subir os
+pisos para `>=3.14` declara que o suporte a 3.12 e 3.13 acabou, e a política de
+faixas diz que elevar piso exige justificativa. A alternativa — matriz de
+Python na CI — preserva a intenção e custa mais. Nenhuma das duas foi
+escolhida ainda.
+
+**Pronto quando — e está, para L01 e L02:** uma migração deliberadamente quebrada reprova na
+CI. Verificado também por mutação no ControleBancario: remover
+`@db_transaction.atomic` de `close_month` faz o teste de atomicidade reprovar,
+apontando a linha órfã.
+
 
 ### F2 — Recuperação de verdade · **ADIADA POR DECISÃO**
 
@@ -964,6 +1019,15 @@ segue não tem prazo atado às fases e é sugestão, não plano.
   já pede para não ampliar essa superfície — isso continua sendo bom conselho.
 - **Os ~4.990 linhas de JavaScript próprio** deixam de ser dívida de
   padronização. Passam a ser simplesmente a arquitetura do projeto.
+- **`migrations/env.py` tem o mesmo defeito latente que a F1 encontrou nos
+  irmãos.** O `fileConfig(config.config_file_name)` roda com o padrão
+  `disable_existing_loggers=True`, que desliga todo logger já existente no
+  processo — inclusive o da aplicação. No contêiner nunca aparece, porque o
+  job `schema` roda como processo separado; aparece no instante em que alguém
+  aplicar migração dentro do mesmo processo, e o sintoma é a aplicação parar
+  de registrar log em silêncio. A correção é uma palavra:
+  `disable_existing_loggers=False`. Foi o que MegaSena e ControleRendaVariavel
+  receberam.
 
 **O que muda de status:** nada do ConfortoTermico entra nas fases F0–F7,
 exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
@@ -974,9 +1038,9 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 | # | Eixo | Achado | Imp. | Esf. | Situação |
 |---|---|---|---|---|---|
-| L01 | Verificação | Nenhuma app testa contra banco | Alto | G | **F1** |
-| L02 | Verificação | Teste de migração não aplica migração | Alto | M | **F1** |
-| L03 | Verificação | Piso de Python declarado e não testado | Médio | P | **F1** |
+| L01 | Verificação | Nenhuma app testa contra banco | Alto | G | **✅ F1** |
+| L02 | Verificação | Teste de migração não aplica migração | Alto | M | **✅ F1** |
+| L03 | Verificação | Piso de Python declarado e não testado | Médio | P | **decisão pendente** |
 | L04 | Processo | 5 commits parados em branches locais | Médio | P | **✅ F0** |
 | L05 | Persistência | `media_volume` sem backup no VPS | Alto | M | risco aceito |
 | L06 | Persistência | RTO nunca medido | Médio | M | risco aceito |
@@ -1001,9 +1065,9 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 † Alto assim que houver cliente.
 
-**24 achados: 7 concluídos no F0, 10 no plano, 5 riscos aceitos com gatilho,
-1 indisponível na plataforma e 1 sem ação.** Zero críticos. Zero
-vulnerabilidades exploráveis.
+**24 achados: 9 concluídos (7 no F0, 2 no F1), 7 no plano, 5 riscos aceitos
+com gatilho, 1 indisponível na plataforma, 1 sem ação e 1 aguardando decisão
+(L03).** Zero críticos. Zero vulnerabilidades exploráveis.
 
 ---
 

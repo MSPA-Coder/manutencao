@@ -1084,20 +1084,42 @@ dos dois — e que fica mais barata agora do que depois.
 **Pronto quando:** cada rota tem URL própria, título próprio e prévia própria
 ao ser compartilhada — e trocar de domínio depois é editar uma constante.
 
-### F6 — Separar o ConfortoTermico (1h) · Risco Baixo
+### F6 — Separar o ConfortoTermico · **EXECUTADA em 08/09** · Risco Baixo
 
 Reformulada. Não é mais "declarar uma divergência que incomoda"; é registrar
 uma separação decidida.
 
-| # | Ação | Achado |
-|---|---|---|
-| 1 | ADR no ConfortoTermico: arquitetura livre, contrato operacional preservado | L13 |
-| 2 | Primeira linha do `AGENTS.md` dele dizendo que segue caminho próprio | L13, L22 |
-| 3 | `AGENTS.md` dos três irmãos: a base compartilhada passa a ser de três apps | L22 |
+| # | Ação | Achado | Estado |
+|---|---|---|---|
+| 1 | ADR no ConfortoTermico: arquitetura livre, contrato operacional preservado | L13 | ✅ `docs/adr/008-trilha-propria-fora-da-frota.md` |
+| 2 | Primeira linha do `AGENTS.md` dele dizendo que segue caminho próprio | L13, L22 | ✅ bloco de destaque antes da primeira seção |
+| 3 | `AGENTS.md` dos três irmãos: a base compartilhada passa a ser de três apps | L22 | ✅ nos três, com a separação dita dos dois lados |
 
 **Pronto quando:** um agente que abra qualquer um dos quatro repositórios
 entende, na primeira tela, quem está na frota e quem não está — e o que
-continua valendo para os dois lados.
+continua valendo para os dois lados. **Cumprido.**
+
+**O que a execução ensinou, e não estava previsto:**
+
+- **O item 3 quase não tinha o que corrigir, e isso é informação.** A hipótese
+  era que os irmãos declarassem uma base "de quatro aplicativos" a ser
+  reduzida para três. Não declaravam: a única ocorrência de "os quatro" está no
+  `AGENTS.md` do MegaSena, falando do BackupRestore cobrir quatro bancos — e
+  isso **continua verdadeiro**, porque o contrato operacional foi preservado de
+  propósito. O `SharedAuth` também não tinha o que mudar: ele fala em
+  "múltiplos aplicativos", sem contagem, que é o desenho certo para uma
+  biblioteca. O trabalho real do item não era corrigir número: era que a
+  composição da frota **não estava escrita em lugar nenhum**.
+- **A separação passou a ser dita dos dois lados.** Só o ConfortoTermico dizer
+  "sigo trilha própria" resolveria metade: quem abrisse um dos irmãos
+  continuaria sem saber que a divergência é decidida, e a proposta de unificar
+  voltaria de lá. Os três irmãos ganharam o mesmo bloco, com a frase que
+  importa — *diferença em relação a ele não é débito*.
+- **O ADR registra o que fica livre e o que não fica.** Arquitetura livre, e o
+  primeiro exemplo concreto já valendo: o ConfortoTermico não tem `uv.lock` nem
+  base por digest, ao contrário dos três irmãos depois da F3. O contrato
+  operacional inteiro permanece obrigatório, item por item — quebrar qualquer
+  um deles não é "arquitetura livre", é quebrar a operação compartilhada.
 
 ### F7 — Portal do cliente (quando o site amadurecer) · Risco Médio
 
@@ -1183,7 +1205,7 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 | L10 | Segurança | `non_provider_patterns` off nos 7 públicos | Médio | P | **❌ indisponível** |
 | L11 | Segurança | Repo do cliente sem branch protection | Médio | P | risco aceito |
 | L12 | Segurança | `AGENTS.md` nega CodeQL que existe | Baixo | P | **✅ F0** |
-| L13 | Padroniz. | ConfortoTermico é outra arquitetura | Médio | P | **F6** (era G) |
+| L13 | Padroniz. | ConfortoTermico é outra arquitetura | Médio | P | **✅ F6** |
 | L14 | Padroniz. | `manutencao` sem ShellCheck/Dependabot | Médio | P | **✅ F0** |
 | L15 | Performance | Adequada; gatilho documentado | Baixo | — | nada a fazer |
 | L16 | Site | Dados de contato de exemplo em produção | Alto | P | **✅ F0** |
@@ -1198,9 +1220,13 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 † Alto assim que houver cliente.
 
-**24 achados: 12 concluídos (7 no F0, 3 no F1, 1 no F3, 1 no F4), 5 no plano,
-5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero
-críticos. Zero vulnerabilidades exploráveis.
+**24 achados: 13 concluídos (7 no F0, 3 no F1, 1 no F3, 1 no F4, 1 no F6), 4 no
+plano, 5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1 sem
+ação.** Zero críticos. Zero vulnerabilidades exploráveis.
+
+Restam duas fases: a **F5** (estrutura do site), que tem de acontecer antes do
+primeiro cliente ver a página, e a **F7** (portal do cliente), que depende de o
+site amadurecer.
 
 Os dois que ainda pediam ação no servidor foram feitos em 08/09: os quatro
 `.secrets/github_token.txt` foram apagados do VPS (F3) e o sentinela está

@@ -917,23 +917,56 @@ Backup de `media_volume`, ensaio cronometrado de reconstrução, correção do
 
 O único item que foi adiante — ShellCheck — está na F0.
 
-### F3 — Build reprodutível (1–2 dias) · Risco Baixo
+### F3 — Build reprodutível · **EXECUTADA em 08/09** · Risco Baixo
 
 Encolhida pela decisão sobre o L07, e depois acrescida do L23 — que é o mesmo
 conjunto de arquivos.
 
-| # | Ação | Achado |
-|---|---|---|
-| 1 | `uv lock` (ou `pip-compile --generate-hashes`) nos projetos da frota | §3.2 |
-| 2 | Base fixada por digest nos `Dockerfile` | §3.2 |
-| 3 | Retirar a engrenagem de token do `SharedAuth`: o `--mount=type=secret` dos `Dockerfile`, o passo e o secret das CIs, e o `.secrets/github_token.txt` do VPS e da máquina local | L23 |
-
-Os três abrem os mesmos arquivos e pedem a mesma validação — build limpo e
-`quality`. Fazer junto reconstrói as imagens uma vez em vez de duas.
+| # | Ação | Achado | Estado |
+|---|---|---|---|
+| 1 | `uv lock` (ou `pip-compile --generate-hashes`) nos projetos da frota | §3.2 | ✅ nos três da frota |
+| 2 | Base fixada por digest nos `Dockerfile` | §3.2 | ✅ nos três + no site |
+| 3 | Retirar a engrenagem de token do `SharedAuth`: o `--mount=type=secret` dos `Dockerfile`, o passo e o secret das CIs, e o `.secrets/github_token.txt` do VPS e da máquina local | L23 | ✅ PAT revogado; falta só apagar o arquivo do VPS |
 
 **Pronto quando:** dois builds do mesmo commit produzem a mesma imagem, salvo
 os patches de sistema que o `apt-get upgrade` aplica de propósito (§3.2) — e
 não existe mais PAT do `SharedAuth` no VPS, na CI nem na sua máquina.
+
+**O que a execução ensinou, e não estava previsto:**
+
+- **`--frozen` não valida o lock; `--locked` valida.** Os dois nomes sugerem a
+  mesma coisa. Testei por mutação: com o lock desatualizado, `uv sync --frozen`
+  sai com código 0 e instala as versões antigas em silêncio. Todos os builds
+  usam `--locked`.
+- **O lock transformou uma versão flutuante em decisão.** O Dependabot havia
+  alargado o teto do Django de `<6` para `<7`, então qualquer rebuild do
+  ControleBancario já instalaria a 6.x — sem lock, sem aviso, sem ninguém
+  escolher. O lock tornou isso visível, e **o Django 6.1.1 foi adotado de
+  propósito**, com os 282 testes passando.
+- **A suíte não percorre telas, então a major pediu percurso manual.** Foi
+  feito no navegador, 20 telas: nenhum erro 500, nenhum stack trace, nenhum
+  fragmento HTMX quebrado. **Nenhuma regressão do Django 6.** Achou, em
+  compensação, dois defeitos pré-existentes que nada verificava — moeda crua
+  em duas telas (os templates nunca carregaram `money_filters`) e um item de
+  menu apontando para `/admin/`, rota removida com o `django.contrib.admin`.
+  Esse item era folha no fim da árvore que `primeira_tela_permitida` percorre:
+  um `is_staff` sem permissão nenhuma seria mandado para o 404 ao entrar.
+  Corrigidos, com uma guarda nova que cruza a URLconf com a árvore do menu.
+- **Um teste da CI era corrida, e ficou verde por sorte por muito tempo.** A
+  guarda de thread do coletor do ControleRendaVariavel comparava
+  `threading.enumerate()` antes e depois de `create_app`, e reprovava qualquer
+  thread nova. O Flask-Limiter monta um `MemoryStorage`, cujo construtor sobe
+  um `threading.Timer(0.01)` sem nome próprio. O teste dependia de o retrato
+  cair fora de uma janela de dez milissegundos. Passou a esperar as efêmeras
+  saírem — o supervisor que a guarda existe para pegar não morre sozinho.
+- **O `--prefix=/install` do ControleBancario virou venv de verdade.** Era um
+  venv improvisado, e por isso a remoção do `pip` precisava caçar dentro de
+  `/usr/local/lib/python*/site-packages`. Os três `Dockerfile` da frota têm
+  agora o mesmo formato.
+- **O ConfortoTermico entrou só pelo L23.** Ele segue trilha própria (§7) e
+  continua sem lock e sem digest — dito com todas as letras no `AGENTS.md`
+  dele. A retirada do token tinha de alcançá-lo mesmo assim: enquanto qualquer
+  build da frota exigisse o arquivo, o PAT teria de continuar existindo no VPS.
 
 O risco caiu de Médio para Baixo: nada aqui toca `deploy.sh` nem a topologia de
 produção.
@@ -1074,14 +1107,17 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 | L20 | Site | LGPD entra com o formulário | Médio | M | **F7** |
 | L21 | Site | Portal nasce em Django, repo novo | — | G | **F7** |
 | L22 | Processo | Documentação viva à deriva | Baixo | P | **✅ F0** |
-| L23 | Entrega | Engrenagem de token do `SharedAuth` é peso morto | Médio | M | **F3** |
+| L23 | Entrega | Engrenagem de token do `SharedAuth` é peso morto | Médio | M | **✅ F3** |
 | L24 | Segurança | 3 repos aceitavam action de terceiro | Alto | P | **✅ F0** |
 
 † Alto assim que houver cliente.
 
-**24 achados: 10 concluídos (7 no F0, 3 no F1), 7 no plano, 5 riscos aceitos
-com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero críticos. Zero
-vulnerabilidades exploráveis.
+**24 achados: 11 concluídos (7 no F0, 3 no F1, 1 no F3), 6 no plano, 5 riscos
+aceitos com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero
+críticos. Zero vulnerabilidades exploráveis.
+
+Os itens 1 e 2 da F3 não têm número de achado — vieram da §3.2, e também estão
+feitos.
 
 ---
 

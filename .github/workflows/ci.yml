@@ -89,3 +89,10 @@ jobs:
       # havia sido ligada à CI -- rodava só quando alguém lembrava.
       - name: Testar o instalador
         run: bash vps/tests/instalar_test.sh
+
+      # O sentinela lê o log de 5xx do nginx e alerta quebra de aplicação. A
+      # suíte substitui o `alerta.sh` por um script falso, então nada sai para
+      # o Telegram; o que ela exercita é a leitura incremental, que é onde
+      # mora o risco -- perder linha ou realertar o que já foi drenado.
+      - name: Testar o sentinela de 5xx
+        run: bash vps/tests/sentinela_test.sh

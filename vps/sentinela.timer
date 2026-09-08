@@ -1,0 +1,20 @@
+[Unit]
+Description=Dispara o sentinela de 5xx a cada cinco minutos
+
+[Timer]
+OnBootSec=3min
+# Cinco minutos e o compromisso entre latencia e ruido. O vigia roda de hora
+# em hora porque as condicoes dele duram horas (disco enchendo, certificado
+# vencendo); quebra de aplicacao e outra natureza: quem esta usando o sistema
+# percebe em segundos, e uma hora de atraso significaria o cliente avisando
+# antes do monitoramento.
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+# Sem `Persistent=true`, de proposito. Depois de a maquina ficar desligada,
+# reprocessar de imediato so entregaria alerta sobre erro que ja passou -- e a
+# posicao guardada faz o proximo ciclo normal drenar o acumulo de qualquer
+# forma, sem disparo extra no arranque.
+Unit=sentinela.service
+
+[Install]
+WantedBy=timers.target

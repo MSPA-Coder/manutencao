@@ -417,7 +417,7 @@ Fazer junto reconstrói as imagens uma vez em vez de duas.
 
 ### 4.4 Observabilidade: você sabe se caiu; não sabe se quebrou
 
-#### L08 · Nenhuma visibilidade de erro de aplicação · Médio† · M · **ativo**
+#### L08 · Nenhuma visibilidade de erro de aplicação · Médio† · M · **concluído no F4** — *por caminho diferente do recomendado; ver F4*
 
 Busca em todos os repositórios por `sentry`, `opentelemetry`, `prometheus`,
 `glitchtip`, `loki`, `grafana`: **nenhuma ocorrência**. Configuração de
@@ -972,14 +972,66 @@ O risco caiu de Médio para Baixo: nada aqui toca `deploy.sh` nem a topologia de
 produção.
 
 
-### F4 — Observabilidade de aplicação (meio dia) · Risco Baixo
+### F4 — Observabilidade de aplicação · **EXECUTADA em 08/09** · Risco Baixo
 
-| # | Ação | Achado |
-|---|---|---|
-| 1 | Handler de 500 → `alerta.sh`, com deduplicação | L08 |
-| 2 | Avaliar Sentry gratuito ou GlitchTip quando o portal subir | L08 |
+| # | Ação | Achado | Estado |
+|---|---|---|---|
+| 1 | Handler de 500 → `alerta.sh`, com deduplicação | L08 | ✅ **feito no nginx, não em cada app** — ver abaixo |
+| 2 | Avaliar Sentry gratuito ou GlitchTip quando o portal subir | L08 | ⏸ continua para quando o portal subir |
 
 **Pronto quando:** provocar um 500 numa rota qualquer chega no Telegram.
+**Falta o último passo:** rodar `~/instalar.sh` e `~/instalar-nginx.sh` no VPS.
+Enquanto isso não acontecer, o mecanismo está pronto e testado, mas nenhuma
+mensagem chega — o critério de pronto não está cumprido.
+
+**Por que o mecanismo ficou diferente do recomendado.** O achado sugeria um
+handler de 500 dentro de cada aplicação. Ao implementar, três coisas pesaram
+contra:
+
+1. **Um handler de aplicação só roda quando a aplicação ainda está viva.**
+   Worker do gunicorn que morreu devolve 502 e contêiner parado devolve 504 —
+   os dois casos mais graves são exatamente os que handler nenhum consegue
+   relatar sobre si mesmo.
+2. **`alerta.sh` mora no host, e os contêineres são `read_only`, sem socket do
+   Docker e sem o token do Telegram.** Fazer o handler alcançar o alerta
+   exigiria abrir um caminho novo através dessa fronteira — ou espalhar a
+   credencial do Telegram por quatro imagens.
+3. **Custo.** Pelo nginx, a cobertura vale para os cinco vhosts de uma vez, sem
+   release do SharedAuth e sem alterar quatro repositórios.
+
+O desenho ficou assim: `conf.d/00-comum.conf` ganhou um `access_log ... if=`
+que grava **somente** as respostas 5xx num arquivo próprio, e `sentinela.sh`
+drena esse arquivo a cada cinco minutos, agrupa por host e chama o `alerta.sh`
+que já existe — reaproveitando a supressão de repetição dele, como o achado
+pedia.
+
+**O que a execução ensinou, e não estava previsto:**
+
+- **A leitura incremental era mais sutil do que parecia, e a suíte achou dois
+  defeitos que produção não acharia.** Guardar inode e tamanho não basta: com
+  `logrotate copytruncate` o arquivo é esvaziado sem trocar de inode, e se
+  voltar a crescer além da posição antiga dentro da mesma janela, os dois
+  concordam com a marca e o conteúdo é outro — **linhas perdidas em silêncio**.
+  A correção foi assinar um prefixo. E a primeira versão da assinatura tinha o
+  defeito oposto: assinando "os primeiros 256 bytes" de um arquivo com uma
+  linha só, **acrescentar** uma linha muda a assinatura e o sentinela realerta
+  o que já alertou. Por isso o tamanho do prefixo é gravado junto com ela.
+- **Monitor cego alerta a própria cegueira.** O nginx do Ubuntu grava os logs
+  como `root:adm` e o sentinela roda como `ubuntu`. Se essa associação de grupo
+  mudar, um monitor que apenas saísse com sucesso compraria silêncio. O script
+  detecta e alerta; o `.service` declara `SupplementaryGroups=adm` para tornar
+  a dependência explícita.
+- **O filtro foi conferido com nginx de verdade, não só com `nginx -t`.** Com
+  as quatro rotas de teste (200, 404, 500, 503), o arquivo recebeu exatamente
+  duas linhas — o 500 e o 503. E `$upstream_status` sai como `-`, não vazio,
+  quando o nginx responde sem falar com a aplicação: a mensagem de alerta
+  explica os dois casos com o texto certo.
+- **A tabela da frota não foi duplicada.** Anexar o log do contêiner ao alerta
+  exigiria a correspondência entre apelido, diretório, porta e domínio — e o
+  `deploy.sh` declara por escrito ser o único lugar dela. Uma segunda cópia
+  envelheceria em silêncio, e a estreia seria um alerta apontando para o app
+  errado. O alerta leva as linhas do próprio nginx e manda seguir de
+  `~/deploy.sh --status`.
 
 ### F5 — Estrutura do site (1–2 dias) · Risco Baixo
 
@@ -1092,7 +1144,7 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 | L05 | Persistência | `media_volume` sem backup no VPS | Alto | M | risco aceito |
 | L06 | Persistência | RTO nunca medido | Médio | M | risco aceito |
 | L07 | Entrega | Imagem servida nunca testada nem varrida | Alto | G | risco aceito |
-| L08 | Observab. | Sem visibilidade de erro de aplicação | Médio† | M | **F4** |
+| L08 | Observab. | Sem visibilidade de erro de aplicação | Médio† | M | **✅ F4** |
 | L09 | Segurança | `manutencao` público com proteções off | Alto | P | **✅ F0** |
 | L10 | Segurança | `non_provider_patterns` off nos 7 públicos | Médio | P | **❌ indisponível** |
 | L11 | Segurança | Repo do cliente sem branch protection | Médio | P | risco aceito |
@@ -1112,9 +1164,12 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 
 † Alto assim que houver cliente.
 
-**24 achados: 11 concluídos (7 no F0, 3 no F1, 1 no F3), 6 no plano, 5 riscos
-aceitos com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero
+**24 achados: 12 concluídos (7 no F0, 3 no F1, 1 no F3, 1 no F4), 5 no plano,
+5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1 sem ação.** Zero
 críticos. Zero vulnerabilidades exploráveis.
+
+Dois desses concluídos ainda pedem uma ação no servidor para valerem de fato:
+apagar o `.secrets/github_token.txt` (F3) e instalar o sentinela (F4).
 
 Os itens 1 e 2 da F3 não têm número de achado — vieram da §3.2, e também estão
 feitos.

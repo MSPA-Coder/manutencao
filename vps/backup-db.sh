@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backup diário dos bancos de produção.
 #
-#   ./backup-db.sh            faz o ciclo dos quatro projetos
+#   ./backup-db.sh            faz o ciclo dos cinco projetos
 #   ./backup-db.sh --estado   mostra o estado sem alterar nada
 #   ./backup-db.sh --forcar   ignora a checagem de alteração e faz o dump
 #
@@ -23,11 +23,16 @@ INTERVALO_MAX_DIAS=7
 
 # slug:contêiner — o usuário e o banco são lidos de dentro do contêiner, para
 # não duplicar aqui uma configuração que já existe lá.
+#
+# `mp_portal` entrou na virada de 10/09/2026: é o primeiro banco da frota com
+# dado pessoal de terceiro (os contatos vindos do site), então a retenção dos
+# dumps abaixo passou a valer também sob a ótica da LGPD.
 PROJETOS=(
     "conforto_termico:conforto-termico-postgres-1"
     "mega_sena:mega-sena-postgres-1"
     "controle_bancario:controle-bancario-postgres-1"
     "controle_renda_variavel:controle-renda-variavel-db-1"
+    "mp_portal:mp-portal-postgres-1"
 )
 
 log() { printf '%s  %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')" "$*"; }

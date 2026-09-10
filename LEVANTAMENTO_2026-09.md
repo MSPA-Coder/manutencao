@@ -8,7 +8,8 @@ funcionalidade nova.
 - **Data:** 07/09/2026 · revisado no mesmo dia com as decisões do mantenedor
   (§2).
 - **Escopo:** `mega-sena`, `sistema-financeiro` (ControleBancario),
-  `ControleRendaVariavel`, `mp-solucoes`, `SharedAuth`, `BackupRestore`,
+  `ControleRendaVariavel`, `mp-solucoes` (sucedido pelo `MpPortal` na F7; o
+  repositório antigo foi removido em 10/09/2026), `SharedAuth`, `BackupRestore`,
   `manutencao` — e o `Sistema-de-Controle-de-Indice-de-Conforto-Termico` em
   trilha separada (§7).
 - **Apetite declarado:** endurecer o que existe; trocar tecnologia quando
@@ -498,16 +499,22 @@ dizia "um clique por repositório". Está errado. O `PATCH` da API é aceito com
 Não há o que fazer sem contratar; o achado vira risco aceito por
 indisponibilidade, não por escolha.
 
-#### L11 · O repositório do cliente é o único sem proteção de branch · Médio · P · **risco aceito**
+#### L11 · O repositório do cliente é o único sem proteção de branch · Médio · P · **sem objeto desde 10/09/2026**
 
-`mp-solucoes` é privado, e num plano gratuito rulesets e branch protection
-**não estão disponíveis** — a API responde "Upgrade to GitHub Pro". Os sete
+`mp-solucoes` era privado, e num plano gratuito rulesets e branch protection
+**não estavam disponíveis** — a API respondia "Upgrade to GitHub Pro". Os sete
 públicos têm ruleset ativo com histórico linear, sem force-push, sem deleção e
 status checks obrigatórios (`Qualidade` + `CodeQL`).
 
-**Decisão:** GitHub fica como está. O repositório que vai virar entrega para
-cliente segue sem rede — aceitável enquanto o site é rascunho e você é o único
-a commitar.
+**Decisão original:** GitHub ficava como estava — aceitável enquanto o site era
+rascunho e havia um só a commitar.
+
+**Encerrado em 10/09/2026:** o repositório `mp-solucoes` foi removido (o sucessor
+é o `MpPortal`, repositório privado `mp-portal`; a F5 está preservada no bundle
+`mp-solucoes-f5-arquivo.bundle`). O achado passa a valer, com o mesmo texto, para
+a `main` do `mp-portal` — cujo defeito derruba o site institucional **e** vaza
+dado pessoal de terceiro, o que torna a proteção mais exigível do que era para
+um site estático.
 
 #### L12 · `AGENTS.md` do MegaSena afirma que não há CodeQL — e há · Baixo · P · **ativo**
 
@@ -723,7 +730,7 @@ primeiro sinal que qualquer visitante lê.
 gatilho registrado em §6 — e a consequência prática está no L17: a estrutura
 vai adiante, o SEO fica represado até o domínio.
 
-#### L20 · LGPD entra com o formulário · Médio · M · **ativo (F7)**
+#### L20 · LGPD entra com o formulário · Médio · M · **resolvido no código, pendente de publicação (F7, 08/09)**
 
 Hoje não há formulário nem backend. Quando houver, o site passa a coletar dado
 pessoal de terceiros e a MP Soluções vira controladora sob a LGPD. Mínimo
@@ -740,15 +747,26 @@ prazo de retenção e canal para o titular exercer direitos.
 construído**, como primeira rota dele, em Django. Até lá, WhatsApp e telefone
 reais convertem bem e não coletam nada.
 
-#### L21 · O portal do cliente: onde ele nasce · — · G · **ativo (F7)**
+#### L21 · O portal do cliente: onde ele nasce · — · G · **repositório criado; dado por cliente adiado com gatilho (F7, 08/09)**
 
 Quando chegar, a decisão já está tomada por §3.3: **Django, repositório novo,
 consumindo `SharedAuth`**, seguindo o padrão da frota — Compose, CI,
 `/health`, `deploy.sh`, backup, vigia.
 
-- **Não transforme o site em portal.** Site institucional estático e portal
+- ~~**Não transforme o site em portal.** Site institucional estático e portal
   autenticado são coisas diferentes, com cadência, risco e público diferentes.
-  Dois repositórios, dois vhosts.
+  Dois repositórios, dois vhosts.~~ **REVERTIDO EM 08/09/2026**, por decisão do
+  mantenedor e com o motivo registrado no ADR 0003 do `MpPortal`: o destino
+  declarado passou a ser um portal com **vários formulários** públicos e uma
+  área logada com dois públicos, e nesse desenho o argumento decisivo inverte
+  de lado — com "Atendimento" no menu, cabeçalho, rodapé e navegação passariam
+  a existir duas vezes, em duas linguagens de template, obrigadas a permanecer
+  idênticas para sempre. As sete páginas foram incorporadas ao portal; o
+  repositório `mp-solucoes` foi **removido em 10/09/2026** (GitHub e cópia
+  local; a F5 está no bundle `mp-solucoes-f5-arquivo.bundle`), antes mesmo da
+  virada. O preço aceito de olhos abertos: **o institucional deixou de ser
+  imune a defeito da aplicação**, o que torna o L06 obrigatório e não mais
+  opcional.
 - **O portal é multiusuário de verdade**, com dados por cliente — diferente
   dos atuais, onde "qualquer conta autenticada acessa o acervo comum"
   (ADR 0002 do MegaSena). Isso conecta direto ao plano faseado de multiusuário
@@ -1083,7 +1101,8 @@ dos dois — e que fica mais barata agora do que depois.
 
 **Pronto quando:** cada rota tem URL própria, título próprio e prévia própria
 ao ser compartilhada — e trocar de domínio depois é editar uma constante.
-**Cumprido** (`mp-solucoes` PR #4, em produção em `f2598aa`).
+**Cumprido** (`mp-solucoes` PR #4, commit `f2598aa`). O repositório foi removido
+em 10/09/2026; esse histórico está no bundle `mp-solucoes-f5-arquivo.bundle`.
 
 **Como a constante de URL ficou** (item 5). Não virou constante em arquivo:
 nenhum arquivo do site escreve o domínio. O nginx monta `url_base` a partir do
@@ -1160,11 +1179,75 @@ continua valendo para os dois lados. **Cumprido.**
   operacional inteiro permanece obrigatório, item por item — quebrar qualquer
   um deles não é "arquitetura livre", é quebrar a operação compartilhada.
 
-### F7 — Portal do cliente (quando o site amadurecer) · Risco Médio
+### F7 — Portal do cliente · **FUNDAÇÃO EXECUTADA em 08/09** · Risco Médio
 
-Repositório novo, Django, `SharedAuth`, padrão da frota. Traz junto o
-formulário de contato e a conformidade LGPD (L20), e é o consumidor que
-finalmente justifica o plano de multiusuário e permissões de 24/08 (L21).
+Repositório novo (`MpPortal`, local; ainda sem remoto), Django 6.1.1,
+consumindo `sharedauth` v0.11.0 pelo núcleo — sem o extra `[flask]`, como o
+ControleBancario. Padrão da frota inteiro: base por digest, `uv.lock`,
+imagem imutável com runtime sem `pip`, Compose com segredo por arquivo,
+CI equivalente à dos irmãos, `/health` no formato comum e portas 5601/5602.
+
+| # | Ação | Achado | Estado |
+|---|---|---|---|
+| 1 | `POST /contato` com destino real, aceitando formulário comum e JSON | L20 | ✅ |
+| 2 | Aviso de privacidade em `/privacidade`, com versão gravada em cada registro | L20 | ✅ |
+| 3 | Consentimento como restrição de banco, não validação de formulário | L20 | ✅ |
+| 4 | Retenção aplicada por `manage.py expurgar_contatos` | L20 | ✅ (falta o timer, que entra com a publicação) |
+| 5 | Área de atendimento com `is_staff`, incluindo exclusão a pedido do titular | L20 | ✅ |
+| 6 | Modelo de cliente e dado por cliente | L21 | ⏸ adiado com gatilho escrito (ADR 0002 do repositório) |
+| 7 | Incorporar o site institucional ao portal | L21 | ✅ *não estava no plano* — sete páginas, nome fantasia, CSRF de volta |
+| 8 | Publicação no VPS | — | ⏸ decisão do mantenedor; virou **migração**, não instalação: `docs/operacao.md` |
+
+**Segunda rodada, no mesmo dia: o site foi incorporado ao portal.** O
+`MpSolucoes` deixou de ser destino: as sete páginas viraram templates Django
+dentro do `MpPortal`, com o conteúdo migrado byte a byte por script, e a área
+autenticada passou a ser um item do mesmo menu. Um repositório, uma imagem, um
+domínio. Isso **reverte a §L21** (ver acima), dispara o gatilho do ADR 0001 — o
+formulário voltou a ter CSRF e a lista de origens, o CORS e o pré-voo saíram —
+e transforma a publicação numa **migração de serviço que está no ar**, não numa
+instalação nova. O nome fantasia passou a ser *MP Soluções Corporativas* em
+tudo que o visitante lê. O que a incorporação preservou da F5, porque não é
+negociável: as sete URLs limpas, os `.html` em 301, a autossuficiência de
+assets e **o domínio não escrito em arquivo nenhum**.
+
+**A decisão que durou meio dia, e por que ela vale ser lida assim mesmo:**
+`POST /contato` nasceu como a única rota sem CSRF, porque o formulário morava
+num site estático de outra origem e CSRF defende contra ação em nome de quem
+está autenticado — ali não havia sessão nem ação em nome de ninguém. Quem
+protegia era a lista de origens (o navegador envia `Origin` em todo POST e a
+página não pode forjá-lo), o limite por resumo de IP, o campo-armadilha e o
+corpo pequeno. **A incorporação do site disparou o gatilho escrito na própria
+ADR** e a isenção foi revertida no mesmo dia. Fica como exemplo do que a casa
+faz de certo: a decisão veio com o gatilho escrito, e por isso a reversão foi
+uma linha de leitura, não uma discussão. As três defesas que não eram sobre
+CSRF — armadilha, limite e corpo pequeno — continuam de pé.
+
+**O que a fundação amarrou de propósito:** o aviso de privacidade é código, não
+texto solto. Cada campo persistido tem uma linha declarada, e a suíte compara os
+dois conjuntos — campo novo no modelo sem linha no aviso reprova a CI. É o
+antídoto para o modo clássico de um aviso virar mentira.
+
+**Verificação:** 112 testes, todos tocando o banco, mais Ruff limpo. Treze
+comportamentos foram quebrados de propósito e a suíte reprovou doze — o décimo
+terceiro expôs um teste fraco (procurava o link do atendimento na página
+inteira e passava com ele removido do menu principal, porque o menu mobile
+ainda o continha), que foi corrigido e reconferido. Imagem servida construída,
+fronteira do runtime conferida, migrações aplicadas por ela num banco vazio, e
+percurso no navegador: as sete páginas, o envio real do formulário com CSRF e a
+solicitação chegando à área de atendimento.
+
+**Dois defeitos passaram pela suíte inteira e só apareceram no navegador**, o
+que confirma o método: (1) comentário `{# #}` escrito em duas linhas não é
+comentário no Django e vazava para dentro do `<head>` de toda página; (2) o app
+novo não estava no `COPY` do Dockerfile, então a suíte passava e a imagem
+servida morria no arranque. Os dois viraram asserção.
+
+**O que a publicação vai acionar** (§6): o **L06** explicitamente — o gatilho
+escrito é "antes de o portal do cliente entrar no ar" —, e por contexto o
+**L19** (o aviso de privacidade precisa publicar um canal, e endereço em domínio
+próprio é parte disso) e o **L11** (o que se aceita para um site institucional
+não é o mesmo que se aceita para um repositório cujo defeito vaza dado de
+terceiro).
 
 ---
 
@@ -1180,7 +1263,7 @@ aceita e do gatilho que deve fazer a decisão ser revisitada.
 | **L06** — RTO desconhecido | Sabe-se que o dump restaura; não se sabe em quanto tempo o ambiente inteiro volta, nem se o `KIT_RECUPERACAO.md` está correto. | Antes de o portal do cliente entrar no ar — a partir daí, a indisponibilidade tem custo para terceiro. |
 | **L07** — imagem servida ≠ imagem testada | O artefato em produção nunca passou pelo Trivy nem pelo pytest. Rollback leva minutos, e o PAT do `SharedAuth` continua no VPS. | Um deploy falhar por dependência resolvida diferente da testada; ou a F3 não bastar para eliminar surpresas de build. |
 | **L19** — DuckDNS no site do cliente | Sufixo compartilhado, sem autoridade de domínio, sem e-mail corporativo. O SEO da F5 fica represado. | Antes de divulgar o site em cartão, proposta comercial ou anúncio — trocar depois de indexado exige 301 e paciência. |
-| **L11** — repo do cliente sem branch protection | `main` do `mp-solucoes` aceita force-push e deleção; nenhum status check obrigatório. | O site passar a ter entrega contratada, ou mais de uma pessoa commitando. |
+| **L11** — repo do cliente sem branch protection | Era `main` do `mp-solucoes` sem status check obrigatório. Repositório removido em 10/09/2026; o achado migra para a `main` do `mp-portal`. | Já disparou: a `main` do `mp-portal` derruba o site **e** vaza dado de terceiro — proteger antes da virada. |
 
 ---
 
@@ -1251,8 +1334,8 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 | L17 | Site | SPA por hash mata o SEO | Alto | M | ✅ F5 (08/09) |
 | L18 | Site | Imagens sem `lazy`/dimensão | Médio | P | ✅ F5 (08/09) |
 | L19 | Site | Domínio DuckDNS para cliente | Alto | P | risco aceito |
-| L20 | Site | LGPD entra com o formulário | Médio | M | **F7** |
-| L21 | Site | Portal nasce em Django, repo novo | — | G | **F7** |
+| L20 | Site | LGPD entra com o formulário | Médio | M | **◐ F7** — feito no código, falta publicar |
+| L21 | Site | Portal nasce em Django, repo novo | — | G | **◐ F7** — repo criado; dado por cliente adiado com gatilho |
 | L22 | Processo | Documentação viva à deriva | Baixo | P | **✅ F0** |
 | L23 | Entrega | Engrenagem de token do `SharedAuth` é peso morto | Médio | M | **✅ F3** |
 | L24 | Segurança | 3 repos aceitavam action de terceiro | Alto | P | **✅ F0** |
@@ -1263,8 +1346,12 @@ exceto o item 1 e 2 da F6, que existem justamente para registrar a separação.
 F6), 2 no plano, 5 riscos aceitos com gatilho, 1 indisponível na plataforma e 1
 sem ação.** Zero críticos. Zero vulnerabilidades exploráveis.
 
-Resta uma fase: a **F7** (portal do cliente), que depende de o site amadurecer.
-A F2 continua adiada por decisão registrada na §2.
+A **F7 teve a fundação executada em 08/09**: o repositório `MpPortal` existe,
+com o formulário de contato ganhando destino real e a conformidade LGPD junto
+(L20). O que ficou de fora tem motivo escrito: dado por cliente foi adiado com
+gatilho (ADR 0002 do próprio repositório) e a publicação no VPS é decisão sua —
+e é ela que aciona o L06, o L19 e o L11. A F2 continua adiada por decisão
+registrada na §2.
 
 Os dois que ainda pediam ação no servidor foram feitos em 08/09: os quatro
 `.secrets/github_token.txt` foram apagados do VPS (F3) e o sentinela está

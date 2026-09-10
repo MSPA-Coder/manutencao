@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `mp-solucoes` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. O `mp-solucoes` serve um site estático (contêiner nginx) e não tem o limitador de `/login`. |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. O `portal` (domínio `mp-solucoes.duckdns.org`) substituiu o vhost `mp-solucoes` do site estático na virada de 10/09/2026 — mesmo domínio e certificado, agora com o limitador de `/login` porque a aplicação tem autenticação. |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |

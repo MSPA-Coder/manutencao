@@ -17,7 +17,7 @@ set -uo pipefail
 ORIGEM="${1:-/home/ubuntu/nginx}"
 BACKUP="/home/ubuntu/nginx-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
 
-VHOSTS=(conforto-termico controle-bancario controle-renda-variavel megasena mp-solucoes)
+VHOSTS=(conforto-termico controle-bancario controle-renda-variavel megasena portal)
 
 # --------------------------------------------------------------------------
 # Conferências antes de tocar em qualquer coisa

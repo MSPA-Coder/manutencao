@@ -31,8 +31,8 @@ e confere o resultado.
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda|mp> --check
-~/deploy.sh <bancario|conforto|megasena|renda|mp>
+~/deploy.sh <bancario|conforto|megasena|renda|portal> --check
+~/deploy.sh <bancario|conforto|megasena|renda|portal>
 ~/deploy.sh --status
 ```
 

@@ -1,0 +1,62 @@
+# Vhost do MP Portal. Cópia de /etc/nginx/sites-available/portal.
+#
+# Substituiu o vhost `mp-solucoes` na virada de 10/09/2026: o mesmo domínio
+# (`mp-solucoes.duckdns.org`) e o mesmo certificado, agora servindo a aplicação
+# Django (porta 5601) no lugar do contêiner de site estático (porta 5501).
+#
+# Diferente do vhost antigo: o portal TEM rota de autenticação, então o
+# `location ~ ^/login` com o limitador volta -- a zona e a explicação estão em
+# `conf.d/00-comum.conf`. O `client_max_body_size` continua pequeno porque o
+# portal recusa upload (`FILE_UPLOAD_MAX_MEMORY_SIZE = 0`).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name mp-solucoes.duckdns.org;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    # `listen ... ssl http2` e não `http2 on;`: a diretiva separada só existe a
+    # partir do nginx 1.25.1; a forma abaixo preserva compatibilidade com 1.24.
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name mp-solucoes.duckdns.org;
+
+    ssl_certificate /etc/letsencrypt/live/mp-solucoes.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mp-solucoes.duckdns.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # O portal não recebe upload. Corpo pequeno rejeita POST grande cedo.
+    client_max_body_size 1m;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # Força bruta no login. A zona e a explicação estão em
+    # `conf.d/00-comum.conf`; aqui só se escolhe a folga.
+    #
+    # Regex e não `location = /login` porque o `APPEND_SLASH` do Django aceita
+    # as duas formas, e uma rota de login que escapasse do limitador por causa
+    # de uma barra seria um buraco silencioso. O nome `/login` foi escolhido no
+    # portal exatamente para cair nesta zona.
+    #
+    # Nenhum `add_header` aqui dentro de propósito: um `add_header` local faz o
+    # nginx DESCARTAR os do bloco pai, e o HSTS acima sumiria só nesta rota.
+    location ~ ^/login/?$ {
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:5601;
+        include snippets/proxy-app.conf;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:5601;
+        include snippets/proxy-app.conf;
+    }
+}

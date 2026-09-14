@@ -110,6 +110,7 @@ run_instalar() {
     # argumento de verdade, e o instalador a leria como um modo desconhecido.
     PATH="$CASE_TMP/bin:$PATH" \
     DESTINO_SCRIPTS="$CASE_TMP/scripts" DESTINO_SYSTEMD="$CASE_TMP/systemd" \
+    DESTINO_CERTBOT_HOOKS="$CASE_TMP/certbot-hooks" \
     DONO_SCRIPTS="$DONO_DO_TESTE" DONO_SYSTEMD="$DONO_DO_TESTE" \
     SYSTEMCTL=systemctl SUDO= \
     CALL_LOG="$CASE_TMP/calls.log" FAKE_GIT_STATUS="$CASE_TMP/git-status" \
@@ -150,8 +151,15 @@ DONO_DO_TESTE="$(id -un):$(id -gn)"
 begin_case
 run_instalar "$INSTALAR"
 assert_eq 0 "$EXIT_CODE" 'instalação em destino vazio deve sair zero'
-instalados=$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -type f | wc -l | tr -d ' ')
+# Os TRÊS destinos entram na contagem. Quando o hook do certbot entrou no
+# inventário, esta linha ainda somava só dois e acusou 22 de 23 -- o teste
+# apontou para o artefato novo como se ele não tivesse sido instalado, quando o
+# que faltava era a própria conta.
+instalados=$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" "$CASE_TMP/certbot-hooks" \
+                  -type f 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "$ESPERADOS" "$instalados" 'deve instalar todos os artefatos do inventário'
+assert_eq 755 "$(stat -c '%a' "$CASE_TMP/certbot-hooks/recarregar-nginx.sh")" \
+    'hook do certbot deve ficar executável -- o certbot só roda o que for'
 assert_eq 755 "$(stat -c '%a' "$CASE_TMP/scripts/deploy.sh")" 'script deve ficar 755'
 assert_eq 644 "$(stat -c '%a' "$CASE_TMP/systemd/vigia.timer")" 'unidade deve ficar 644'
 assert_eq "$DONO_DO_TESTE" "$(stat -c '%U:%G' "$CASE_TMP/scripts/deploy.sh")" 'dono deve ser o declarado'

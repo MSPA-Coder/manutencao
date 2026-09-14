@@ -46,6 +46,10 @@ set -euo pipefail
 ORIGEM=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DESTINO_SCRIPTS=${DESTINO_SCRIPTS:-/home/ubuntu}
 DESTINO_SYSTEMD=${DESTINO_SYSTEMD:-/etc/systemd/system}
+# Diretório de onde o certbot executa os hooks após uma renovação bem-sucedida.
+# Sobrescrevível pelo mesmo motivo dos dois acima: o teste precisa dirigir ESTE
+# arquivo sem escrever em `/etc/letsencrypt` da máquina de quem roda a suíte.
+DESTINO_CERTBOT_HOOKS=${DESTINO_CERTBOT_HOOKS:-/etc/letsencrypt/renewal-hooks/deploy}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 SUDO=${SUDO-sudo}
 # Dono de cada destino. Declarado, e nao herdado de quem roda o instalador:
@@ -85,6 +89,12 @@ INVENTARIO=(
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
     "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644|$DONO_SYSTEMD"
     "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644|$DONO_SYSTEMD"
+    # 755 e dono root: o certbot só executa o que for executável, e roda como
+    # root. Renomeado no destino para o nome que o hook tem lá, pelo mesmo
+    # motivo do `nginx/instalar.sh` -> `instalar-nginx.sh`: aqui o prefixo
+    # `certbot-` distingue o arquivo na pasta `vps/`, e lá o diretório já diz
+    # de quem ele é.
+    "certbot-recarregar-nginx.sh|$DESTINO_CERTBOT_HOOKS/recarregar-nginx.sh|755|$DONO_SYSTEMD"
 )
 
 #: Timers a reiniciar quando a unidade correspondente mudar. `alerta@.service` é

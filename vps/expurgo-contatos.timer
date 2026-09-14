@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispara o expurgo de contatos as 04:15 de Sao Paulo
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 America/Sao_Paulo
+Persistent=true
+Unit=expurgo-contatos.service
+
+[Install]
+WantedBy=timers.target

@@ -82,9 +82,23 @@ echo "== instalando =="
 sudo install -m 644 "$ORIGEM/conf.d/00-comum.conf"     /etc/nginx/conf.d/00-comum.conf
 sudo install -m 644 "$ORIGEM/snippets/proxy-app.conf"  /etc/nginx/snippets/proxy-app.conf
 sudo install -m 644 "$ORIGEM/recusa-host-desconhecido" /etc/nginx/sites-available/recusa-host-desconhecido
+# Instala E HABILITA cada vhost.
+#
+# POR QUE O `ln` ENTROU AQUI (14/09/2026): antes, só o `recusa-host-desconhecido`
+# ganhava link em `sites-enabled/`; os vhosts dos aplicativos iam apenas para
+# `sites-available/`. Isso funcionou por um ano porque os links do primeiro VPS
+# tinham sido criados à mão, uma vez, antes deste script existir -- e reinstalar
+# por cima de um link que já estava lá não acusa nada.
+#
+# Em máquina NOVA o resultado é outro: o script diz "instalado", o `nginx -t`
+# aprova, o reload acontece, e o site simplesmente não é servido, porque nada
+# aponta para ele. Aconteceu na virada do portal para o segundo VPS.
+#
+# `ln -sf` é idempotente: onde o link já existe, não muda nada.
 for f in "${VHOSTS[@]}"; do
     sudo install -m 644 "$ORIGEM/$f" "/etc/nginx/sites-available/$f"
-    echo "  $f"
+    sudo ln -sf "/etc/nginx/sites-available/$f" "/etc/nginx/sites-enabled/$f"
+    echo "  $f (habilitado)"
 done
 sudo ln -sf /etc/nginx/sites-available/recusa-host-desconhecido \
             /etc/nginx/sites-enabled/recusa-host-desconhecido
@@ -143,17 +157,31 @@ for d in "${DOMINIOS[@]}"; do
 done
 
 # O gzip é configuração compartilhada (`conf.d/00-comum.conf`), então qualquer
-# domínio desta máquina serve de amostra. Era o megasena fixo aqui, que num VPS
-# sem megasena testaria a máquina errada.
+# domínio desta máquina serve de amostra.
+#
+# O CAMINHO DO ARQUIVO É DESCOBERTO, e não escrito aqui. Eram duas coisas fixas:
+# o domínio do megasena e o caminho `/static/base.js`, que é um arquivo DELE. No
+# portal esse caminho é 404, e um 404 não traz `Content-Encoding` -- a
+# conferência reprovava um gzip que estava funcionando, e reprovaria em qualquer
+# aplicação que nomeie seus estáticos de outro jeito. Pior que não conferir é
+# conferir errado: a mensagem manda "conferir gzip_types", que não tem defeito.
+#
+# O Django serve estático com hash no nome, então o caminho só existe depois do
+# `collectstatic` -- ler da própria página é o jeito de saber qual é hoje.
 if [ "${#DOMINIOS[@]}" -gt 0 ]; then
     amostra="${DOMINIOS[0]}"
+    estatico=$(curl -sS --max-time 10 "https://$amostra/" 2>/dev/null \
+               | grep -oE '/static/[^"'"'"' ]+\.(css|js)' | head -1)
     echo
-    echo -n "  gzip em CSS/JS ($amostra): "
-    curl -sS --max-time 10 -H 'Accept-Encoding: gzip' -o /dev/null \
-         -w '%{content_type} -> ' "https://$amostra/static/base.js" 2>/dev/null
-    curl -sS --max-time 10 -H 'Accept-Encoding: gzip' -D - -o /dev/null \
-         "https://$amostra/static/base.js" 2>/dev/null \
-         | grep -i '^content-encoding' || echo '(sem content-encoding — conferir gzip_types)'
+    if [ -z "$estatico" ]; then
+        echo "  gzip em CSS/JS ($amostra): (nenhum estático encontrado na página inicial)"
+    else
+        echo -n "  gzip em $estatico ($amostra): "
+        curl -sS --max-time 10 -H 'Accept-Encoding: gzip' -D - -o /dev/null \
+             "https://$amostra$estatico" 2>/dev/null \
+             | grep -i '^content-encoding' \
+             || echo '(sem content-encoding — conferir gzip_types)'
+    fi
 fi
 
 # O teste bate em 127.0.0.1 com um `Host`/SNI que não é de ninguém, em vez do

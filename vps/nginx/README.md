@@ -45,11 +45,14 @@ sudo -v
 ```
 
 O conteúdo desse diretório é o que declara quais sites o servidor atende: o
-instalador entrega os vhosts que encontrar ali, lista quais são antes de tocar
-em qualquer coisa, e recusa rodar se não houver nenhum ou se faltar uma das
-peças compartilhadas. Num VPS que serve só o portal, copie só o `portal`; num
-que serve os cinco, copie os cinco. Até 13/09/2026 o script exigia os cinco
-nomes fixos e simplesmente não rodava em qualquer outra combinação.
+instalador entrega **e habilita** os vhosts que encontrar ali, lista quais são
+antes de tocar em qualquer coisa, e recusa rodar se não houver nenhum ou se
+faltar uma das peças compartilhadas. Num VPS que serve só o portal, copie só o
+`portal`; num que serve os cinco, copie os cinco. Até 13/09/2026 o script
+exigia os cinco nomes fixos e simplesmente não rodava em qualquer outra
+combinação; até 14/09/2026 ele instalava em `sites-available/` sem criar o link
+em `sites-enabled/`, o que só não quebrava porque os links do primeiro VPS
+tinham sido feitos à mão antes deste script existir.
 
 O script precisa de `sudo` para escrever em `/etc/nginx` e recarregar o
 serviço. Ao final, ele verifica `/health` de cada domínio que acabou de

@@ -84,14 +84,9 @@ bash vps/instalar.sh           # instala e confere
 `--check` sai diferente de zero quando há deriva, para que uma verificação
 periódica consiga distinguir "em dia" de "à deriva" sem interpretar texto.
 
-**Por que isto existe.** Até 30/08/2026 os artefatos chegavam ao servidor por
-cópia manual, e não havia nada garantindo que o instalado fosse o versionado.
-Uma comparação arquivo a arquivo mostrou o `deploy.sh` do servidor 160 linhas
-de código atrás — sem o registro do último SHA saudável que a tabela acima já
-descrevia como se existisse, e sem as variáveis de ambiente pelas quais
-`tests/deploy_test.sh` dirige o script. **A suíte do deploy validava um arquivo
-que não era o que rodaria num incidente.** Os demais artefatos coincidiam por
-sorte: ninguém tinha mexido no código deles desde a cópia.
+O instalador existe para que o servidor rode exatamente o que está versionado:
+sem ele, a suíte do deploy validaria um arquivo que não é o que roda num
+incidente.
 
 Teste hermético do instalador, sem rede nem acesso ao VPS:
 

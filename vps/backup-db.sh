@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backup diário dos bancos de produção.
 #
-#   ./backup-db.sh            faz o ciclo dos cinco projetos
+#   ./backup-db.sh            faz o ciclo dos bancos que encontrar rodando
 #   ./backup-db.sh --estado   mostra o estado sem alterar nada
 #   ./backup-db.sh --forcar   ignora a checagem de alteração e faz o dump
 #
@@ -17,23 +17,70 @@
 
 set -euo pipefail
 
-DEST=/home/ubuntu/backups
+# `DEST` vem do ambiente para que `tests/backup-db_test.sh` exercite ESTE
+# arquivo, e não uma cópia adaptada — mesma razão pela qual `instalar.sh` aceita
+# `DESTINO_SCRIPTS`, e pela mesma lição: uma suíte que aprova um arquivo
+# diferente do que roda em produção não aprova nada.
+DEST=${DEST:-/home/ubuntu/backups}
 RETENCAO_DIAS=14
 INTERVALO_MAX_DIAS=7
 
-# slug:contêiner — o usuário e o banco são lidos de dentro do contêiner, para
-# não duplicar aqui uma configuração que já existe lá.
+# O usuário e o banco são lidos de dentro do contêiner, para não duplicar aqui
+# uma configuração que já existe lá.
 #
 # `mp_portal` entrou na virada de 10/09/2026: é o primeiro banco da frota com
 # dado pessoal de terceiro (os contatos vindos do site), então a retenção dos
-# dumps abaixo passou a valer também sob a ótica da LGPD.
-PROJETOS=(
-    "conforto_termico:conforto-termico-postgres-1"
-    "mega_sena:mega-sena-postgres-1"
-    "controle_bancario:controle-bancario-postgres-1"
-    "controle_renda_variavel:controle-renda-variavel-db-1"
-    "mp_portal:mp-portal-postgres-1"
-)
+# dumps aqui passou a valer também sob a ótica da LGPD.
+#
+# POR QUE OS BANCOS SÃO DESCOBERTOS E NÃO LISTADOS (13/09/2026). Havia aqui um
+# vetor `slug:contêiner` escrito à mão, e um segundo, com a mesma intenção, no
+# `backup-agent.sh`. Quando o portal entrou em 10/09, alguém acrescentou o
+# `mp_portal` a este e não àquele: o dump do portal passou a ser produzido e a
+# NÃO poder ser baixado, e nada acusou, porque as duas listas não se
+# conversavam. Some-se a isso um segundo VPS, onde a lista dos cinco descreve
+# em parte a outra máquina, e manter a resposta à mão deixa de se pagar.
+#
+# O CRITÉRIO É A IMAGEM QUE O COMPOSE PEDIU (`postgres:*`):
+#   - não é o nome do contêiner, porque a frota já é inconsistente aí
+#     (`-postgres-1` em quatro projetos, `-db-1` no ControleRendaVariavel);
+#   - não é "tem `pg_dump` dentro", porque os aplicativos trazem o cliente do
+#     Postgres para falar com o banco: conferido no VPS, esse teste aprova
+#     `conforto-termico-ict-1` e `conforto-termico-coletor-1`, que não são
+#     banco nenhum.
+#
+# O slug é o projeto do Compose com `-` virando `_` — exatamente o nome das
+# pastas que já existem em ~/backups, então o histórico não se perde.
+descobrir_projetos() {
+    local c imagem projeto
+    for c in $(docker ps --format '{{.Names}}' 2>/dev/null); do
+        imagem=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null) || continue
+        case "$imagem" in postgres:*) ;; *) continue ;; esac
+        projeto=$(docker inspect -f \
+            '{{index .Config.Labels "com.docker.compose.project"}}' "$c" 2>/dev/null)
+        [ -n "$projeto" ] || continue
+        printf '%s:%s\n' "${projeto//-/_}" "$c"
+    done | sort
+}
+
+# Projetos que JÁ tiveram dump e agora não têm contêiner rodando.
+#
+# É o único caso que a descoberta sozinha não enxerga: contêiner parado não
+# aparece em `docker ps`, e um banco que sumiu ficaria indistinguível de um
+# banco que nunca existiu aqui. Comparar com o histórico em disco recupera o
+# aviso que a lista fixa dava — e amplia, porque vale para qualquer projeto já
+# visto, e não só para os que alguém lembrou de escrever.
+#
+# Pasta sem nenhum `.dump` não conta: é resto de tentativa, não banco perdido.
+descobrir_desaparecidos() {
+    local rodando="$1" dir slug
+    for dir in "$DEST"/*/; do
+        [ -d "$dir" ] || continue
+        slug=$(basename "$dir")
+        compgen -G "$dir/*.dump" >/dev/null || continue
+        printf '%s\n' "$rodando" | grep -q "^${slug}:" && continue
+        printf '%s\n' "$slug"
+    done
+}
 
 log() { printf '%s  %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')" "$*"; }
 
@@ -138,8 +185,21 @@ fazer_dump() {
 ciclo() {
     local forcar="${1:-nao}"
     local falhas=0
+    local projetos desaparecidos
 
-    for entrada in "${PROJETOS[@]}"; do
+    projetos=$(descobrir_projetos)
+
+    # "Nenhum banco encontrado" NUNCA pode sair como sucesso: um ciclo que não
+    # salvou nada e terminou bem é exatamente o silêncio que este backup existe
+    # para não produzir. Quando havia lista fixa, um Docker fora do ar dava
+    # cinco erros barulhentos; a descoberta precisa fazer esse barulho sozinha.
+    if [ -z "$projetos" ]; then
+        log "ERRO: nenhum contêiner postgres rodando — nada foi salvo"
+        log "  (docker fora do ar, ou os bancos não subiram: docker ps)"
+        return 1
+    fi
+
+    for entrada in $projetos; do
         local slug="${entrada%%:*}" container="${entrada##*:}"
         local dir="$DEST/$slug"
         mkdir -p "$dir"
@@ -179,6 +239,19 @@ ciclo() {
         fi
     done
 
+    # Banco que já teve dump e não está mais de pé: não há o que salvar, mas há
+    # o que dizer. Conta como falha de propósito — o `OnFailure=` do serviço é
+    # o que transforma isto em aviso, e um banco de produção que sumiu sem
+    # ninguém mandar sumir é precisamente o que se quer ouvir.
+    desaparecidos=$(descobrir_desaparecidos "$projetos")
+    if [ -n "$desaparecidos" ]; then
+        while IFS= read -r slug; do
+            [ -n "$slug" ] || continue
+            log "ERRO: $slug tem backup anterior e nenhum contêiner postgres rodando"
+            falhas=$((falhas + 1))
+        done <<<"$desaparecidos"
+    fi
+
     if [ "$falhas" -gt 0 ]; then
         log "$falhas projeto(s) falharam"
         return 1
@@ -186,10 +259,29 @@ ciclo() {
     log "ciclo concluído sem falhas"
 }
 
+# A união do que está rodando agora com o que já tem pasta em disco.
+#
+# Os dois lados importam e por motivos opostos: um banco recém-subido e ainda
+# sem dump precisa aparecer (é o estado de um VPS novo, e "não aparece" seria
+# lido como "não existe"), e um banco que sumiu também precisa (é justamente o
+# que se quer investigar). Nenhuma lista escrita à mão daria as duas coisas.
+slugs_conhecidos() {
+    local entrada dir
+    {
+        for entrada in $(descobrir_projetos); do
+            printf '%s\n' "${entrada%%:*}"
+        done
+        for dir in "$DEST"/*/; do
+            [ -d "$dir" ] || continue
+            basename "$dir"
+        done
+    } | sed '/^$/d' | sort -u
+}
+
 estado() {
     printf '%-26s %-6s %-22s %-10s %s\n' PROJETO DUMPS ULTIMO_BACKUP TAMANHO CONFERIDO
-    for entrada in "${PROJETOS[@]}"; do
-        local slug="${entrada%%:*}" dir="$DEST/${entrada%%:*}"
+    for slug in $(slugs_conhecidos); do
+        local dir="$DEST/$slug"
         local n ultimo quando tam conf
         # Contagem por glob: `ls | wc -l` com pipefail dispara o ramo de erro
         # quando a pasta está vazia, e a contagem sai duplicada.

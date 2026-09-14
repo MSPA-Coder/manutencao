@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Configura no UptimeRobot os quatro monitores externos dos domínios.
+# Configura no UptimeRobot os monitores externos dos domínios deste servidor.
 #
 #   ./uptimerobot-monitores.sh --estado    mostra o que existe
 #   ./uptimerobot-monitores.sh --aplicar   cria o que falta, corrige o que diverge
@@ -37,13 +37,34 @@ PALAVRA='"ok"'
 # UptimeRobot notifica mudanças de estado, não cada verificação.
 INTERVALO=3600
 
-DOMINIOS=(
-    conforto-mspa.duckdns.org
-    megasena-mspa.duckdns.org
-    bancario-mspa.duckdns.org
-    renda-mspa.duckdns.org
-    mp-solucoes.duckdns.org
-)
+NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
+
+# Os domínios são os que ESTE servidor serve — lidos dos vhosts habilitados,
+# pelo mesmo motivo e do mesmo jeito que o `vigia.sh` faz.
+#
+# O QUE ISSO SIGNIFICA COM DOIS VPS: cada máquina cuida dos monitores das
+# aplicações que ela serve, e só. O laço abaixo cria e ajusta; ele nunca apaga
+# monitor de domínio que não está na lista, então rodar isto num servidor não
+# mexe nos monitores do outro. Durante uma virada, em que o mesmo vhost existe
+# nas duas caixas por algumas horas, o pior que acontece é o monitor ser
+# reescrito com os mesmos valores.
+descobrir_dominios() {
+    grep -RhE '^[[:space:]]*server_name[[:space:]]' "$NGINX_HABILITADOS"/ 2>/dev/null \
+        | sed -E 's/^[[:space:]]*server_name[[:space:]]+//; s/;.*$//' \
+        | tr ' ' '\n' \
+        | sed '/^$/d; /^_$/d' \
+        | sort -u
+}
+
+mapfile -t DOMINIOS < <(descobrir_dominios)
+
+# Sem domínio não há o que configurar, e seguir em frente criaria a impressão
+# de que os monitores foram conferidos.
+if [ "${#DOMINIOS[@]}" -eq 0 ]; then
+    echo "ERRO: nenhum server_name encontrado em $NGINX_HABILITADOS." >&2
+    echo "Nada foi consultado nem alterado no UptimeRobot." >&2
+    exit 1
+fi
 
 MODO="${1:---estado}"
 

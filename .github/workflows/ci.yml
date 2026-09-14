@@ -96,3 +96,11 @@ jobs:
       # mora o risco -- perder linha ou realertar o que já foi drenado.
       - name: Testar o sentinela de 5xx
         run: bash vps/tests/sentinela_test.sh
+
+      # O backup descobre os bancos do Docker em vez de os listar (13/09/2026).
+      # A suíte substitui o `docker` por um script falso e exercita o critério
+      # da descoberta, a guarda de "descobri zero" e o aviso de banco que sumiu.
+      # O risco que ela cobre é o pior que um backup pode ter: não salvar nada
+      # e terminar dizendo que deu certo.
+      - name: Testar a descoberta do backup
+        run: bash vps/tests/backup-db_test.sh

@@ -21,13 +21,36 @@ set -euo pipefail
 DEST=/home/ubuntu/backups
 BACKUP_DB_SH=/home/ubuntu/backup-db.sh
 
-PROJETOS=(conforto_termico mega_sena controle_bancario controle_renda_variavel)
-
 erro() { printf 'ERRO: %s\n' "$*" >&2; exit 1; }
+
+# Os projetos são as pastas que existem em DEST — criadas pelo `backup-db.sh`
+# a partir dos bancos que ele encontra rodando.
+#
+# POR QUE DEIXOU DE SER UMA LISTA AQUI (13/09/2026): era
+# `(conforto_termico mega_sena controle_bancario controle_renda_variavel)`, e
+# estava errada. O portal entrou na frota em 10/09, foi acrescentado à lista do
+# `backup-db.sh` e não a esta — por três dias o dump do `mp_portal` foi
+# produzido todo dia e NENHUM deles podia ser baixado: `enviar mp_portal/...`
+# respondia "projeto desconhecido". Um backup que não se consegue buscar é
+# meio backup, e nada acusou, porque as duas listas não se conversavam. A
+# pasta em disco é a mesma verdade para os dois scripts.
+#
+# ISTO NÃO AFROUXA A DEFESA contra travessia de caminho: `resolver_dump`
+# continua exigindo o formato exato do nome, que o arquivo exista, e que o
+# `realpath` caia dentro de DEST/<slug>/. Quem conseguisse criar pasta em DEST
+# para forjar um "projeto" já teria acesso ao disco do servidor, e aí não é
+# este script que está no caminho.
+projetos() {
+    local dir
+    for dir in "$DEST"/*/; do
+        [ -d "$dir" ] || continue
+        basename "$dir"
+    done
+}
 
 eh_projeto_valido() {
     local slug="$1" p
-    for p in "${PROJETOS[@]}"; do [ "$p" = "$slug" ] && return 0; done
+    for p in $(projetos); do [ "$p" = "$slug" ] && return 0; done
     return 1
 }
 
@@ -65,7 +88,7 @@ mais_recente() {
 
 verbo_listar() {
     local slug dir arq tam hash
-    for slug in "${PROJETOS[@]}"; do
+    for slug in $(projetos); do
         dir="$DEST/$slug"
         [ -d "$dir" ] || continue
         for arq in "$dir"/*.dump; do

@@ -16,18 +16,41 @@ set -uo pipefail
 
 ALERTA=/home/ubuntu/alerta.sh
 BACKUPS=/home/ubuntu/backups
+NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
 DISCO_TETO=80          # % de uso a partir do qual alerta
 BACKUP_MAX_HORAS=36    # ciclo é diário; 36h já é atraso, não variação
 CERT_MIN_DIAS=15       # certbot renova aos 30; 15 significa que falhou 2x
 REBOOT_MAX_DIAS=3      # tolera o fim de semana; não deixa acumular semanas
 
-DOMINIOS=(
-    conforto-mspa.duckdns.org
-    megasena-mspa.duckdns.org
-    bancario-mspa.duckdns.org
-    renda-mspa.duckdns.org
-    mp-solucoes.duckdns.org
-)
+# Os domínios são lidos dos vhosts habilitados NESTE servidor.
+#
+# POR QUE DEIXOU DE SER UMA LISTA (13/09/2026): a lista fixa dizia "a frota", o
+# que era sinônimo de "esta máquina" enquanto havia uma só. Com um segundo VPS
+# ela passa a descrever, em parte, a OUTRA máquina — o vigia de um servidor
+# alertaria sobre aplicações que não são dele, e a pergunta "de qual máquina
+# veio este alerta?" viraria adivinhação. O nginx desta caixa já sabe a
+# resposta certa.
+#
+# É a mesma decisão que o `tests/nginx_test.sh` deste repositório já tinha
+# tomado, pelo mesmo motivo, e que está escrita lá: "acrescentar um projeto à
+# frota não pode exigir que alguém lembre de editar este teste também".
+#
+# `grep -R` e NÃO `-r`: `sites-enabled/` é um diretório de LINKS, e o `-r` não
+# os segue. Conferido no VPS — com `-r` a saída é VAZIA, e um vigia cego não
+# teria como se queixar da própria cegueira.
+#
+# `server_name _` fica de fora: são o `default` do pacote do Ubuntu e o
+# `recusa-host-desconhecido`, que existem justamente para tratar o que não é
+# domínio nosso.
+descobrir_dominios() {
+    grep -RhE '^[[:space:]]*server_name[[:space:]]' "$NGINX_HABILITADOS"/ 2>/dev/null \
+        | sed -E 's/^[[:space:]]*server_name[[:space:]]+//; s/;.*$//' \
+        | tr ' ' '\n' \
+        | sed '/^$/d; /^_$/d' \
+        | sort -u
+}
+
+mapfile -t DOMINIOS < <(descobrir_dominios)
 
 MODO="${1:-alertar}"
 falhas=0
@@ -76,6 +99,21 @@ fi
 # afrouxa a verificação — o critério de aprovação é o corpo conter
 # `"status":"ok"`, que uma tela de login redirecionada não produziria.
 # --------------------------------------------------------------------------
+# Vigia que não vigia nada precisa dizer isso em voz alta. Silêncio aqui seria
+# lido como "tudo bem" — que é exatamente o modo de falha que este script
+# existe para não ter.
+if [ "${#DOMINIOS[@]}" -eq 0 ]; then
+    [ "$MODO" = "--estado" ] && echo "dominios: NENHUM encontrado em $NGINX_HABILITADOS"
+    alertar "VIGIA CEGO: nenhum domínio para verificar" \
+"Nenhum \`server_name\` foi encontrado em $NGINX_HABILITADOS.
+
+Ou o nginx desta máquina não serve nenhum vhost, ou o diretório mudou de
+lugar. Enquanto isto durar, nenhuma aplicação está sendo verificada aqui.
+
+  ls -l $NGINX_HABILITADOS
+  nginx -T | grep server_name"
+fi
+
 for dominio in "${DOMINIOS[@]}"; do
     corpo=$(curl -sSL --max-time 15 "https://$dominio/health" 2>&1)
     codigo=$(curl -sSL --max-time 15 -o /dev/null -w '%{http_code}' "https://$dominio/health" 2>/dev/null || echo 000)

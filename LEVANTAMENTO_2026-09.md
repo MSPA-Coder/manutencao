@@ -94,5 +94,6 @@ o levantamento deixou como sugestão, sem prazo:
 
 - **Analytics do site** (item 6 da F5): não feito, porque exige recurso
   externo. O `AGENTS.md` do MpPortal descreve como uma exceção dessas entra.
-- As pendências de operação do portal — timer do expurgo, cópia do backup fora
-  do servidor, L06 e L19 — estão em `MpPortal/docs/operacao.md`.
+- As pendências de operação do portal — L06, L19, contatos mascarados e aviso de
+  chegada — estão em `MpPortal/docs/operacao.md`. O timer do expurgo e a cópia
+  do backup fora do servidor foram resolvidos em 14/09/2026.

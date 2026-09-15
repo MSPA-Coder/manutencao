@@ -1,0 +1,14 @@
+[Unit]
+Description=Avisa solicitacao nova no formulario de contato do portal
+Documentation=file:/home/ubuntu/aviso-contatos.sh
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+OnFailure=alerta@%n.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/home/ubuntu/aviso-contatos.sh
+TimeoutStartSec=120

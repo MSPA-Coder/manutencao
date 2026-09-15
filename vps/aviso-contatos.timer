@@ -1,0 +1,16 @@
+[Unit]
+Description=Dispara o aviso de chegada do portal a cada quinze minutos
+
+[Timer]
+OnBootSec=4min
+# Quinze minutos: quem pede orcamento espera resposta no mesmo dia, nao no mesmo
+# minuto, e um intervalo menor so multiplicaria chamadas ao conteiner.
+OnUnitActiveSec=15min
+RandomizedDelaySec=60s
+# Sem `Persistent=true`, de proposito: o estado guarda o ultimo instante
+# avisado, entao o primeiro ciclo depois de a maquina voltar ja conta tudo o
+# que chegou no intervalo, sem disparo extra no arranque.
+Unit=aviso-contatos.service
+
+[Install]
+WantedBy=timers.target

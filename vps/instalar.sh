@@ -69,6 +69,7 @@ DONO_SYSTEMD=${DONO_SYSTEMD:-root:root}
 INVENTARIO=(
     "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755|$DONO_SCRIPTS"
     "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755|$DONO_SCRIPTS"
+    "aviso-contatos.sh|$DESTINO_SCRIPTS/aviso-contatos.sh|755|$DONO_SCRIPTS"
     "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755|$DONO_SCRIPTS"
     "backup-db.sh|$DESTINO_SCRIPTS/backup-db.sh|755|$DONO_SCRIPTS"
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
@@ -81,6 +82,8 @@ INVENTARIO=(
     "alerta@.service|$DESTINO_SYSTEMD/alerta@.service|644|$DONO_SYSTEMD"
     "autocura.service|$DESTINO_SYSTEMD/autocura.service|644|$DONO_SYSTEMD"
     "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644|$DONO_SYSTEMD"
+    "aviso-contatos.service|$DESTINO_SYSTEMD/aviso-contatos.service|644|$DONO_SYSTEMD"
+    "aviso-contatos.timer|$DESTINO_SYSTEMD/aviso-contatos.timer|644|$DONO_SYSTEMD"
     "backup-db.service|$DESTINO_SYSTEMD/backup-db.service|644|$DONO_SYSTEMD"
     "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644|$DONO_SYSTEMD"
     "docker-prune.service|$DESTINO_SYSTEMD/docker-prune.service|644|$DONO_SYSTEMD"
@@ -106,6 +109,8 @@ INVENTARIO=(
 declare -A TIMER_DE=(
     [autocura.service]=autocura.timer
     [autocura.timer]=autocura.timer
+    [aviso-contatos.service]=aviso-contatos.timer
+    [aviso-contatos.timer]=aviso-contatos.timer
     [backup-db.service]=backup-db.timer
     [backup-db.timer]=backup-db.timer
     [docker-prune.service]=docker-prune.timer

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Vigia horário: disco, endereços públicos, certificado e frescor do backup.
+# Vigia horário: disco, endereços públicos, certificado, frescor do backup e
+# busca do backup pela cópia fora do servidor.
 #
 #   ./vigia.sh            faz o ciclo e alerta
 #   ./vigia.sh --estado   mostra tudo, sem alertar
@@ -11,14 +12,20 @@
 # disparou, máquina desligada na hora — em nenhum desses casos existe falha
 # para notificar, e o backup simplesmente para em silêncio. Só a idade do
 # último backup detecta isso.
+#
+# A de busca fecha o mesmo buraco do outro lado: o dump pode estar em dia aqui
+# e ninguém estar levando a cópia para fora do servidor.
 
 set -uo pipefail
 
-ALERTA=/home/ubuntu/alerta.sh
-BACKUPS=/home/ubuntu/backups
+# `ALERTA` e `BACKUPS` aceitam sobreposição pelo ambiente para a suíte
+# hermética (`tests/vigia_test.sh`), como `NGINX_HABILITADOS` já aceitava.
+ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
+BACKUPS=${BACKUPS:-/home/ubuntu/backups}
 NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
 DISCO_TETO=80          # % de uso a partir do qual alerta
 BACKUP_MAX_HORAS=36    # ciclo é diário; 36h já é atraso, não variação
+BUSCA_MAX_HORAS=72     # quem busca é uma máquina Windows; tolera um fim de semana desligada
 CERT_MIN_DIAS=15       # certbot renova aos 30; 15 significa que falhou 2x
 REBOOT_MAX_DIAS=3      # tolera o fim de semana; não deixa acumular semanas
 
@@ -184,6 +191,63 @@ rodar. Conferir o timer, não o script:
   systemctl list-timers backup-db.timer"
     fi
 done
+
+# --------------------------------------------------------------------------
+# Busca do backup — a cópia fora do servidor
+#
+# O ciclo acima prova que o dump NASCE aqui. Levá-lo para fora é outro
+# processo, em outra máquina: o BackupRestore, no Windows do mantenedor,
+# conecta pelo `backup-agent.sh` e começa toda sincronização por `listar`, que
+# grava `.ultima_busca` na raiz de $BACKUPS.
+#
+# POR QUE EXISTE (15/09/2026): a tarefa agendada que dispara essa busca foi
+# achada desabilitada três vezes (02/09, 05/09 e 15/09). Tarefa desabilitada não
+# roda, então não falha, e nenhum dos dois lados avisava: aqui os dumps seguiam
+# em dia, e lá não havia execução para registrar erro.
+#
+# POR QUE `listar` E NÃO `enviar`: o `backup-db.sh` só grava dump novo quando o
+# banco muda. Projeto sem movimento passa dias sem nada para buscar, e medir
+# pelo `enviar` alertaria justamente o caso normal.
+#
+# O título é fixo e as horas vão no corpo: o `alerta.sh` reconhece repetição
+# pelo título, e um título com a idade viraria alerta novo a cada hora.
+#
+# Máquina sem nenhuma pasta de projeto não produz backup, e não há o que buscar.
+# --------------------------------------------------------------------------
+produz_backup=0
+for dir in "$BACKUPS"/*/; do
+    if [ -d "$dir" ]; then
+        produz_backup=1
+        break
+    fi
+done
+
+marca_busca="$BACKUPS/.ultima_busca"
+conferir_busca="Conferir na máquina do BackupRestore:
+  Get-ScheduledTask -TaskName BackupRestore   (State precisa ser Ready)
+  ultima-execucao.txt, na pasta do BackupRestore
+  tailscale status, se este servidor é alcançado pelo Tailscale"
+
+if [ "$produz_backup" -eq 0 ]; then
+    [ "$MODO" = "--estado" ] && echo "busca dos backups: sem projeto nesta máquina"
+elif [ ! -r "$marca_busca" ]; then
+    [ "$MODO" = "--estado" ] && echo "busca dos backups: NUNCA registrada"
+    alertar "BACKUP nunca buscado" \
+"Não existe $marca_busca: nenhuma busca do BackupRestore foi registrada aqui.
+Os dumps estão sendo produzidos, mas nenhum saiu do servidor.
+
+$conferir_busca"
+else
+    horas=$(( ( $(date +%s) - $(stat -c %Y "$marca_busca") ) / 3600 ))
+    [ "$MODO" = "--estado" ] && echo "busca dos backups: há ${horas}h (limite ${BUSCA_MAX_HORAS}h)"
+    if [ "$horas" -ge "$BUSCA_MAX_HORAS" ]; then
+        alertar "BACKUP não buscado" \
+"A última busca do BackupRestore foi há ${horas}h. Os dumps continuam
+nascendo aqui; o que parou foi a cópia para fora do servidor.
+
+$conferir_busca"
+    fi
+fi
 
 # --------------------------------------------------------------------------
 # Reboot pendente

@@ -22,7 +22,10 @@ cada aplicação.
 ## Contratos
 
 - HTTP redireciona para HTTPS, preservando o desafio ACME.
-- TLS usa os certificados do Certbot e emite HSTS.
+- TLS usa os certificados do Certbot e emite HSTS por uma fonte só: o
+  `add_header` do vhost. O HSTS que a aplicação mandar é descartado pelo
+  `snippets/proxy-app.conf`, e o instalador confere que cada domínio responde
+  com exatamente um cabeçalho.
 - Hosts desconhecidos são recusados durante o handshake TLS.
 - Os cabeçalhos `Host`, `X-Real-IP`, `X-Forwarded-For` e
   `X-Forwarded-Proto` são encaminhados às aplicações.

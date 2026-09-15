@@ -111,3 +111,15 @@ jobs:
       # portal sem contêiner para rodar o expurgo (falha, que alerta).
       - name: Testar o expurgo de contatos
         run: bash vps/tests/expurgo-contatos_test.sh
+
+      # A cópia dos dumps para fora do servidor começa por `listar`, que grava
+      # o marcador `.ultima_busca`. A suíte prova que só `listar` grava e que a
+      # listagem não depende de conseguir gravar.
+      - name: Testar o agente de backup
+        run: bash vps/tests/backup-agent_test.sh
+
+      # O vigia alerta quando ninguém busca os backups há mais de 72h -- a
+      # tarefa do Windows que faz a busca já parou três vezes sem aviso. A
+      # suíte cobre só essa verificação; o resto do vigia depende de rede.
+      - name: Testar a busca no vigia
+        run: bash vps/tests/vigia_test.sh

@@ -154,6 +154,19 @@ for d in "${DOMINIOS[@]}"; do
     versao=$(curl -sS --max-time 10 -o /dev/null -w '%{http_version}' "https://$d/health" 2>/dev/null || echo '?')
     saude=$(curl -sSL --max-time 10 "https://$d/health" 2>/dev/null | head -c 60)
     printf '  %-30s HTTP/%s  %s\n' "$d" "$versao" "$saude"
+
+    # Exatamente um HSTS, o do vhost. Dois significa que o `proxy_hide_header`
+    # do `snippets/proxy-app.conf` não pegou e a aplicação voltou a mandar o
+    # dela; zero significa que o `add_header` do vhost sumiu. Sem `-L`: o
+    # cabeçalho sai também no redirecionamento, e é a primeira resposta que o
+    # navegador lê.
+    hsts=$(curl -sS --max-time 10 -D - -o /dev/null "https://$d/health" 2>/dev/null \
+           | grep -ci '^strict-transport-security:')
+    if [ "$hsts" = "1" ]; then
+        echo "    HSTS: um cabeçalho"
+    else
+        echo "    HSTS: ${hsts:-0} cabeçalho(s) — esperado exatamente 1"
+    fi
 done
 
 # O gzip é configuração compartilhada (`conf.d/00-comum.conf`), então qualquer

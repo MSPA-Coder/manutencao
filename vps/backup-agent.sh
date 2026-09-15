@@ -6,7 +6,8 @@
 # abaixo, nunca um shell. A cópia executável vive em
 # /home/ubuntu/backup-agent.sh.
 #
-#   listar               nomes, tamanhos e SHA-256 dos dumps disponíveis
+#   listar               nomes, tamanhos e SHA-256 dos dumps disponíveis;
+#                        registra a busca em $DEST/.ultima_busca
 #   enviar <slug/nome>    despeja um dump na saída padrão
 #   apagar <slug/nome>    remove um dump — recusa o mais recente
 #   estado                último backup de cada projeto + saúde do timer
@@ -18,8 +19,18 @@
 
 set -euo pipefail
 
-DEST=/home/ubuntu/backups
+# `DEST` aceita sobreposição pelo ambiente só para a suíte hermética
+# (`tests/backup-agent_test.sh`), no mesmo formato do `backup-db.sh`. Isso não
+# abre porta pelo SSH: o sshd só repassa ao processo as variáveis de
+# `AcceptEnv` (conferido em 15/09/2026: `LANG` e `LC_*` nos dois servidores,
+# mais `COLORTERM` e `NO_COLOR` no do portal), e `PermitUserEnvironment` está
+# desligado nos dois — quem conecta com a chave do agente não escolhe `DEST`.
+DEST=${DEST:-/home/ubuntu/backups}
 BACKUP_DB_SH=/home/ubuntu/backup-db.sh
+
+# Batimento da cópia fora do servidor (Camada 2). Ver `verbo_listar` e a seção
+# "Busca do backup" do `vigia.sh`.
+MARCA_BUSCA="$DEST/.ultima_busca"
 
 erro() { printf 'ERRO: %s\n' "$*" >&2; exit 1; }
 
@@ -98,6 +109,14 @@ verbo_listar() {
             printf '%s/%s %s %s\n' "$slug" "$(basename "$arq")" "$tam" "$hash"
         done
     done
+
+    # Batimento da cópia fora do servidor (15/09/2026). O BackupRestore começa
+    # toda sincronização por `listar`, mesmo quando não há dump novo para
+    # buscar, e o `vigia.sh` alerta quando este marcador envelhece. Só depois da
+    # listagem, para registrar busca que de fato respondeu. `|| true` porque uma
+    # medição que não grava não pode derrubar a sincronização: sem marcador, o
+    # próprio vigia acusa.
+    touch "$MARCA_BUSCA" 2>/dev/null || true
 }
 
 verbo_enviar() {

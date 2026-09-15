@@ -106,6 +106,39 @@ done
 VHOSTS=$(find "$ANDAIME/sites" -name '*.conf' | wc -l)
 [ "$VHOSTS" -gt 0 ] || { echo "FALHOU: nenhum vhost copiado para o andaime." >&2; exit 1; }
 
+# ---------------------------------------------------------------------------
+# HSTS com uma fonte só (15/09/2026).
+#
+# `nginx -t` aprova a sintaxe, mas não enxerga que dois cabeçalhos HSTS
+# discordantes chegavam ao navegador: o do vhost e o que o Django manda. A
+# correção é de estrutura, e é a estrutura que se confere aqui:
+#   - o snippet de proxy descarta o HSTS que vem da aplicação;
+#   - todo `proxy_pass` de todo vhost passa pelo snippet;
+#   - todo vhost que faz proxy emite exatamente um HSTS próprio.
+# Vhost sem `proxy_pass` (o `recusa-host-desconhecido`) fica de fora: ele não
+# serve conteúdo, só recusa o handshake.
+# ---------------------------------------------------------------------------
+grep -Eq '^[[:space:]]*proxy_hide_header[[:space:]]+Strict-Transport-Security;' \
+        "$FONTE/snippets/proxy-app.conf" \
+    || { echo "FALHOU: snippets/proxy-app.conf não descarta o HSTS da aplicação." >&2; exit 1; }
+
+for vhost in "$ANDAIME"/sites/*.conf; do
+    nome=$(basename "$vhost" .conf)
+    proxies=$(grep -Ec '^[[:space:]]*proxy_pass[[:space:]]' "$vhost" || true)
+    [ "$proxies" -gt 0 ] || continue
+    incluidos=$(grep -Ec '^[[:space:]]*include[[:space:]]+snippets/proxy-app\.conf;' "$vhost" || true)
+    if [ "$proxies" -ne "$incluidos" ]; then
+        echo "FALHOU: $nome tem $proxies proxy_pass e $incluidos include do snippet de proxy." >&2
+        exit 1
+    fi
+    hsts=$(grep -Ec '^[[:space:]]*add_header[[:space:]]+Strict-Transport-Security[[:space:]]' "$vhost" || true)
+    if [ "$hsts" -ne 1 ]; then
+        echo "FALHOU: $nome tem $hsts add_header de HSTS; esperado exatamente 1." >&2
+        exit 1
+    fi
+done
+echo "# HSTS: um por vhost, e o da aplicação é descartado no proxy"
+
 # `gzip on;` vem do nginx.conf do pacote do Ubuntu, não deste repositório; sem
 # ele o `gzip_vary`/`gzip_types` do 00-comum.conf continua válido para o `-t`,
 # mas declarar aqui reproduz o ambiente real de leitura.

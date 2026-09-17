@@ -1,0 +1,14 @@
+[Unit]
+Description=Dispara a coleta de cambio do NetWorth as 07:10 de Sao Paulo
+
+# O fechamento de um dia de cambio sai a meia-noite de Londres (20:00 ou 21:00
+# em Sao Paulo), e o comando so grava dia ja fechado. De manha o dia anterior
+# esta fechado com folga. Longe das 03:00 do backup e das 04:15 do expurgo.
+[Timer]
+OnCalendar=*-*-* 07:10:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=5min
+Unit=atualizar-cambio.service
+
+[Install]
+WantedBy=timers.target

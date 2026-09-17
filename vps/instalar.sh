@@ -68,6 +68,7 @@ DONO_SYSTEMD=${DONO_SYSTEMD:-root:root}
 # chama assim, e renomear no servidor quebraria a memória de quem opera.
 INVENTARIO=(
     "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755|$DONO_SCRIPTS"
+    "atualizar-cambio.sh|$DESTINO_SCRIPTS/atualizar-cambio.sh|755|$DONO_SCRIPTS"
     "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755|$DONO_SCRIPTS"
     "aviso-contatos.sh|$DESTINO_SCRIPTS/aviso-contatos.sh|755|$DONO_SCRIPTS"
     "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755|$DONO_SCRIPTS"
@@ -80,6 +81,8 @@ INVENTARIO=(
     "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
     "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755|$DONO_SCRIPTS"
     "alerta@.service|$DESTINO_SYSTEMD/alerta@.service|644|$DONO_SYSTEMD"
+    "atualizar-cambio.service|$DESTINO_SYSTEMD/atualizar-cambio.service|644|$DONO_SYSTEMD"
+    "atualizar-cambio.timer|$DESTINO_SYSTEMD/atualizar-cambio.timer|644|$DONO_SYSTEMD"
     "autocura.service|$DESTINO_SYSTEMD/autocura.service|644|$DONO_SYSTEMD"
     "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644|$DONO_SYSTEMD"
     "aviso-contatos.service|$DESTINO_SYSTEMD/aviso-contatos.service|644|$DONO_SYSTEMD"
@@ -107,6 +110,8 @@ INVENTARIO=(
 #: template, instanciado sob demanda por quem alerta, e o drop-in do certbot
 #: vale na próxima execução dele -- nenhum dos dois tem timer a reiniciar aqui.
 declare -A TIMER_DE=(
+    [atualizar-cambio.service]=atualizar-cambio.timer
+    [atualizar-cambio.timer]=atualizar-cambio.timer
     [autocura.service]=autocura.timer
     [autocura.timer]=autocura.timer
     [aviso-contatos.service]=aviso-contatos.timer

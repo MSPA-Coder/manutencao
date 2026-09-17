@@ -11,7 +11,7 @@
 # limpo.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
-# o banco inteiramente fora do ar. Os cinco projetos expõem `/health`, que
+# o banco inteiramente fora do ar. Os seis projetos expõem `/health`, que
 # consulta o banco e responde 503 quando não consegue. O critério é o CORPO
 # conter `"status":"ok"`, não apenas o código HTTP.
 #
@@ -46,10 +46,11 @@ PADRAO_OK='"status"[[:space:]]*:[[:space:]]*"ok"'
 # shellcheck disable=SC2034  # `PORTA` não é lida por este script -- a sonda de
 # saúde bate na URL pública, não em 127.0.0.1, de propósito. Ela fica aqui
 # porque este `case` é o único lugar do repositório onde a numeração da frota
-# (51/52/53/54/56) aparece ao lado do projeto correspondente, e essa
+# (51/52/53/54/56/57) aparece ao lado do projeto correspondente, e essa
 # correspondência já precisou ser consultada mais de uma vez. O portal pulou
 # para 56xx: o 55xx era do site estático, que ele substituiu, e reaproveitar a
-# faixa enquanto os dois coexistiam na virada teria colidido as portas.
+# faixa enquanto os dois coexistiam na virada teria colidido as portas. O
+# NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx.
 projeto_info() {
     case "$1" in
         bancario|controle-bancario)
@@ -67,8 +68,11 @@ projeto_info() {
         portal|mp-portal)
             DIR=mp-portal;              ENVF=.env.vps;    PORTA=5601
             DOMINIO=mp-solucoes.duckdns.org ;;
+        networth)
+            DIR=networth;               ENVF=.env.vps;    PORTA=5701
+            DOMINIO=networth-mspa.duckdns.org ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda | portal" >&2
+            echo "Use: bancario | conforto | megasena | renda | portal | networth" >&2
             return 1 ;;
     esac
 }
@@ -87,7 +91,7 @@ alertar() {
 # aplicação e banco. Uma sonda em 127.0.0.1 aprovaria um site que o mundo não
 # alcança.
 #
-# `-L` porque os cinco não concordam sobre a barra final e o APPEND_SLASH do
+# `-L` porque os seis não concordam sobre a barra final e o APPEND_SLASH do
 # Django responde 301 ao caminho sem barra. Seguir o redirecionamento não
 # afrouxa nada: o critério continua sendo o corpo.
 VERIF_CODE=000
@@ -213,7 +217,7 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda portal; do
+    for p in bancario conforto megasena renda portal networth; do
         projeto_info "$p"
         # Um projeto ainda não clonado no servidor não deve derrubar o --status
         # dos demais.
@@ -231,7 +235,7 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal> [--check]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|portal|networth> [--check]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi
@@ -318,7 +322,7 @@ commit confirmado em $ESTADO_DIR. O código não foi revertido."
 
     # Poda o cache por tamanho, pois deploys frequentes podem manter todas as
     # camadas jovens mesmo quando o consumo de disco cresce. O teto preserva
-    # as camadas recentes dos cinco projetos e a poda nunca falha o deploy.
+    # as camadas recentes dos seis projetos e a poda nunca falha o deploy.
     docker builder prune -f --max-used-space 3GB >/dev/null 2>&1 || true
     exit 0
 fi

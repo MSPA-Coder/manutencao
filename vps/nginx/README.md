@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `networth`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |
@@ -51,7 +51,7 @@ O conteúdo desse diretório é o que declara quais sites o servidor atende: o
 instalador entrega **e habilita** os vhosts que encontrar ali, lista quais são
 antes de tocar em qualquer coisa, e recusa rodar se não houver nenhum ou se
 faltar uma das peças compartilhadas. Num VPS que serve só o portal, copie só o
-`portal`; no que serve os outros quatro aplicativos, copie esses quatro.
+`portal`; no que serve os outros cinco aplicativos, copie esses cinco.
 
 O script precisa de `sudo` para escrever em `/etc/nginx` e recarregar o
 serviço. Ao final, ele verifica `/health` de cada domínio que acabou de

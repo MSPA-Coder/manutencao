@@ -2,7 +2,7 @@
 # Teste hermético da configuração do Nginx: `nginx -t` sobre os vhosts
 # versionados, sem rede, sem VPS e sem certificado de verdade.
 #
-# POR QUE EXISTE: os cinco vhosts, o `conf.d/00-comum.conf` e o
+# POR QUE EXISTE: os seis vhosts, o `conf.d/00-comum.conf` e o
 # `snippets/proxy-app.conf` são instalados no servidor por `nginx/instalar.sh`
 # e só então testados -- ou seja, o primeiro a descobrir um erro de sintaxe, um
 # `include` com caminho errado ou um `limit_req zone=` apontando para uma zona

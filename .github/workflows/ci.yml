@@ -119,6 +119,12 @@ jobs:
       - name: Testar a coleta de câmbio
         run: bash vps/tests/atualizar-cambio_test.sh
 
+      # A foto diária do NetWorth é irmã da coleta de câmbio, com o mesmo
+      # desenho e os mesmos casos. Sem ela, o histórico pararia na última
+      # execução e o gráfico continuaria bonito, só que velho.
+      - name: Testar a foto do patrimônio
+        run: bash vps/tests/registrar-foto_test.sh
+
       # O aviso de chegada do portal guarda o último instante avisado e manda
       # alerta com `ALERTA_JANELA=0`. A suíte cobre a primeira execução (só
       # inicializa), o estado que não anda quando algo falha e a leitura

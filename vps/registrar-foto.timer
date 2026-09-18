@@ -1,0 +1,15 @@
+[Unit]
+Description=Dispara a foto diaria do patrimonio as 07:40 de Sao Paulo
+
+# Depois da coleta de cambio das 07:10: a foto nao precisa da taxa para ser
+# gravada, mas a tela precisa dela para converter, e assim as duas chegam
+# juntas. De manha o dia anterior esta fechado nas duas fontes. Longe das 03:00
+# do backup e das 04:15 do expurgo.
+[Timer]
+OnCalendar=*-*-* 07:40:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=5min
+Unit=registrar-foto.service
+
+[Install]
+WantedBy=timers.target

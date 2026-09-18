@@ -76,6 +76,7 @@ INVENTARIO=(
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
     "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
     "expurgo-contatos.sh|$DESTINO_SCRIPTS/expurgo-contatos.sh|755|$DONO_SCRIPTS"
+    "registrar-foto.sh|$DESTINO_SCRIPTS/registrar-foto.sh|755|$DONO_SCRIPTS"
     "sentinela.sh|$DESTINO_SCRIPTS/sentinela.sh|755|$DONO_SCRIPTS"
     "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755|$DONO_SCRIPTS"
     "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
@@ -93,6 +94,8 @@ INVENTARIO=(
     "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
     "expurgo-contatos.service|$DESTINO_SYSTEMD/expurgo-contatos.service|644|$DONO_SYSTEMD"
     "expurgo-contatos.timer|$DESTINO_SYSTEMD/expurgo-contatos.timer|644|$DONO_SYSTEMD"
+    "registrar-foto.service|$DESTINO_SYSTEMD/registrar-foto.service|644|$DONO_SYSTEMD"
+    "registrar-foto.timer|$DESTINO_SYSTEMD/registrar-foto.timer|644|$DONO_SYSTEMD"
     "sentinela.service|$DESTINO_SYSTEMD/sentinela.service|644|$DONO_SYSTEMD"
     "sentinela.timer|$DESTINO_SYSTEMD/sentinela.timer|644|$DONO_SYSTEMD"
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
@@ -122,6 +125,8 @@ declare -A TIMER_DE=(
     [docker-prune.timer]=docker-prune.timer
     [expurgo-contatos.service]=expurgo-contatos.timer
     [expurgo-contatos.timer]=expurgo-contatos.timer
+    [registrar-foto.service]=registrar-foto.timer
+    [registrar-foto.timer]=registrar-foto.timer
     [sentinela.service]=sentinela.timer
     [sentinela.timer]=sentinela.timer
     [vigia.service]=vigia.timer

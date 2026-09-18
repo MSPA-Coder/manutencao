@@ -1,0 +1,14 @@
+[Unit]
+Description=Tira a foto diaria do patrimonio no NetWorth
+Documentation=file:/home/ubuntu/registrar-foto.sh
+After=docker.service
+Requires=docker.service
+OnFailure=alerta@%n.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/home/ubuntu/registrar-foto.sh
+# Sete dias, duas fontes por dia, cada consulta com limite de 8 segundos: no
+# pior caso pouco menos de dois minutos. Cinco minutos cobrem com folga.
+TimeoutStartSec=300

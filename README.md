@@ -9,6 +9,11 @@ deliberado e separado: [`vps/instalar.sh`](vps/instalar.sh), executado no
 servidor a partir do clone local, entrega os artefatos declarados no inventário
 e confere o resultado.
 
+[`docs/TESTES.md`](docs/TESTES.md) é a cópia canônica das diretrizes de teste
+comuns a todos os repositórios: cada um tem uma cópia idêntica em
+`docs/TESTES.md`. Para mudar uma regra, mude esta e copie para todos na mesma
+rodada.
+
 ## Operação atual
 
 | Componente | Fonte | Contrato operacional |

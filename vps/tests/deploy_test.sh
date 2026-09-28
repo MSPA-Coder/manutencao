@@ -75,8 +75,22 @@ case "${1:-}" in
     diff) printf ' arquivo | 1 +\n' ;;
     merge)
         [ "$SCENARIO" = ff_failure ] && exit 1
+        if [ "$SCENARIO" = override_merge_rollback ]; then
+            cat >"$APPS/controle-bancario/compose.patrimonio-internal.yaml" <<'YAML'
+services:
+  web:
+    networks:
+      - patrimonio-internal
+networks:
+  patrimonio-internal:
+    external: true
+YAML
+        fi
         printf '%s\n' "$NEW_SHA" >"$FAKE_HEAD" ;;
     reset)
+        if [ "$SCENARIO" = override_merge_rollback ]; then
+            rm -f -- "$APPS/controle-bancario/compose.patrimonio-internal.yaml"
+        fi
         printf '%s\n' "$3" >"$FAKE_HEAD" ;;
     *) printf 'git fake: comando inesperado: %s\n' "$*" >&2; exit 90 ;;
 esac
@@ -91,7 +105,7 @@ case " $* " in
         count=0; [ ! -f "$UP_COUNT" ] || count=$(cat "$UP_COUNT")
         count=$((count + 1)); printf '%s\n' "$count" >"$UP_COUNT"
         case "$SCENARIO:$count" in
-            compose_failure:1|rollback_failure:1|rollback_failure:2) exit 1 ;;
+            compose_failure:1|override_merge_rollback:1|rollback_failure:1|rollback_failure:2) exit 1 ;;
         esac
         exit 0 ;;
     *' ps --format '*) printf 'app  Up 1 second (healthy)\n'; exit 0 ;;
@@ -163,7 +177,15 @@ end_case() {
 }
 
 add_patrimonio_override() {
-    : >"$CASE_TMP/apps/$1/compose.patrimonio-internal.yaml"
+    cat >"$CASE_TMP/apps/$1/compose.patrimonio-internal.yaml" <<'YAML'
+services:
+  web:
+    networks:
+      - patrimonio-internal
+networks:
+  patrimonio-internal:
+    external: true
+YAML
 }
 
 set -e
@@ -202,6 +224,17 @@ assert_log 'curl <-sSL>' 'rollback deve confirmar /health'
 assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback saudável deve registrar SHA antigo'
 assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'rollback saudável deve emitir alerta de reversão'
 end_case 'bancario usa os dois Compose no deploy e no rollback'
+
+begin_case
+SCENARIO=override_merge_rollback
+run_deploy
+[ "$EXIT_CODE" -ne 0 ] || fail 'deploy com Compose quebrado deve falhar após rollback'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'override criada no merge deve entrar no deploy novo'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 'rollback deve recalcular os Compose após restaurar checkout sem override'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 1 'override só deve ser usada no deploy novo'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 1 'rollback deve usar somente compose.yaml após a remoção da override'
+[ ! -e "$CASE_TMP/apps/controle-bancario/compose.patrimonio-internal.yaml" ] || fail 'checkout antigo deve remover a override após rollback'
+end_case 'override que chega no merge é removida da configuração após rollback'
 
 begin_case
 SCENARIO=success

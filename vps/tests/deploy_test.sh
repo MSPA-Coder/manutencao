@@ -52,7 +52,11 @@ read_file() {
 }
 
 make_fakes() {
-    mkdir -p "$CASE_TMP/bin" "$CASE_TMP/apps/controle-bancario" "$CASE_TMP/state"
+    mkdir -p "$CASE_TMP/bin" \
+        "$CASE_TMP/apps/controle-bancario" \
+        "$CASE_TMP/apps/controle-renda-variavel" \
+        "$CASE_TMP/apps/conforto-termico" \
+        "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
     printf '%s\n' "$OLD_SHA" >"$CASE_TMP/head"
 
@@ -127,12 +131,13 @@ EOF
 }
 
 run_deploy() {
+    local projeto=${1:-bancario}
     set +e
     PATH="$CASE_TMP/bin:$PATH" \
     APPS="$CASE_TMP/apps" ALERTA="$CASE_TMP/alerta.sh" ESTADO_DIR="$CASE_TMP/state" \
     CALL_LOG="$CASE_TMP/calls.log" FAKE_HEAD="$CASE_TMP/head" UP_COUNT="$CASE_TMP/up-count" \
     SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
-        bash "$DEPLOY" bancario >"$CASE_TMP/output" 2>&1
+        bash "$DEPLOY" "$projeto" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
 }
@@ -155,6 +160,10 @@ end_case() {
         sed 's/^/    | /' "$CASE_TMP/output" >&2
         FAILED=$((FAILED + 1))
     fi
+}
+
+add_patrimonio_override() {
+    : >"$CASE_TMP/apps/$1/compose.patrimonio-internal.yaml"
 }
 
 set -e
@@ -182,16 +191,33 @@ end_case 'falha de fast-forward não tenta rollback'
 
 begin_case
 SCENARIO=compose_failure
+add_patrimonio_override controle-bancario
 run_deploy
 [ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido deve continuar saindo não zero'
 assert_log "git <reset> <--hard> <$OLD_SHA>" 'rollback deve restaurar exatamente o SHA antigo'
-assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 'rollback deve subir a imagem antiga'
-assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 2 'deve haver uma subida ruim e uma subida de rollback'
-assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <ps>' 'rollback deve conferir o Compose'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'rollback deve subir a imagem antiga com as duas definições Compose'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 2 'deploy e rollback devem usar as duas definições Compose'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <ps>' 'rollback deve conferir o mesmo projeto Compose'
 assert_log 'curl <-sSL>' 'rollback deve confirmar /health'
 assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback saudável deve registrar SHA antigo'
 assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'rollback saudável deve emitir alerta de reversão'
-end_case 'falha no primeiro compose up reverte e confirma saúde'
+end_case 'bancario usa os dois Compose no deploy e no rollback'
+
+begin_case
+SCENARIO=success
+add_patrimonio_override controle-renda-variavel
+run_deploy renda
+assert_eq 0 "$EXIT_CODE" 'deploy saudável de renda deve sair zero'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'renda deve adicionar a override presente no checkout'
+end_case 'renda usa a override quando ela existe'
+
+begin_case
+SCENARIO=success
+run_deploy conforto
+assert_eq 0 "$EXIT_CODE" 'deploy saudável sem override deve sair zero'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 'projeto sem override deve usar apenas compose.yaml'
+assert_no_log 'compose.patrimonio-internal.yaml' 'projeto sem override não deve mencionar a override'
+end_case 'projeto sem override continua usando apenas compose.yaml'
 
 begin_case
 SCENARIO=health_failure

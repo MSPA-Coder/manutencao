@@ -77,7 +77,10 @@ projeto_info() {
     esac
 }
 
-compose() { docker compose --env-file "$ENVF" -f compose.yaml "$@"; }
+# Bancário e renda podem compartilhar a rede interna de patrimônio. A override
+# só participa quando está versionada no checkout do projeto; o deploy nunca
+# cria redes externas.
+COMPOSE_FILES=(-f compose.yaml)
 
 # Nunca deixa a notificação derrubar o deploy: um alerta que não sai não pode
 # virar o segundo incidente da noite.
@@ -209,8 +212,8 @@ O rollback só reverte código/imagem; não reverte migrações de banco.
 
 Diagnóstico inicial:
   cd /home/ubuntu/apps/$DIR
-  docker compose --env-file $ENVF -f compose.yaml ps
-  docker compose --env-file $ENVF -f compose.yaml logs --tail 50
+  docker compose --env-file $ENVF ${COMPOSE_FILES[*]} ps
+  docker compose --env-file $ENVF ${COMPOSE_FILES[*]} logs --tail 50
   df -h /"
     return 1
 }
@@ -243,6 +246,13 @@ fi
 projeto_info "$1"
 CHECK=${2:-}
 cd "$APPS/$DIR"
+
+if { [ "$DIR" = controle-bancario ] || [ "$DIR" = controle-renda-variavel ]; } \
+    && [ -f compose.patrimonio-internal.yaml ]; then
+    COMPOSE_FILES+=(-f compose.patrimonio-internal.yaml)
+fi
+
+compose() { docker compose --env-file "$ENVF" "${COMPOSE_FILES[@]}" "$@"; }
 
 echo "== $DIR =="
 

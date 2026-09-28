@@ -77,7 +77,20 @@ projeto_info() {
     esac
 }
 
-compose() { docker compose --env-file "$ENVF" -f compose.yaml "$@"; }
+# Bancário e renda podem compartilhar a rede interna de patrimônio. Recalcular
+# antes de cada chamada faz deploy e rollback refletirem o checkout atual.
+compose_files() {
+    COMPOSE_FILES=(-f compose.yaml)
+    if { [ "$DIR" = controle-bancario ] || [ "$DIR" = controle-renda-variavel ]; } \
+        && [ -f compose.patrimonio-internal.yaml ]; then
+        COMPOSE_FILES+=(-f compose.patrimonio-internal.yaml)
+    fi
+}
+
+compose() {
+    compose_files
+    docker compose --env-file "$ENVF" "${COMPOSE_FILES[@]}" "$@"
+}
 
 # Nunca deixa a notificação derrubar o deploy: um alerta que não sai não pode
 # virar o segundo incidente da noite.
@@ -209,8 +222,8 @@ O rollback só reverte código/imagem; não reverte migrações de banco.
 
 Diagnóstico inicial:
   cd /home/ubuntu/apps/$DIR
-  docker compose --env-file $ENVF -f compose.yaml ps
-  docker compose --env-file $ENVF -f compose.yaml logs --tail 50
+  docker compose --env-file $ENVF ${COMPOSE_FILES[*]} ps
+  docker compose --env-file $ENVF ${COMPOSE_FILES[*]} logs --tail 50
   df -h /"
     return 1
 }

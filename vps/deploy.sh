@@ -51,7 +51,8 @@ PADRAO_SAUDE=$PADRAO_OK
 # correspondência já precisou ser consultada mais de uma vez. O portal pulou
 # para 56xx: o 55xx era do site estático, que ele substituiu, e reaproveitar a
 # faixa enquanto os dois coexistiam na virada teria colidido as portas. O
-# NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx.
+# NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
+# e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
 projeto_info() {
     case "$1" in
         bancario|controle-bancario)

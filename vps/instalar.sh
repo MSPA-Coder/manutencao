@@ -68,7 +68,6 @@ DONO_SYSTEMD=${DONO_SYSTEMD:-root:root}
 # chama assim, e renomear no servidor quebraria a memória de quem opera.
 INVENTARIO=(
     "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755|$DONO_SCRIPTS"
-    "atualizar-cambio.sh|$DESTINO_SCRIPTS/atualizar-cambio.sh|755|$DONO_SCRIPTS"
     "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755|$DONO_SCRIPTS"
     "aviso-contatos.sh|$DESTINO_SCRIPTS/aviso-contatos.sh|755|$DONO_SCRIPTS"
     "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755|$DONO_SCRIPTS"
@@ -76,14 +75,11 @@ INVENTARIO=(
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
     "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
     "expurgo-contatos.sh|$DESTINO_SCRIPTS/expurgo-contatos.sh|755|$DONO_SCRIPTS"
-    "registrar-foto.sh|$DESTINO_SCRIPTS/registrar-foto.sh|755|$DONO_SCRIPTS"
     "sentinela.sh|$DESTINO_SCRIPTS/sentinela.sh|755|$DONO_SCRIPTS"
     "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755|$DONO_SCRIPTS"
     "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
     "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755|$DONO_SCRIPTS"
     "alerta@.service|$DESTINO_SYSTEMD/alerta@.service|644|$DONO_SYSTEMD"
-    "atualizar-cambio.service|$DESTINO_SYSTEMD/atualizar-cambio.service|644|$DONO_SYSTEMD"
-    "atualizar-cambio.timer|$DESTINO_SYSTEMD/atualizar-cambio.timer|644|$DONO_SYSTEMD"
     "autocura.service|$DESTINO_SYSTEMD/autocura.service|644|$DONO_SYSTEMD"
     "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644|$DONO_SYSTEMD"
     "aviso-contatos.service|$DESTINO_SYSTEMD/aviso-contatos.service|644|$DONO_SYSTEMD"
@@ -94,8 +90,6 @@ INVENTARIO=(
     "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
     "expurgo-contatos.service|$DESTINO_SYSTEMD/expurgo-contatos.service|644|$DONO_SYSTEMD"
     "expurgo-contatos.timer|$DESTINO_SYSTEMD/expurgo-contatos.timer|644|$DONO_SYSTEMD"
-    "registrar-foto.service|$DESTINO_SYSTEMD/registrar-foto.service|644|$DONO_SYSTEMD"
-    "registrar-foto.timer|$DESTINO_SYSTEMD/registrar-foto.timer|644|$DONO_SYSTEMD"
     "sentinela.service|$DESTINO_SYSTEMD/sentinela.service|644|$DONO_SYSTEMD"
     "sentinela.timer|$DESTINO_SYSTEMD/sentinela.timer|644|$DONO_SYSTEMD"
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
@@ -113,8 +107,6 @@ INVENTARIO=(
 #: template, instanciado sob demanda por quem alerta, e o drop-in do certbot
 #: vale na próxima execução dele -- nenhum dos dois tem timer a reiniciar aqui.
 declare -A TIMER_DE=(
-    [atualizar-cambio.service]=atualizar-cambio.timer
-    [atualizar-cambio.timer]=atualizar-cambio.timer
     [autocura.service]=autocura.timer
     [autocura.timer]=autocura.timer
     [aviso-contatos.service]=aviso-contatos.timer
@@ -125,8 +117,6 @@ declare -A TIMER_DE=(
     [docker-prune.timer]=docker-prune.timer
     [expurgo-contatos.service]=expurgo-contatos.timer
     [expurgo-contatos.timer]=expurgo-contatos.timer
-    [registrar-foto.service]=registrar-foto.timer
-    [registrar-foto.timer]=registrar-foto.timer
     [sentinela.service]=sentinela.timer
     [sentinela.timer]=sentinela.timer
     [vigia.service]=vigia.timer

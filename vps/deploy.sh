@@ -42,6 +42,7 @@ TENTATIVAS_SAUDE=12
 # serializa `"status": "ok"`. Espaço em JSON não é parte de contrato nenhum —
 # quem tem de ser tolerante é o verificador.
 PADRAO_OK='"status"[[:space:]]*:[[:space:]]*"ok"'
+PADRAO_SAUDE=$PADRAO_OK
 
 # shellcheck disable=SC2034  # `PORTA` não é lida por este script -- a sonda de
 # saúde bate na URL pública, não em 127.0.0.1, de propósito. Ela fica aqui
@@ -68,11 +69,12 @@ projeto_info() {
         portal|mp-portal)
             DIR=mp-portal;              ENVF=.env.vps;    PORTA=5601
             DOMINIO=mp-solucoes.duckdns.org ;;
-        networth)
-            DIR=networth;               ENVF=.env.vps;    PORTA=5701
-            DOMINIO=networth-mspa.duckdns.org ;;
+        wealthfolio)
+            DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
+            DOMINIO=networth-mspa.duckdns.org
+            PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda | portal | networth" >&2
+            echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
             return 1 ;;
     esac
 }
@@ -81,7 +83,7 @@ projeto_info() {
 # antes de cada chamada faz deploy e rollback refletirem o checkout atual.
 compose_files() {
     COMPOSE_FILES=(-f compose.yaml)
-    if { [ "$DIR" = controle-bancario ] || [ "$DIR" = controle-renda-variavel ]; } \
+    if { [ "$DIR" = controle-bancario ] || [ "$DIR" = controle-renda-variavel ] || [ "$DIR" = wealthfolio-teste ]; } \
         && [ -f compose.patrimonio-internal.yaml ]; then
         COMPOSE_FILES+=(-f compose.patrimonio-internal.yaml)
     fi
@@ -119,7 +121,7 @@ verificar_saude() {
                        "https://$DOMINIO/health" 2>/dev/null || true)
         VERIF_CODE=$(printf '%s' "$resposta" | tail -1)
         VERIF_CORPO=$(printf '%s' "$resposta" | sed '$d')
-        if printf '%s' "$VERIF_CORPO" | grep -Eq "$PADRAO_OK"; then
+        if printf '%s' "$VERIF_CORPO" | grep -Eq "$PADRAO_SAUDE"; then
             return 0
         fi
     done
@@ -230,7 +232,7 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda portal networth; do
+    for p in bancario conforto megasena renda portal wealthfolio; do
         projeto_info "$p"
         # Um projeto ainda não clonado no servidor não deve derrubar o --status
         # dos demais.
@@ -248,7 +250,7 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal|networth> [--check]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--check]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi

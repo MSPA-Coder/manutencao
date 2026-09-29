@@ -56,6 +56,7 @@ make_fakes() {
         "$CASE_TMP/apps/controle-bancario" \
         "$CASE_TMP/apps/controle-renda-variavel" \
         "$CASE_TMP/apps/conforto-termico" \
+        "$CASE_TMP/apps/wealthfolio-teste" \
         "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
     printf '%s\n' "$OLD_SHA" >"$CASE_TMP/head"
@@ -118,7 +119,9 @@ EOF
 #!/usr/bin/env bash
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 head=$(cat "$FAKE_HEAD")
-if [ "$SCENARIO" = health_failure ] && [ "$head" = "$NEW_SHA" ]; then
+if [ "$SCENARIO" = wealthfolio_success ]; then
+    printf 'ok\n200'
+elif [ "$SCENARIO" = health_failure ] && [ "$head" = "$NEW_SHA" ]; then
     printf '{"status":"error"}\n503'
 else
     printf '{"status":"ok"}\n200'
@@ -273,6 +276,14 @@ assert_log 'alerta <DEPLOY QUEBRADO E REVERSÃO FALHOU: controle-bancario>' 'fal
 assert_no_log "mv <-f> <-->" 'falha da reversão não deve publicar arquivo de estado'
 end_case 'falha também durante rollback alerta grave e não registra SHA novo'
 
+begin_case
+SCENARIO=wealthfolio_success
+add_patrimonio_override wealthfolio-teste
+run_deploy wealthfolio
+assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
+assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
+end_case 'Wealthfolio usa health ok e override privada'
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

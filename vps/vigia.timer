@@ -7,7 +7,13 @@ OnUnitActiveSec=1h
 # Sem isso, quatro maquinas com o mesmo timer bateriam no mesmo segundo. Aqui
 # e uma so, mas o desvio tambem evita coincidir com o backup das 03:00.
 RandomizedDelaySec=5min
-Persistent=true
+# SEM `Persistent=true`, de propósito: a opção só vale para `OnCalendar`, e num timer
+# monotônico (`OnBootSec`/`OnUnitActiveSec`) ela deixou o timer no estado `elapsed`, sem
+# próxima execução, depois do reinício de 25/09/2026 no VPS2 (systemd 259). O vigia ficou
+# cinco dias sem rodar e o `systemctl is-active` continuava dizendo "ativo". O VPS1
+# (systemd 255) não sofreu, com o mesmo arquivo. Os outros timers monotônicos
+# (sentinela, autocura, aviso-contatos) nunca tiveram a opção e disparam normalmente.
+# `vps/tests/timers_test.sh` impede a volta.
 Unit=vigia.service
 
 [Install]

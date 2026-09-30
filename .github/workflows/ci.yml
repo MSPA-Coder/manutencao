@@ -90,6 +90,11 @@ jobs:
       - name: Testar o instalador
         run: bash vps/tests/instalar_test.sh
 
+      # Timer monotônico com `Persistent=true` deixou o vigia do VPS2 parado por cinco
+      # dias depois de um reinício (25/09/2026). A guarda lê o texto dos `.timer`.
+      - name: Guardar os timers systemd
+        run: bash vps/tests/timers_test.sh
+
       # O sentinela lê o log de 5xx do nginx e alerta quebra de aplicação. A
       # suíte substitui o `alerta.sh` por um script falso, então nada sai para
       # o Telegram; o que ela exercita é a leitura incremental, que é onde

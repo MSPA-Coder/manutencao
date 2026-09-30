@@ -30,7 +30,9 @@ declara_persistent() { diretivas "$1" | grep -qE '^Persistent=true'; }
 # Sem piso, um glob que não casa nada passaria vazio.
 timers=("$VPS_DIR"/*.timer)
 TOTAL=$((TOTAL + 1))
-[ "${#timers[@]}" -ge 5 ] && [ -f "${timers[0]}" ] || fail "esperava ao menos 5 timers em vps/, achei ${#timers[@]}"
+if [ "${#timers[@]}" -lt 5 ] || [ ! -f "${timers[0]}" ]; then
+    fail "esperava ao menos 5 timers em vps/, achei ${#timers[@]}"
+fi
 
 monotonicos=0
 for t in "${timers[@]}"; do

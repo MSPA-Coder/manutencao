@@ -7,13 +7,22 @@ OnUnitActiveSec=1h
 # Sem isso, quatro maquinas com o mesmo timer bateriam no mesmo segundo. Aqui
 # e uma so, mas o desvio tambem evita coincidir com o backup das 03:00.
 RandomizedDelaySec=5min
-# SEM `Persistent=true`, de propósito: a opção só vale para `OnCalendar`, e num timer
-# monotônico (`OnBootSec`/`OnUnitActiveSec`) ela deixou o timer no estado `elapsed`, sem
-# próxima execução, depois do reinício de 25/09/2026 no VPS2 (systemd 259). O vigia ficou
-# cinco dias sem rodar e o `systemctl is-active` continuava dizendo "ativo". O VPS1
-# (systemd 255) não sofreu, com o mesmo arquivo. Os outros timers monotônicos
-# (sentinela, autocura, aviso-contatos) nunca tiveram a opção e disparam normalmente.
-# `vps/tests/timers_test.sh` impede a volta.
+# SEM `Persistent=true`, de propósito: a opção só vale para `OnCalendar`. Num timer
+# monotônico (`OnBootSec`/`OnUnitActiveSec`) ela deixa em /var/lib/systemd/timers/ um
+# `stamp-vigia.timer` que o systemd 259 (VPS2, Ubuntu 26.04) lê ao iniciar: o último
+# disparo entra só com data de relógio, o base monotônico fica em 0, e o `OnUnitActiveSec`
+# passa a valer "1h depois do boot", que já passou. Depois do reinício de 25/09/2026 o timer
+# ficou `elapsed`, sem próxima execução, e o vigia cinco dias sem rodar, com o
+# `systemctl is-active` dizendo "ativo". O VPS1 (systemd 255) não sofreu, com o mesmo arquivo.
+# Os outros timers monotônicos (sentinela, autocura, aviso-contatos) nunca tiveram a opção,
+# nem o stamp, e disparam normalmente. `vps/tests/timers_test.sh` impede a volta da opção.
+#
+# ATENÇÃO: tirar a opção NÃO basta num servidor que já tem o stamp. Reinstalar reiniciou o
+# timer e ele continuou `elapsed`. Para rearmar: `systemctl stop vigia.timer`, apagar
+# /var/lib/systemd/timers/stamp-vigia.timer, `systemctl start vigia.timer` e disparar
+# `systemctl start vigia.service` uma vez (o OnBootSec já passou e, sem uma ativação do
+# serviço, o OnUnitActiveSec não tem de onde contar). Conferir depois que `NEXT` aparece
+# em `systemctl list-timers vigia.timer`.
 Unit=vigia.service
 
 [Install]

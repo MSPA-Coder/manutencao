@@ -9,6 +9,13 @@
 # eles. Desde 15/09 o verbo `listar` grava `.ultima_busca`, e o vigia alerta
 # quando esse marcador some ou envelhece.
 #
+# DESDE 02/10/2026, também as cópias de volume (`_volume_<carimbo>.tar.gz`, o
+# SQLite do Wealthfolio): `listar` sem argumento continua mostrando só dumps,
+# porque o BackupRestore instalado recusa a sincronização inteira diante de uma
+# linha que não conhece; quem já sabe ler volumes pede `listar tudo`. E o piso
+# de `apagar` é por tipo: uma cópia de volume mais nova não pode liberar a
+# remoção do último dump.
+#
 # O QUE ESTÁ SOB TESTE, e por que cada caso importa:
 #   - `listar` grava o marcador, inclusive quando não há dump nenhum: a busca
 #     aconteceu, e é ela que se mede;
@@ -69,6 +76,17 @@ com_dump() {
     printf 'conteudo-%s' "$carimbo" >"$DEST_TMP/$slug/${slug}_banco_${carimbo}.dump"
     printf 'abc123\n' >"$DEST_TMP/$slug/${slug}_banco_${carimbo}.dump.sha256"
 }
+
+# Uma cópia de volume no formato exato que o `backup-db.sh` produz.
+com_volume() {
+    local slug=$1 carimbo=$2
+    mkdir -p "$DEST_TMP/$slug"
+    printf 'volume-%s' "$carimbo" >"$DEST_TMP/$slug/${slug}_volume_${carimbo}.tar.gz"
+    printf 'def456\n' >"$DEST_TMP/$slug/${slug}_volume_${carimbo}.tar.gz.sha256"
+}
+
+# Data de modificação, que é o que o agente usa para saber o mais recente.
+idade() { touch -d "@$(( $(date +%s) - $2 ))" "$1"; }
 
 # O verbo chega por `SSH_ORIGINAL_COMMAND`, como no servidor.
 roda() {
@@ -138,6 +156,77 @@ else
 fi
 chmod 755 "$DEST_TMP"
 end_case 'listar não depende de conseguir gravar o marcador'
+
+# --------------------------------------------------------------------------
+# Cópias de volume
+
+begin_case
+com_dump mega_sena 20260913_064041
+com_volume wealthfolio_teste 20261002_060000
+roda listar
+assert_eq 'mega_sena/mega_sena_banco_20260913_064041.dump 24 abc123' "$(cat "$SAIDA")" \
+    'sem argumento, só os dumps: o BackupRestore antigo recusa linha desconhecida'
+roda listar tudo
+assert_eq 0 "$EXIT_CODE" 'listar tudo sai zero'
+assert_eq 'mega_sena/mega_sena_banco_20260913_064041.dump 24 abc123
+wealthfolio_teste/wealthfolio_teste_volume_20261002_060000.tar.gz 22 def456' "$(sort "$SAIDA")" \
+    'listar tudo inclui as cópias de volume, no mesmo formato'
+end_case 'listar só mostra volume para quem pede listar tudo'
+
+begin_case
+com_dump mega_sena 20260913_064041
+roda listar qualquer
+[ "$EXIT_CODE" -ne 0 ] || fail 'argumento desconhecido deve sair não zero'
+[ -e "$MARCA" ] && fail 'listagem recusada não é busca'
+end_case 'listar com argumento desconhecido é recusado'
+
+begin_case
+com_volume wealthfolio_teste 20261002_060000
+roda enviar wealthfolio_teste/wealthfolio_teste_volume_20261002_060000.tar.gz
+assert_eq 0 "$EXIT_CODE" 'enviar cópia de volume sai zero'
+assert_eq 'volume-20261002_060000' "$(cat "$SAIDA")" 'enviar despeja a cópia'
+# Os nomes recusados EXISTEM no disco: quem recusa é o formato, não a ausência
+# do arquivo. O `.tmp` é a cópia em andamento do `backup-db.sh`.
+for invalido in \
+    wealthfolio_teste_volume_20261002_060000.tar \
+    wealthfolio_teste_volume_20261002.tar.gz \
+    wealthfolio_teste_banco_20261002_060000.tar.gz \
+    .wealthfolio_teste_volume_20261002_070000.tar.gz.tmp; do
+    printf 'x' >"$DEST_TMP/wealthfolio_teste/$invalido"
+    roda enviar "wealthfolio_teste/$invalido"
+    [ "$EXIT_CODE" -ne 0 ] || fail "nome fora do formato foi aceito: $invalido"
+done
+end_case 'enviar aceita a cópia de volume e recusa nome fora do formato'
+
+begin_case
+# O último dump de 2 dias e uma cópia de volume de agora, na mesma pasta. O
+# piso é por tipo: nenhum dos dois pode sair.
+com_dump mega_sena 20260930_030000
+com_volume mega_sena 20261002_030000
+idade "$DEST_TMP/mega_sena/mega_sena_banco_20260930_030000.dump" 172800
+roda apagar mega_sena/mega_sena_banco_20260930_030000.dump
+[ "$EXIT_CODE" -ne 0 ] || fail 'o último dump saiu porque havia volume mais novo'
+grep -Fq 'é o dump mais recente' "$SAIDA" \
+    || fail 'a recusa do dump precisa da frase que o BackupRestore reconhece'
+[ -e "$DEST_TMP/mega_sena/mega_sena_banco_20260930_030000.dump" ] || fail 'o dump sumiu'
+roda apagar mega_sena/mega_sena_volume_20261002_030000.tar.gz
+[ "$EXIT_CODE" -ne 0 ] || fail 'a última cópia de volume não pode sair'
+[ -e "$DEST_TMP/mega_sena/mega_sena_volume_20261002_030000.tar.gz" ] || fail 'a cópia sumiu'
+end_case 'apagar recusa o mais recente de cada tipo, independente do outro'
+
+begin_case
+com_volume wealthfolio_teste 20261001_060000
+com_volume wealthfolio_teste 20261002_060000
+idade "$DEST_TMP/wealthfolio_teste/wealthfolio_teste_volume_20261001_060000.tar.gz" 86400
+roda apagar wealthfolio_teste/wealthfolio_teste_volume_20261001_060000.tar.gz
+assert_eq 0 "$EXIT_CODE" 'cópia antiga com substituta pode sair'
+[ -e "$DEST_TMP/wealthfolio_teste/wealthfolio_teste_volume_20261001_060000.tar.gz" ] \
+    && fail 'a cópia antiga continua lá'
+[ -e "$DEST_TMP/wealthfolio_teste/wealthfolio_teste_volume_20261001_060000.tar.gz.sha256" ] \
+    && fail 'o .sha256 da cópia antiga continua lá'
+[ -e "$DEST_TMP/wealthfolio_teste/wealthfolio_teste_volume_20261002_060000.tar.gz" ] \
+    || fail 'a cópia nova não podia sair'
+end_case 'apagar remove a cópia de volume que já tem substituta'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

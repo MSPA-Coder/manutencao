@@ -72,6 +72,7 @@ INVENTARIO=(
     "aviso-contatos.sh|$DESTINO_SCRIPTS/aviso-contatos.sh|755|$DONO_SCRIPTS"
     "backup-agent.sh|$DESTINO_SCRIPTS/backup-agent.sh|755|$DONO_SCRIPTS"
     "backup-db.sh|$DESTINO_SCRIPTS/backup-db.sh|755|$DONO_SCRIPTS"
+    "cotacoes-diarias.sh|$DESTINO_SCRIPTS/cotacoes-diarias.sh|755|$DONO_SCRIPTS"
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
     "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
     "expurgo-contatos.sh|$DESTINO_SCRIPTS/expurgo-contatos.sh|755|$DONO_SCRIPTS"
@@ -86,6 +87,8 @@ INVENTARIO=(
     "aviso-contatos.timer|$DESTINO_SYSTEMD/aviso-contatos.timer|644|$DONO_SYSTEMD"
     "backup-db.service|$DESTINO_SYSTEMD/backup-db.service|644|$DONO_SYSTEMD"
     "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644|$DONO_SYSTEMD"
+    "cotacoes-diarias.service|$DESTINO_SYSTEMD/cotacoes-diarias.service|644|$DONO_SYSTEMD"
+    "cotacoes-diarias.timer|$DESTINO_SYSTEMD/cotacoes-diarias.timer|644|$DONO_SYSTEMD"
     "docker-prune.service|$DESTINO_SYSTEMD/docker-prune.service|644|$DONO_SYSTEMD"
     "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
     "expurgo-contatos.service|$DESTINO_SYSTEMD/expurgo-contatos.service|644|$DONO_SYSTEMD"
@@ -113,6 +116,8 @@ declare -A TIMER_DE=(
     [aviso-contatos.timer]=aviso-contatos.timer
     [backup-db.service]=backup-db.timer
     [backup-db.timer]=backup-db.timer
+    [cotacoes-diarias.service]=cotacoes-diarias.timer
+    [cotacoes-diarias.timer]=cotacoes-diarias.timer
     [docker-prune.service]=docker-prune.timer
     [docker-prune.timer]=docker-prune.timer
     [expurgo-contatos.service]=expurgo-contatos.timer

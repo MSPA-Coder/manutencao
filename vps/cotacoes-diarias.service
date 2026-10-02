@@ -1,0 +1,12 @@
+[Unit]
+Description=Importa os fechamentos diarios do Yahoo no Controle de Renda Variavel
+Documentation=file:/home/ubuntu/cotacoes-diarias.sh
+After=docker.service
+Requires=docker.service
+OnFailure=alerta@%n.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/home/ubuntu/cotacoes-diarias.sh
+TimeoutStartSec=900

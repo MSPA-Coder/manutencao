@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispara a importacao de cotacoes diarias as 06:40 de Sao Paulo, de terca a sabado
+
+[Timer]
+OnCalendar=Tue..Sat *-*-* 06:40:00 America/Sao_Paulo
+Persistent=true
+Unit=cotacoes-diarias.service
+
+[Install]
+WantedBy=timers.target

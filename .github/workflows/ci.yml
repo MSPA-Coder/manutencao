@@ -36,6 +36,12 @@ jobs:
       - name: Baixar o código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # A cópia canônica do schema do contrato patrimonio/v4 (docs/contratos/):
+      # JSON válido, LF, `$ref`s que resolvem. As cópias nos outros repositórios
+      # são conferidas contra ela no CI semanal de cada um.
+      - name: Conferir o schema do contrato v4
+        run: python3 docs/contratos/verificar.py
+
       # O `bash -n` continua aqui mesmo com o ShellCheck abaixo, e não é
       # redundância: ele usa o parser do próprio bash, enquanto o ShellCheck
       # usa um parser independente. Onde os dois divergirem, quem manda no

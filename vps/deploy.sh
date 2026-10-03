@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Implanta um projeto no VPS a partir do main do GitHub.
 #
-#   ./deploy.sh <projeto>          implanta
-#   ./deploy.sh <projeto> --check  só mostra o que mudaria
-#   ./deploy.sh --status           estado de todos os projetos
+#   ./deploy.sh <projeto>           implanta
+#   ./deploy.sh <projeto> --check   só mostra o que mudaria, CI inclusa
+#   ./deploy.sh <projeto> --sem-ci  implanta mesmo sem CI verde (emergência)
+#   ./deploy.sh --status            estado de todos os projetos
 #
 # Recusa implantar se houver alteração não commitada no servidor: o código do
 # servidor é sempre um espelho do main, nunca a origem de uma mudança. O
 # rollback usa `git reset --hard`, portanto só pode operar sobre checkout
 # limpo.
+#
+# POR QUE CONFERIR A CI ANTES: o servidor espelha o `main`, e nada impedia de
+# publicar um `main` vermelho -- o do NetWorth ficou assim em 28/09/2026. Agora
+# o commit só é aplicado se todos os check-runs dele terminaram verdes no
+# GitHub. Ver `conferir_ci`.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
 # o banco inteiramente fora do ar. Os seis projetos expõem `/health`, que
@@ -53,26 +59,41 @@ PADRAO_SAUDE=$PADRAO_OK
 # faixa enquanto os dois coexistiam na virada teria colidido as portas. O
 # NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
+#
+# `REPO_GITHUB` é onde a CI do commit é conferida. Os dois privados ficam com
+# `CI_EXIGIDA=0` e o motivo escrito: a API anônima não alcança repositório
+# privado, e o Wealthfolio nem tem CI. Para ligar num deles, o servidor precisa
+# de um token de leitura e este script, de enviá-lo.
 projeto_info() {
+    CI_EXIGIDA=1
+    CI_MOTIVO=
     case "$1" in
         bancario|controle-bancario)
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
-            DOMINIO=bancario-mspa.duckdns.org ;;
+            DOMINIO=bancario-mspa.duckdns.org
+            REPO_GITHUB=MSPA-Coder/sistema-financeiro ;;
         conforto|conforto-termico)
             DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
-            DOMINIO=conforto-mspa.duckdns.org ;;
+            DOMINIO=conforto-mspa.duckdns.org
+            REPO_GITHUB=MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101
-            DOMINIO=megasena-mspa.duckdns.org ;;
+            DOMINIO=megasena-mspa.duckdns.org
+            REPO_GITHUB=MSPA-Coder/mega-sena ;;
         renda|controle-renda-variavel)
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
-            DOMINIO=renda-mspa.duckdns.org ;;
+            DOMINIO=renda-mspa.duckdns.org
+            REPO_GITHUB=MSPA-Coder/ControleRendaVariavel ;;
         portal|mp-portal)
             DIR=mp-portal;              ENVF=.env.vps;    PORTA=5601
-            DOMINIO=mp-solucoes.duckdns.org ;;
+            DOMINIO=mp-solucoes.duckdns.org
+            REPO_GITHUB=MSPA-Coder/mp-portal
+            CI_EXIGIDA=0; CI_MOTIVO="repositório privado; a API anônima não o alcança" ;;
         wealthfolio)
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=networth-mspa.duckdns.org
+            REPO_GITHUB=MSPA-Coder/WealthfolioTeste
+            CI_EXIGIDA=0; CI_MOTIVO="repositório privado e sem CI"
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
             echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
@@ -127,6 +148,73 @@ verificar_saude() {
         fi
     done
     return 1
+}
+
+# CI DO COMMIT (02/10/2026). Antes de tocar na produção, pergunta ao GitHub se
+# todos os check-runs do commit terminaram, e terminaram bem.
+#
+# TODOS, e não um nome: a CI dos aplicativos tem mais de um job (o CRV roda
+# `Qualidade` e `Contratos de runtime`), o CodeQL roda junto, e uma lista de
+# nomes aqui apodreceria a cada job novo -- a mesma lição das listas escritas
+# à mão do backup. `neutral` e `skipped` contam como verdes; o resto não. A API
+# devolve só a tentativa mais recente de cada job (`filter=latest`, o padrão),
+# então um job refeito e aprovado substitui o que tinha falhado.
+#
+# SEM jq NEM python, porque a suíte também roda na imagem `bash:5.2`, que não
+# tem nenhum dos dois. As chaves `"status"` e `"conclusion"` aparecem uma vez
+# por check-run (texto livre que as contenha vem com as aspas escapadas e não
+# casa), e as duas contagens são conferidas contra `total_count`: uma resposta
+# que não bata é tratada como desconhecida, e desconhecida não publica.
+#
+# A API anônima basta porque os repositórios conferidos são públicos, e o
+# limite dela (60 pedidos por hora por IP) sobra para deploy feito à mão.
+CI_RESUMO=
+conferir_ci() {
+    local sha=$1 resposta codigo corpo total estados conclusoes
+    local n_estados n_conclusoes pendentes reprovados
+    resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
+                   -H 'Accept: application/vnd.github+json' \
+                   "https://api.github.com/repos/$REPO_GITHUB/commits/$sha/check-runs?per_page=100" \
+                   2>/dev/null || true)
+    codigo=$(printf '%s' "$resposta" | tail -1)
+    corpo=$(printf '%s' "$resposta" | sed '$d')
+    if [ "$codigo" != 200 ]; then
+        CI_RESUMO="a API do GitHub respondeu HTTP ${codigo:-sem resposta}"
+        return 1
+    fi
+    total=$(printf '%s' "$corpo" \
+            | grep -oE '"total_count"[[:space:]]*:[[:space:]]*[0-9]+' \
+            | grep -oE '[0-9]+$' | head -n 1 || true)
+    estados=$(printf '%s' "$corpo" \
+              | grep -oE '"status"[[:space:]]*:[[:space:]]*"[a-z_]+"' \
+              | sed -E 's/.*"([a-z_]+)"$/\1/' || true)
+    conclusoes=$(printf '%s' "$corpo" \
+                 | grep -oE '"conclusion"[[:space:]]*:[[:space:]]*("[a-z_]+"|null)' \
+                 | sed -E 's/.*:[[:space:]]*"?([a-z_]+)"?$/\1/' || true)
+    n_estados=$(printf '%s' "$estados" | grep -c . || true)
+    n_conclusoes=$(printf '%s' "$conclusoes" | grep -c . || true)
+
+    if [ -z "$total" ] || [ "$total" -eq 0 ]; then
+        CI_RESUMO="nenhum check-run neste commit (a CI ainda não começou?)"
+        return 1
+    fi
+    if [ "$total" -gt 100 ] || [ "$n_estados" -ne "$total" ] || [ "$n_conclusoes" -ne "$total" ]; then
+        CI_RESUMO="resposta da API fora do esperado ($total check-runs, $n_estados estados, $n_conclusoes conclusões)"
+        return 1
+    fi
+    pendentes=$(printf '%s\n' "$estados" | grep -cv '^completed$' || true)
+    if [ "$pendentes" -gt 0 ]; then
+        CI_RESUMO="$pendentes de $total check-runs ainda não terminaram"
+        return 1
+    fi
+    reprovados=$(printf '%s\n' "$conclusoes" | grep -Ev '^(success|neutral|skipped)$' \
+                 | sort | uniq -c | awk '{printf "%s%s %s", sep, $1, $2; sep=", "}' || true)
+    if [ -n "$reprovados" ]; then
+        CI_RESUMO="check-runs reprovados: $reprovados"
+        return 1
+    fi
+    CI_RESUMO="$total check-runs verdes"
+    return 0
 }
 
 esperar_compose() {
@@ -251,13 +339,21 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--check]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--check] [--sem-ci]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi
 
 projeto_info "$1"
-CHECK=${2:-}
+CHECK=
+SEM_CI=0
+for opcao in "${@:2}"; do
+    case "$opcao" in
+        --check) CHECK=--check ;;
+        --sem-ci) SEM_CI=1 ;;
+        *) echo "Opção desconhecida: $opcao (use --check ou --sem-ci)" >&2; exit 1 ;;
+    esac
+done
 cd "$APPS/$DIR"
 
 echo "== $DIR =="
@@ -294,10 +390,41 @@ git log --oneline "$atual..$novo" | sed 's/^/  /'
 echo "Arquivos:"
 git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
 
+echo "CI do commit ${novo:0:7}:"
+if [ "$CI_EXIGIDA" != 1 ]; then
+    ci_verde=1
+    echo "  não conferida: $CI_MOTIVO"
+elif conferir_ci "$novo"; then
+    ci_verde=1
+    echo "  $CI_RESUMO"
+else
+    ci_verde=0
+    echo "  NÃO VERDE: $CI_RESUMO"
+fi
+
 if [ "$CHECK" = "--check" ]; then
     echo
     echo "(--check: nada foi alterado)"
     exit 0
+fi
+
+# Recusar aqui não exige rollback: nada mudou no servidor ainda. A saída de
+# emergência existe porque a API do GitHub pode estar fora justo quando um
+# conserto precisa subir, e ela grita: alerta e aviso no terminal.
+if [ "$ci_verde" != 1 ]; then
+    if [ "$SEM_CI" != 1 ]; then
+        echo "ABORTADO: a CI de ${novo:0:7} não está verde ($CI_RESUMO)." >&2
+        echo "O deploy não começou e o HEAD permanece em ${atual:0:7}." >&2
+        echo "Espere a CI terminar ou corrija o main. Em emergência: $0 $1 --sem-ci" >&2
+        exit 1
+    fi
+    echo "AVISO: implantando ${novo:0:7} sem CI verde, por --sem-ci ($CI_RESUMO)." >&2
+    alertar "DEPLOY SEM CI VERDE: $DIR" \
+"O commit ${novo:0:7} foi implantado com --sem-ci.
+
+CI no momento do deploy: $CI_RESUMO
+
+Conferir a CI no GitHub e, se ela reprovar, corrigir o main e implantar de novo."
 fi
 
 # A partir daqui produção é tocada. `atual` é a rede: o commit que estava no ar

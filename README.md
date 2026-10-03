@@ -14,6 +14,10 @@ comuns a todos os repositórios: cada um tem uma cópia idêntica em
 `docs/TESTES.md`. Para mudar uma regra, mude esta e copie para todos na mesma
 rodada.
 
+[`docs/contratos/`](docs/contratos/) guarda a cópia canônica do JSON Schema do
+contrato `patrimonio/v4` entre o CB, o CRV e o Wealthfolio, com a lista das
+cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
+
 ## Operação atual
 
 | Componente | Fonte | Contrato operacional |

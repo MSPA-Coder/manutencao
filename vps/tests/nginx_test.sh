@@ -19,7 +19,9 @@
 #
 # O QUE ELE NÃO COBRE, DELIBERADAMENTE: validade de certificado, alcance dos
 # `proxy_pass` e comportamento em tempo de execução. Isso é trabalho do
-# `deploy.sh` (sonda `/health` pública) e do `vigia.sh`.
+# `deploy.sh` (sonda `/health` pública) e do `vigia.sh`. A exceção é a recusa
+# de `/patrimonio/`, que o próprio nginx responde sem precisar da aplicação: o
+# andaime sobe e a prova é feita com pedidos de verdade (seção no fim).
 #
 # A IMAGEM É `nginx:1.24` E ISSO NÃO É DETALHE: é a versão que o Ubuntu 24.04
 # do VPS entrega, e é a mesma compatibilidade que os vhosts declaram ao usar
@@ -168,3 +170,56 @@ EOF
 echo "Conferindo $VHOSTS vhost(s) e $(find "$ANDAIME/conf.d" -name '*.conf' | wc -l) arquivo(s) de conf.d..."
 nginx -t -p "$ANDAIME" -c nginx.conf
 echo "# nginx -t aprovou a configuração versionada"
+
+# ---------------------------------------------------------------------------
+# Patrimônio fora da borda (02/10/2026).
+#
+# O CB e o CRV publicam `/patrimonio/v1` a `v4`, contrato máquina a máquina com
+# Bearer. O único consumidor, o Wealthfolio, lê pela rede Docker interna; na
+# internet essas rotas só serviriam a quem tivesse um token vazado. A recusa é
+# do nginx, antes do proxy, então a prova não precisa de aplicação: o andaime
+# sobe e responde a pedidos de verdade.
+#
+# Os dois vhosts são nomeados porque a regra é dos dois aplicativos que
+# publicam o contrato, não da frota. A outra metade da prova é que o resto do
+# site continua indo para a aplicação: sem nada escutando na porta dela, a
+# resposta é 502, e não 404. Um `location` largo demais apareceria aí.
+#
+# Os caminhos com `//` e `..` estão aqui de propósito: o nginx normaliza o URI
+# antes de escolher o `location`, e é isso que impede contornar a recusa
+# escrevendo o mesmo caminho de outro jeito.
+# ---------------------------------------------------------------------------
+PUBLICADORES="controle-bancario controle-renda-variavel"
+
+nginx -p "$ANDAIME" -c nginx.conf
+trap 'nginx -p "$ANDAIME" -c nginx.conf -s stop 2>/dev/null; rm -rf "$ANDAIME"' EXIT
+
+# Código HTTP da resposta a `GET <caminho>` no vhost de <domínio>, por TLS em
+# 127.0.0.1. `openssl s_client` porque é o que a imagem já traz.
+codigo() {
+    printf 'GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$2" "$1" \
+        | timeout 10 openssl s_client -quiet -connect 127.0.0.1:443 -servername "$1" 2>/dev/null \
+        | sed -n '1s#^HTTP/1\.1 \([0-9][0-9][0-9]\).*#\1#p'
+}
+
+# O nginx registra no stderr um `connect() failed` para cada 502 abaixo: é a
+# prova esperada, e não um defeito do teste.
+for publicador in $PUBLICADORES; do
+    vhost="$ANDAIME/sites/$publicador.conf"
+    [ -f "$vhost" ] || { echo "FALHOU: vhost $publicador não está na origem." >&2; exit 1; }
+    dominio=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;[:space:]]*\).*/\1/p' "$vhost" | head -n 1)
+    for caminho in /patrimonio/ /patrimonio/v1/resumo /patrimonio/v4/snapshot \
+                   //patrimonio/v4/snapshot /static/../patrimonio/v4/metadata; do
+        obtido=$(codigo "$dominio" "$caminho")
+        if [ "$obtido" != 404 ]; then
+            echo "FALHOU: $dominio$caminho respondeu ${obtido:-nada}; esperado 404 do próprio nginx." >&2
+            exit 1
+        fi
+    done
+    obtido=$(codigo "$dominio" /health)
+    if [ "$obtido" != 502 ]; then
+        echo "FALHOU: $dominio/health respondeu ${obtido:-nada}; esperado 502 (proxy sem aplicação)." >&2
+        exit 1
+    fi
+done
+echo "# /patrimonio/ recusado na borda do CB e do CRV; o resto segue para a aplicação"

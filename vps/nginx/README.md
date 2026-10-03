@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `networth`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `networth`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`, e os do CB e do CRV fecham `/patrimonio/`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |
@@ -34,6 +34,12 @@ cada aplicação.
 - A zona `login` é compartilhada pelo Nginx. Somente `POST /login` consome o
   limite; `GET /login` permanece livre. O limite é `10r/m`, com burst 5 sem
   atraso, e rejeições respondem 429.
+- `/patrimonio/` responde 404 nos vhosts do ControleBancario e do
+  ControleRendaVariavel, sem chegar à aplicação. O contrato de patrimônio é
+  máquina a máquina e o único consumidor, o Wealthfolio, lê pela rede Docker
+  interna `patrimonio-internal`. `tests/nginx_test.sh` prova a recusa com
+  pedidos de verdade, e o instalador confere o 404 em cada domínio que fecha a
+  rota.
 - Os vhosts mantêm `listen ... ssl http2` por compatibilidade com Nginx 1.24.
 
 ## Instalação

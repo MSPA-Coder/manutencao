@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Vigia horário: disco, endereços públicos, certificado, frescor do backup e
-# busca do backup pela cópia fora do servidor.
+# Vigia horário: disco, endereços públicos, certificado, frescor do backup,
+# busca do backup pela cópia fora do servidor e frescor dos dados (cotações do
+# CRV, sincronização e importação do Wealthfolio).
 #
 #   ./vigia.sh            faz o ciclo e alerta
 #   ./vigia.sh --estado   mostra tudo, sem alertar
@@ -15,19 +16,33 @@
 #
 # A de busca fecha o mesmo buraco do outro lado: o dump pode estar em dia aqui
 # e ninguém estar levando a cópia para fora do servidor.
+#
+# A de frescor dos dados é a mesma ideia para o que o `/health` não vê: ele só
+# diz se o processo responde. Se o agente RTD ou a sincronização do Wealthfolio
+# parar, o app segue "ok" e o número fica cada dia mais velho. O alerta de
+# frescor NÃO vai para o `/health`, de propósito: a autocura reinicia contêiner
+# `unhealthy`, e uma cotação velha reiniciaria o CRV sem motivo. Por isso o vigia
+# lê a idade por fora e só avisa.
 
 set -uo pipefail
 
-# `ALERTA` e `BACKUPS` aceitam sobreposição pelo ambiente para a suíte
+# `ALERTA`, `BACKUPS` e `DOCKER` aceitam sobreposição pelo ambiente para a suíte
 # hermética (`tests/vigia_test.sh`), como `NGINX_HABILITADOS` já aceitava.
 ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
 BACKUPS=${BACKUPS:-/home/ubuntu/backups}
 NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
+DOCKER=${DOCKER:-docker}
 DISCO_TETO=80          # % de uso a partir do qual alerta
 BACKUP_MAX_HORAS=36    # ciclo é diário; 36h já é atraso, não variação
 BUSCA_MAX_HORAS=72     # quem busca é uma máquina Windows; tolera um fim de semana desligada
 CERT_MIN_DIAS=15       # certbot renova aos 30; 15 significa que falhou 2x
 REBOOT_MAX_DIAS=3      # tolera o fim de semana; não deixa acumular semanas
+# Frescor dos dados. Limites largos de propósito: mercado fecha no fim de semana
+# e em feriado, então "velho" tem de querer dizer "parou", não "é sábado".
+COTACAO_DIARIA_MAX_DIAS=5     # série diária do Yahoo; cobre fim de semana + Carnaval
+COTACAO_VIVA_MAX_HORAS=120    # RTD vem de um PC Windows; 5 dias cobre o feriado mais longo
+WF_MERCADO_MAX_HORAS=8        # o Wealthfolio sincroniza cotações a cada 6h
+WF_IMPORTACAO_FALHAS_MAX=3    # a importação roda a cada 15 min: 3 falhas na última hora é persistente
 
 # Os domínios são lidos dos vhosts habilitados NESTE servidor.
 #
@@ -246,6 +261,121 @@ else
 nascendo aqui; o que parou foi a cópia para fora do servidor.
 
 $conferir_busca"
+    fi
+fi
+
+# --------------------------------------------------------------------------
+# Frescor dos dados -- o que o /health não diz
+#
+# CRV (cotações). A idade da série diária (Yahoo, timer `cotacoes-diarias`) e da
+# cotação ao vivo (agente RTD, num PC Windows), lidas pelo contrato `leitura` do
+# próprio banco: as views `leitura.cotacao_historico` e `leitura.cotacao`, que o
+# CRV publica pelas migrações. Não lê tabela do CRV -- o que o FinancasMCP
+# aprendeu em 24/09 (coluna removida, consulta quebrada em silêncio) vale para o
+# vigia também. Sem o esquema, alerta: um vigia que cala sem o contrato é cego.
+#
+# Wealthfolio (importação e cotações). O servidor loga, a cada 6h, "Periodic
+# market data sync completed: N synced, M skipped, K failed" e, quando a
+# importação do CB ou do CRV falha, "Patrimonio sync failed for source X". A
+# importação que dá certo NÃO deixa rastro no log, então o que se vê daqui é: o
+# servidor segue vivo o bastante para sincronizar cotações, e a importação não
+# está falhando em série. Um batimento próprio da importação pede uma linha de
+# log nova no patch 0005 (e um rebuild do Wealthfolio, de 35 a 60 min): pendência.
+#
+# Títulos fixos, com os números no corpo: o `alerta.sh` reconhece repetição pelo
+# título.
+# --------------------------------------------------------------------------
+# O servidor colore o log com sequências ANSI; tirar o ESC de forma portátil
+# (o `sed` do BusyBox, nos testes, não entende `\x1b`).
+ESC=$(printf '\033')
+sem_cor() { sed "s/${ESC}\[[0-9;]*m//g"; }
+
+container_do_servico() {
+    "$DOCKER" ps -q --filter "label=com.docker.compose.project=$1" \
+        --filter "label=com.docker.compose.service=$2" 2>/dev/null | head -1
+}
+
+crv_db=$(container_do_servico controle-renda-variavel db)
+if [ -z "$crv_db" ]; then
+    [ "$MODO" = "--estado" ] && echo "frescor do CRV: sem o CRV nesta máquina"
+else
+    consulta_frescor="select coalesce((now() at time zone 'America/Sao_Paulo')::date - (select max(data) from leitura.cotacao_historico), -1), coalesce(round(extract(epoch from now() - (select max(cotado_em) from leitura.cotacao)) / 3600), -1);"
+    # shellcheck disable=SC2016  # as variáveis expandem DENTRO do contêiner, onde estão as credenciais
+    comando_psql='psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF "|"'
+    if resultado=$(printf '%s\n' "$consulta_frescor" \
+            | "$DOCKER" exec -i "$crv_db" sh -c "$comando_psql" 2>&1) \
+        && dias_diaria=${resultado%%|*} && horas_viva=${resultado##*|} \
+        && case "$dias_diaria$horas_viva" in ''|*[!0-9-]*) false ;; *) true ;; esac; then
+        [ "$MODO" = "--estado" ] && echo "frescor do CRV: série diária há ${dias_diaria} dia(s) (limite ${COTACAO_DIARIA_MAX_DIAS}); cotação ao vivo há ${horas_viva}h (limite ${COTACAO_VIVA_MAX_HORAS}h); -1 = sem dado"
+        if [ "$dias_diaria" -lt 0 ] || [ "$dias_diaria" -ge "$COTACAO_DIARIA_MAX_DIAS" ]; then
+            alertar "COTAÇÕES diárias paradas (CRV)" \
+"A série diária de cotações do CRV está parada: dias desde o último fechamento
+registrado: ${dias_diaria} (limite ${COTACAO_DIARIA_MAX_DIAS}; -1 quer dizer que não há nenhum).
+
+Ela vem do Yahoo, pelo timer cotacoes-diarias, e é o que mantém o histórico sem
+buracos com o PC desligado. Conferir:
+  systemctl status cotacoes-diarias.timer cotacoes-diarias.service
+  journalctl -u cotacoes-diarias -n 30"
+        fi
+        if [ "$horas_viva" -lt 0 ] || [ "$horas_viva" -ge "$COTACAO_VIVA_MAX_HORAS" ]; then
+            alertar "COTAÇÃO ao vivo parada (CRV)" \
+"A cotação ao vivo mais recente do CRV tem ${horas_viva}h (limite ${COTACAO_VIVA_MAX_HORAS}h; -1 quer
+dizer que não há nenhuma). Ela vem do agente RTD, no PC Windows: PC desligado,
+tarefa parada ou ProfitPro fechado. O v4 segue publicando o último preço, cada
+dia mais velho, e nada mais avisa.
+
+Conferir no PC: tarefa do agente RTD (rtd-agent.ps1) e o ProfitPro aberto."
+        fi
+    else
+        [ "$MODO" = "--estado" ] && echo "frescor do CRV: NÃO foi possível ler o contrato leitura"
+        alertar "FRESCOR do CRV sem o contrato leitura" \
+"Não consegui ler leitura.cotacao_historico e leitura.cotacao no banco do CRV.
+Sem isso o vigia não sabe se as cotações estão em dia.
+
+Resposta do banco: $(printf '%s' "${resultado:-}" | head -c 300)
+
+O esquema leitura é criado pela migração 20261003_0027 do CRV. Se o CRV
+implantado é anterior a ela, implante o CRV; se o esquema existe, conferir:
+  docker exec $crv_db sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"\\dv leitura.*\"'"
+    fi
+fi
+
+wf=$(container_do_servico wealthfolio-teste wealthfolio)
+if [ -z "$wf" ]; then
+    [ "$MODO" = "--estado" ] && echo "frescor do Wealthfolio: sem o Wealthfolio nesta máquina"
+else
+    log_mercado=$("$DOCKER" logs --since "${WF_MERCADO_MAX_HORAS}h" "$wf" 2>&1 | sem_cor | grep 'Periodic market data sync completed' || true)
+    n_mercado=$(printf '%s\n' "$log_mercado" | grep -c 'Periodic market data sync completed' || true)
+    ultima_mercado=$(printf '%s\n' "$log_mercado" | tail -1)
+    falhas_mercado=$(printf '%s' "$ultima_mercado" | sed -n 's/.* \([0-9][0-9]*\) failed.*/\1/p')
+    log_importacao=$("$DOCKER" logs --since 1h "$wf" 2>&1 | sem_cor | grep 'Patrimonio sync failed for source' || true)
+    n_importacao=$(printf '%s\n' "$log_importacao" | grep -c 'Patrimonio sync failed for source' || true)
+    fontes_importacao=$(printf '%s\n' "$log_importacao" | sed -n 's/.*Patrimonio sync failed for source \([A-Za-z-]*\).*/\1/p' | sort | uniq -c | tr '\n' ' ')
+    [ "$MODO" = "--estado" ] && echo "frescor do Wealthfolio: sincronização de cotações ${n_mercado}x nas últimas ${WF_MERCADO_MAX_HORAS}h (última com ${falhas_mercado:-?} falha(s)); importação CB/CRV com ${n_importacao} falha(s) na última hora (limite ${WF_IMPORTACAO_FALHAS_MAX})"
+    if [ "$n_mercado" -eq 0 ]; then
+        alertar "WEALTHFOLIO sem sincronizar cotações" \
+"O log do Wealthfolio não tem nenhuma sincronização periódica de cotações nas
+últimas ${WF_MERCADO_MAX_HORAS}h (ela roda a cada 6h). O processo responde, mas o agendador interno
+parou: é o mesmo servidor que importa o CB e o CRV a cada 15 min.
+
+Conferir:  docker logs --since ${WF_MERCADO_MAX_HORAS}h $wf 2>&1 | grep -i 'scheduler\\|Periodic'
+Reiniciar, se for o caso:  cd ~/apps/wealthfolio-teste && docker compose restart"
+    elif [ -n "$falhas_mercado" ] && [ "$falhas_mercado" -gt 0 ]; then
+        alertar "WEALTHFOLIO falha ao sincronizar cotações" \
+"A última sincronização periódica de cotações do Wealthfolio terminou com
+${falhas_mercado} falha(s):
+  ${ultima_mercado}
+
+Ativo sem cotação aparece no Data Health (/health) do Wealthfolio, com o motivo."
+    fi
+    if [ "$n_importacao" -ge "$WF_IMPORTACAO_FALHAS_MAX" ]; then
+        alertar "WEALTHFOLIO importação do CB/CRV falhando" \
+"A importação do CB/CRV falhou ${n_importacao} vez(es) na última hora (fontes: ${fontes_importacao}).
+Ela roda a cada 15 min; falha em série não é um soluço de deploy.
+
+Conferir:  docker logs --since 1h $wf 2>&1 | grep -i 'Patrimonio sync'
+O estado por fonte está na tela do add-on (Settings > Addons) e em
+GET /api/v1/patrimonio-sync/status (exige login)."
     fi
 fi
 

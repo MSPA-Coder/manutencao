@@ -147,6 +147,18 @@ dominios_instalados() {
     done | tr ' ' '\n' | sed '/^$/d; /^_$/d' | sort -u
 }
 
+# Os vhosts que fecham `/patrimonio/` na borda também são descobertos pelo
+# próprio arquivo, e não por uma lista: é o bloco que declara a regra.
+dominios_com_patrimonio_fechado() {
+    local f
+    for f in "${VHOSTS[@]}"; do
+        grep -Eq '^[[:space:]]*location[[:space:]]+\^~[[:space:]]+/patrimonio/[[:space:]]*\{' \
+            "$ORIGEM/$f" 2>/dev/null || continue
+        sed -nE 's/^[[:space:]]*server_name[[:space:]]+//p' "$ORIGEM/$f" \
+            | sed -E 's/;.*$//'
+    done | tr ' ' '\n' | sed '/^$/d; /^_$/d' | sort -u
+}
+
 echo
 echo "== conferindo o resultado =="
 mapfile -t DOMINIOS < <(dominios_instalados)
@@ -166,6 +178,20 @@ for d in "${DOMINIOS[@]}"; do
         echo "    HSTS: um cabeçalho"
     else
         echo "    HSTS: ${hsts:-0} cabeçalho(s) — esperado exatamente 1"
+    fi
+done
+
+# O contrato de patrimônio só é lido pela rede Docker interna; na borda ele
+# responde 404, e quem responde é o nginx. Um código diferente quer dizer que o
+# pedido chegou à aplicação, que atende quem tiver um token.
+mapfile -t FECHADOS < <(dominios_com_patrimonio_fechado)
+for d in "${FECHADOS[@]}"; do
+    codigo=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
+             "https://$d/patrimonio/v4/metadata" 2>/dev/null || echo '?')
+    if [ "$codigo" = "404" ]; then
+        echo "  $d/patrimonio/: 404, fechado na borda"
+    else
+        echo "  $d/patrimonio/: $codigo — esperado 404 (o pedido chegou à aplicação)"
     fi
 done
 

@@ -19,10 +19,10 @@ rodada.
 | Componente | Fonte | Contrato operacional |
 |---|---|---|
 | Instalação da infraestrutura | [`vps/instalar.sh`](vps/instalar.sh) | Entrega no servidor os 32 artefatos do inventário a partir do clone de `main`, por rename atômico e com modo explícito. Recusa checkout sujo e fonte com CR, recarrega o systemd e reinicia apenas os timers cujas unidades mudaram, e relê tudo ao final — só sai com sucesso quando o servidor espelha o checkout. `--check` responde "em dia ou à deriva" sem escrever, saindo diferente de zero quando há diferença. |
-| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main`, recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. |
+| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main` e só depois de todos os check-runs do commit terminarem verdes no GitHub (nos repositórios públicos), recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. |
 | Limite do rollback | [`vps/deploy.sh`](vps/deploy.sh) | Migrações e dados não são revertidos automaticamente. Deploy com mudança de schema exige backup verificado, compatibilidade retroativa ou procedimento manual de reversão. |
-| Backup dos bancos | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Descobre os bancos pelos contêineres `postgres:*` rodando nesta máquina, produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. Descoberta vazia é erro, e banco com histórico em disco que não está mais de pé é acusado. O timer agenda o ciclo diário. |
-| Acesso ao backup | [`vps/backup-agent.sh`](vps/backup-agent.sh) | Agente SSH preso por `command=` a quatro verbos: listar, enviar, apagar e consultar estado. Não oferece shell, restringe caminhos aos projetos que têm pasta em `~/backups` e nunca permite apagar o dump mais recente. Cada `listar` grava `~/backups/.ultima_busca`: é o batimento da cópia fora do servidor, que o vigia confere. |
+| Backup dos bancos e volumes | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Descobre os bancos pelos contêineres `postgres:*` rodando nesta máquina, produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. Contêiner com o rótulo `mspa.backup.volume=<caminho>` (hoje, o Wealthfolio e o SQLite dele) tem o diretório copiado em `.tar.gz` com o contêiner pausado por segundos, relido com `gzip -t` e `tar`, e só gravado quando difere da última cópia. Descoberta vazia de bancos é erro, e banco ou volume com histórico em disco que não está mais de pé é acusado. O timer agenda o ciclo diário. |
+| Acesso ao backup | [`vps/backup-agent.sh`](vps/backup-agent.sh) | Agente SSH preso por `command=` a quatro verbos: listar, enviar, apagar e consultar estado. Não oferece shell, restringe caminhos aos projetos que têm pasta em `~/backups` e nunca permite apagar o dump (ou a cópia de volume) mais recente. `listar` mostra só os dumps, que é o que o BackupRestore até a versão sem volumes entende; `listar tudo` inclui as cópias de volume. Cada listagem grava `~/backups/.ultima_busca`: é o batimento da cópia fora do servidor, que o vigia confere. |
 | Alerta | [`vps/alerta.sh`](vps/alerta.sh), [`vps/alerta@.service`](vps/alerta@.service), [`vps/certbot.service.d/alerta.conf`](vps/certbot.service.d/alerta.conf) | Envia falhas ao Telegram, inclui logs de unidades systemd e suprime repetições. O notificador sempre termina com sucesso para não criar cascata de falhas. |
 | Recarga após renovar o certificado | [`vps/certbot-recarregar-nginx.sh`](vps/certbot-recarregar-nginx.sh) | Hook de `deploy` do certbot: valida com `nginx -t` e recarrega o nginx depois de uma renovação. Sem ele o certificado renova em disco e o nginx segue apresentando o antigo — sem nada falhar, porque renovar deu certo. |
 | Vigia | [`vps/vigia.sh`](vps/vigia.sh), [`vps/vigia.service`](vps/vigia.service), [`vps/vigia.timer`](vps/vigia.timer) | Verifica disco, `/health` público, certificados, frescor dos backups e se a cópia fora do servidor os buscou nas últimas 72 h; alerta condições persistentes. Os domínios saem dos vhosts habilitados nesta máquina, então cada servidor vigia o que ele mesmo serve — e um vigia sem nenhum domínio alerta a própria cegueira. |
@@ -38,7 +38,8 @@ rodada.
 ### Uma frota, mais de uma máquina
 
 Nenhum script guarda a lista de quais aplicações existem. Cada um pergunta à
-máquina em que está rodando: o backup olha os contêineres `postgres:*`, o vigia
+máquina em que está rodando: o backup olha os contêineres `postgres:*` e os
+que levam o rótulo `mspa.backup.volume`, o vigia
 e o monitor externo leem os `server_name` dos vhosts habilitados, o agente de
 backup olha as pastas de `~/backups`, e o instalador do nginx instala os vhosts
 que encontrar na origem.
@@ -60,10 +61,19 @@ verifica.
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda|portal> --check
-~/deploy.sh <bancario|conforto|megasena|renda|portal>
+~/deploy.sh <bancario|conforto|megasena|renda|portal|wealthfolio> --check
+~/deploy.sh <bancario|conforto|megasena|renda|portal|wealthfolio>
+~/deploy.sh <projeto> --sem-ci   # emergência: implanta sem CI verde e alerta
 ~/deploy.sh --status
 ```
+
+Antes do fast-forward, o deploy pergunta à API do GitHub se todos os
+check-runs do commit novo terminaram verdes (`neutral` e `skipped` contam como
+verdes). CI vermelha, ainda rodando, ausente ou uma API que não responde: o
+deploy recusa antes de tocar no servidor, e o `--check` mostra o estado. O
+portal e o Wealthfolio ficam de fora porque são privados e a API anônima não
+os alcança. `--sem-ci` existe para quando a API estiver fora justo na hora de
+um conserto, e avisa pelo alerta.
 
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
 automático devolve o checkout ao SHA anterior, reconstrói a imagem e só registra

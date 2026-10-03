@@ -37,6 +37,11 @@ assert_no_log() {
     fi
 }
 
+assert_output() {
+    local pattern=$1 description=$2
+    grep -Fq -- "$pattern" "$CASE_TMP/output" || fail "$description (ausente na saída: $pattern)"
+}
+
 assert_log_count() {
     local pattern=$1 expected=$2 description=$3 actual
     actual=$(grep -Fc -- "$pattern" "$CALL_LOG" || true)
@@ -115,9 +120,19 @@ printf 'docker fake: comando inesperado: %s\n' "$*" >&2
 exit 90
 EOF
 
+    # A API do GitHub responde com respostas reais reduzidas, em
+    # `check-runs/`: a do CRV verde (formatada) e a do NetWorth vermelho
+    # (minificada), mais variações delas. `CI_HTTP` diferente de 200 simula a
+    # API fora do ar ou recusando.
     cat >"$CASE_TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
+case " $* " in
+    *api.github.com*)
+        [ "$CI_HTTP" != 200 ] || cat "$CHECK_RUNS_DIR/$CI_FIXTURE.json"
+        printf '\n%s' "$CI_HTTP"
+        exit 0 ;;
+esac
 head=$(cat "$FAKE_HEAD")
 if [ "$SCENARIO" = wealthfolio_success ]; then
     printf 'ok\n200'
@@ -154,7 +169,8 @@ run_deploy() {
     APPS="$CASE_TMP/apps" ALERTA="$CASE_TMP/alerta.sh" ESTADO_DIR="$CASE_TMP/state" \
     CALL_LOG="$CASE_TMP/calls.log" FAKE_HEAD="$CASE_TMP/head" UP_COUNT="$CASE_TMP/up-count" \
     SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
-        bash "$DEPLOY" "$projeto" >"$CASE_TMP/output" 2>&1
+    CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
+        bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
 }
@@ -162,6 +178,8 @@ run_deploy() {
 begin_case() {
     TOTAL=$((TOTAL + 1))
     CASE_FAILED=0
+    CI_FIXTURE=verde
+    CI_HTTP=200
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -203,6 +221,8 @@ assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" '
 assert_log 'mv <-f> <-->' 'registro deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/state" -name '.controle-bancario.commit.*' -print)" ] || fail 'rename atômico não deve deixar arquivo temporário'
 assert_no_log 'git <reset>' 'sucesso não deve executar rollback'
+assert_log "https://api.github.com/repos/MSPA-Coder/sistema-financeiro/commits/$NEW_SHA/check-runs?per_page=100" 'a CI conferida deve ser a do commit novo, no repositório do projeto'
+assert_output '3 check-runs verdes' 'a saída deve dizer que a CI está verde'
 end_case 'sucesso registra SHA novo atomicamente'
 
 begin_case
@@ -283,7 +303,99 @@ run_deploy wealthfolio
 assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
 assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
+assert_no_log 'api.github.com' 'repositório privado sem CI não deve consultar a API'
+assert_output 'não conferida: repositório privado e sem CI' 'a saída deve dizer por que a CI não foi conferida'
 end_case 'Wealthfolio usa health ok e override privada'
+
+# ---------------------------------------------------------------------------
+# CI do commit (02/10/2026): o deploy só aplica um commit com todos os
+# check-runs terminados e verdes. Recusar acontece antes do fast-forward, então
+# a prova de "nada mudou" é não haver `merge`, `compose` nem estado novo.
+# ---------------------------------------------------------------------------
+recusou_antes_de_tocar() {
+    [ "$EXIT_CODE" -ne 0 ] || fail 'deploy recusado deve sair não zero'
+    assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'HEAD deve permanecer no commit antigo'
+    assert_no_log 'git <merge>' 'recusa pela CI não deve fazer fast-forward'
+    assert_no_log 'docker <compose>' 'recusa pela CI não deve chamar o Compose'
+    [ ! -e "$CASE_TMP/state/controle-bancario.commit" ] || fail 'recusa pela CI não deve registrar estado'
+    assert_output 'ABORTADO: a CI de 2222222 não está verde' 'a recusa deve dizer que a CI não está verde'
+}
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=vermelho
+run_deploy
+recusou_antes_de_tocar
+assert_output 'check-runs reprovados: 1 failure' 'a recusa deve contar o check-run reprovado'
+assert_no_log 'alerta <' 'recusa sem mudança no servidor não deve alertar'
+end_case 'CI vermelha recusa antes de tocar no servidor'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=pendente
+run_deploy
+recusou_antes_de_tocar
+assert_output '1 de 3 check-runs ainda não terminaram' 'a recusa deve dizer que a CI ainda roda'
+end_case 'CI ainda rodando recusa'
+
+begin_case
+SCENARIO=success
+CI_HTTP=000
+run_deploy
+recusou_antes_de_tocar
+assert_output 'a API do GitHub respondeu HTTP 000' 'API fora do ar deve recusar, e não aprovar'
+end_case 'API do GitHub fora do ar recusa'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=vazio
+run_deploy
+recusou_antes_de_tocar
+assert_output 'nenhum check-run neste commit' 'commit sem check-run deve recusar'
+end_case 'commit sem check-run recusa'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=inconsistente
+run_deploy
+recusou_antes_de_tocar
+assert_output 'resposta da API fora do esperado (4 check-runs, 3 estados, 3 conclusões)' 'resposta que não bate com total_count deve recusar'
+end_case 'resposta da API que não bate com o total recusa'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=neutro
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'neutral e skipped devem contar como verdes'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/head")" 'CI verde com neutral e skipped deve aplicar o commit novo'
+end_case 'neutral e skipped contam como verdes'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=vermelho
+run_deploy bancario --sem-ci
+assert_eq 0 "$EXIT_CODE" '--sem-ci deve implantar mesmo com a CI vermelha'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/head")" '--sem-ci deve aplicar o commit novo'
+assert_output 'AVISO: implantando 2222222 sem CI verde' '--sem-ci deve avisar no terminal'
+assert_log 'alerta <DEPLOY SEM CI VERDE: controle-bancario>' '--sem-ci deve alertar'
+end_case '--sem-ci implanta, avisa e alerta'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=vermelho
+run_deploy bancario --check
+assert_eq 0 "$EXIT_CODE" '--check deve sair zero mesmo com a CI vermelha'
+assert_output 'NÃO VERDE: check-runs reprovados: 1 failure' '--check deve mostrar o estado da CI'
+assert_no_log 'git <merge>' '--check não deve fazer fast-forward'
+end_case '--check mostra a CI sem mudar nada'
+
+begin_case
+SCENARIO=success
+run_deploy bancario --forcar
+[ "$EXIT_CODE" -ne 0 ] || fail 'opção desconhecida deve sair não zero'
+assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
+assert_output 'Opção desconhecida: --forcar' 'a saída deve nomear a opção recusada'
+end_case 'opção desconhecida para antes de qualquer coisa'
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

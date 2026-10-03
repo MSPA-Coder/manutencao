@@ -8,8 +8,10 @@
 #
 #   listar               nomes, tamanhos e SHA-256 dos dumps disponíveis;
 #                        registra a busca em $DEST/.ultima_busca
-#   enviar <slug/nome>    despeja um dump na saída padrão
-#   apagar <slug/nome>    remove um dump — recusa o mais recente
+#   listar tudo          o mesmo, incluindo as cópias de volume (.tar.gz)
+#   enviar <slug/nome>    despeja um dump (ou cópia de volume) na saída padrão
+#   apagar <slug/nome>    remove um dump (ou cópia) — recusa o mais recente
+#                        do mesmo tipo
 #   estado                último backup de cada projeto + saúde do timer
 #
 # O comando real do cliente SSH chega em $SSH_ORIGINAL_COMMAND — este script
@@ -65,18 +67,20 @@ eh_projeto_valido() {
     return 1
 }
 
-# Resolve "<slug>/<arquivo>.dump" para um caminho absoluto dentro de DEST,
-# recusando qualquer coisa que não bata no formato exato produzido pelo
-# backup-db.sh. É a defesa contra travessia de caminho e injeção — o cliente
-# nunca escolhe um caminho livre, só um nome que já precisa existir no disco.
+# Resolve "<slug>/<arquivo>" para um caminho absoluto dentro de DEST,
+# recusando qualquer coisa que não bata num dos dois formatos exatos produzidos
+# pelo backup-db.sh (`_banco_<carimbo>.dump` e `_volume_<carimbo>.tar.gz`). É a
+# defesa contra travessia de caminho e injeção — o cliente nunca escolhe um
+# caminho livre, só um nome que já precisa existir no disco.
 resolver_dump() {
     local entrada="$1" slug arquivo caminho real
-    [[ "$entrada" =~ ^([a-z_]+)/([a-z_]+_banco_[0-9]{8}_[0-9]{6}\.dump)$ ]] \
+    [[ "$entrada" =~ ^([a-z_]+)/([a-z_]+_(banco_[0-9]{8}_[0-9]{6}\.dump|volume_[0-9]{8}_[0-9]{6}\.tar\.gz))$ ]] \
         || erro "formato de caminho inválido"
     slug="${BASH_REMATCH[1]}"
     arquivo="${BASH_REMATCH[2]}"
     eh_projeto_valido "$slug" || erro "projeto desconhecido: $slug"
-    [[ "$arquivo" == "${slug}_banco_"* ]] || erro "arquivo não pertence ao projeto"
+    [[ "$arquivo" == "${slug}_banco_"* || "$arquivo" == "${slug}_volume_"* ]] \
+        || erro "arquivo não pertence ao projeto"
 
     caminho="$DEST/$slug/$arquivo"
     [ -f "$caminho" ] || erro "arquivo não encontrado"
@@ -87,26 +91,43 @@ resolver_dump() {
     printf '%s' "$real"
 }
 
+# O mais recente do MESMO TIPO (`dump` ou `tar.gz`): é o piso que o
+# `backup-db.sh` mantém para cada um, e uma cópia de volume mais nova não pode
+# liberar a remoção do último dump, nem o contrário.
 mais_recente() {
-    local dir="$1"
+    local dir="$1" ext="$2"
     # shellcheck disable=SC2012  # os nomes são gerados por backup-db.sh (slug e
     # carimbo de tempo, sem espaço nem quebra de linha), então o `ls` não tem o
     # que quebrar. A alternativa com `find -printf '%T@ %p'` compraria robustez
     # contra nomes que este diretório nunca terá, ao preço de ilegibilidade na
     # linha que decide qual dump é o mais novo.
-    ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true
+    ls -1t "$dir"/*."$ext" 2>/dev/null | head -1 || true
 }
 
+# `listar` sem argumento mostra só os dumps, de propósito: o BackupRestore que
+# já está instalado recusa a sincronização INTEIRA quando encontra uma linha
+# fora do formato de dump. Quem sabe ler as cópias de volume pede `listar
+# tudo`; um agente antigo ignora o argumento e responde só os dumps, então
+# cliente e agente podem ser atualizados em qualquer ordem.
 verbo_listar() {
-    local slug dir arq tam hash
+    local modo="${1:-}" slug dir arq tam hash ext
+    local -a extensoes=(dump)
+    case "$modo" in
+        "")   ;;
+        tudo) extensoes=(dump tar.gz) ;;
+        *)    erro "argumento desconhecido para listar — use: listar [tudo]" ;;
+    esac
+
     for slug in $(projetos); do
         dir="$DEST/$slug"
         [ -d "$dir" ] || continue
-        for arq in "$dir"/*.dump; do
-            [ -e "$arq" ] || continue
-            tam=$(stat -c %s "$arq")
-            hash=$(cat "$arq.sha256" 2>/dev/null || echo "sem-hash")
-            printf '%s/%s %s %s\n' "$slug" "$(basename "$arq")" "$tam" "$hash"
+        for ext in "${extensoes[@]}"; do
+            for arq in "$dir"/*."$ext"; do
+                [ -e "$arq" ] || continue
+                tam=$(stat -c %s "$arq")
+                hash=$(cat "$arq.sha256" 2>/dev/null || echo "sem-hash")
+                printf '%s/%s %s %s\n' "$slug" "$(basename "$arq")" "$tam" "$hash"
+            done
         done
     done
 
@@ -129,8 +150,15 @@ verbo_apagar() {
     local caminho dir novo
     caminho=$(resolver_dump "${1:-}")
     dir=$(dirname "$caminho")
-    novo=$(mais_recente "$dir")
-    [ "$caminho" = "$novo" ] && erro "recusado: é o dump mais recente de $(basename "$dir")"
+    # A frase da recusa dos dumps é a que o BackupRestore reconhece como
+    # "mantido"; a dos volumes só existe para quem já pede `listar tudo`.
+    if [[ "$caminho" == *.tar.gz ]]; then
+        novo=$(mais_recente "$dir" tar.gz)
+        [ "$caminho" = "$novo" ] && erro "recusado: é a cópia de volume mais recente de $(basename "$dir")"
+    else
+        novo=$(mais_recente "$dir" dump)
+        [ "$caminho" = "$novo" ] && erro "recusado: é o dump mais recente de $(basename "$dir")"
+    fi
     rm -f "$caminho" "$caminho.sha256"
     printf 'apagado: %s\n' "$(basename "$caminho")"
 }
@@ -157,9 +185,9 @@ verbo="${partes[0]:-}"
 arg="${partes[1]:-}"
 
 case "$verbo" in
-    listar) verbo_listar ;;
+    listar) verbo_listar "$arg" ;;
     enviar) verbo_enviar "$arg" ;;
     apagar) verbo_apagar "$arg" ;;
     estado) verbo_estado ;;
-    *) erro "verbo desconhecido — use: listar | enviar <arquivo> | apagar <arquivo> | estado" ;;
+    *) erro "verbo desconhecido — use: listar [tudo] | enviar <arquivo> | apagar <arquivo> | estado" ;;
 esac

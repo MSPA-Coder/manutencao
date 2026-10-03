@@ -1,8 +1,10 @@
 # Vhost do ControleBancario. Cópia de /etc/nginx/sites-available/controle-bancario.
 #
 # Os quatro vhosts têm estrutura idêntica de propósito: só mudam domínio,
-# porta e tamanho máximo de corpo. Cabeçalho de proxy fica em
-# `snippets/proxy-app.conf`, compressão e limitador em `conf.d/00-comum.conf`.
+# porta e tamanho máximo de corpo. A exceção é o bloco de `/patrimonio/`, que
+# só existe aqui e no `controle-renda-variavel`, os dois que publicam o
+# contrato. Cabeçalho de proxy fica em `snippets/proxy-app.conf`, compressão e
+# limitador em `conf.d/00-comum.conf`.
 
 server {
     listen 80;
@@ -47,6 +49,19 @@ server {
         limit_req zone=login burst=5 nodelay;
         proxy_pass http://127.0.0.1:5201;
         include snippets/proxy-app.conf;
+    }
+
+    # O patrimônio não sai pela borda (02/10/2026). `/patrimonio/v1` a `v4` são
+    # contrato máquina a máquina, autenticado por Bearer, e o único consumidor
+    # -- o Wealthfolio -- lê pela rede Docker interna `patrimonio-internal`, sem
+    # passar por este nginx. Responder na internet só servia a quem tivesse um
+    # token vazado. A recusa acontece antes do proxy: a aplicação nem vê o
+    # pedido. A prova está em `tests/nginx_test.sh`.
+    #
+    # Sem `add_header` aqui, pelo mesmo motivo do bloco de login: o HSTS do
+    # `server` continua valendo nesta rota.
+    location ^~ /patrimonio/ {
+        return 404;
     }
 
     location / {

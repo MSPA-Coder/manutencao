@@ -253,6 +253,10 @@ fazer_dump() {
 # normal mesmo quando o script morre no meio da cópia: o bash roda o EXIT
 # também ao receber TERM (conferido). Só um KILL escapa, e aí quem acusa é o
 # vigia, pelo /health parado.
+#
+# A pausa deixa o contêiner `unhealthy` por alguns segundos sem nenhuma sonda
+# reprovada: o Docker o marca assim ao pausar e só o devolve a `healthy` na
+# sonda seguinte. O `autocura.sh` reconhece esse caso e não o reinicia.
 # --------------------------------------------------------------------------
 PAUSADO=""
 

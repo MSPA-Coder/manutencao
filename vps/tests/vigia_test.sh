@@ -103,6 +103,21 @@ esac
 exit 0
 EOF
     chmod 755 "$CASE_TMP/bin/docker"
+
+    # Falso `curl` para o /health: só age quando o caso deixou `$FAKE/health_corpo`;
+    # sem isso, delega ao curl de verdade e nada muda nos outros casos.
+    cat >"$CASE_TMP/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+if [ -e "$FAKE/health_corpo" ]; then
+    case "$*" in
+        *"%{http_code}"*) echo 200 ;;
+        *) cat "$FAKE/health_corpo" ;;
+    esac
+    exit 0
+fi
+exec "$CURL_REAL" "$@"
+EOF
+    chmod 755 "$CASE_TMP/bin/curl"
 }
 
 end_case() {
@@ -120,6 +135,8 @@ roda() {
     ALERTA="$CASE_TMP/bin/alerta.sh" \
     DOCKER="$CASE_TMP/bin/docker" \
     FAKE="$FAKE" \
+    CURL_REAL="$(command -v curl)" \
+    PATH="$CASE_TMP/bin:$PATH" \
     BACKUPS="$BACKUPS_TMP" \
     NGINX_HABILITADOS="$CASE_TMP/vhosts" \
         bash "$VIGIA" "$@" >"$SAIDA" 2>&1
@@ -333,6 +350,35 @@ roda --estado
 assert_saida 'frescor do Wealthfolio: sincronização de cotações 0x' '--estado mostra o batimento'
 assert_saida 'ALERTARIA: WEALTHFOLIO sem sincronizar cotações' '--estado diz o que faria'
 end_case '--estado mostra o frescor do Wealthfolio sem alertar'
+
+dominio_com_health() {
+    printf 'server {\n    server_name %s;\n}\n' "$1" >"$CASE_TMP/vhosts/$1"
+    printf '%s' "$2" >"$FAKE/health_corpo"
+}
+
+begin_case
+dominio_com_health wf.exemplo.test 'ok'
+roda
+assert_sem_alerta 'FORA DO AR' 'o Wealthfolio responde o texto ok e está no ar'
+end_case '/health em texto puro "ok" (Wealthfolio) não é "fora do ar"'
+
+begin_case
+dominio_com_health app.exemplo.test '{"status":"ok"}'
+roda
+assert_sem_alerta 'FORA DO AR' 'o JSON compacto do Flask continua valendo'
+end_case '/health em JSON "status":"ok" continua aceito'
+
+begin_case
+dominio_com_health app.exemplo.test '{"status":"degradado"}'
+roda
+assert_alerta 'TITULO=FORA DO AR: app.exemplo.test' 'um corpo sem ok alerta'
+end_case '/health sem ok alerta fora do ar'
+
+begin_case
+dominio_com_health wf.exemplo.test 'ok, mas com banco fora'
+roda
+assert_alerta 'TITULO=FORA DO AR: wf.exemplo.test' 'só o corpo inteiro igual a ok vale; prefixo não'
+end_case '/health que apenas começa com "ok" ainda alerta'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

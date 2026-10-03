@@ -145,3 +145,11 @@ jobs:
       # suíte cobre só essa verificação; o resto do vigia depende de rede.
       - name: Testar a busca no vigia
         run: bash vps/tests/vigia_test.sh
+
+      # A autocura reinicia contêiner `unhealthy`, e a pausa diária do backup
+      # deixa o Wealthfolio assim por segundos, sem nenhuma sonda reprovada.
+      # A suíte substitui o `docker` por um script falso e prova que só a sonda
+      # reprovada de verdade leva ao reinício: nunca o contêiner pausado nem o
+      # recém-despausado, que volta sozinho na sonda seguinte.
+      - name: Testar a autocura
+        run: bash vps/tests/autocura_test.sh

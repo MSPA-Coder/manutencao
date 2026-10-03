@@ -15,8 +15,8 @@
 
 set -uo pipefail
 
-ALERTA=/home/ubuntu/alerta.sh
-ESTADO=/home/ubuntu/.cache/autocura
+ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
+ESTADO=${ESTADO:-/home/ubuntu/.cache/autocura}
 TETO_TENTATIVAS=3       # depois disso, para de tentar e avisa uma vez
 JANELA_TENTATIVAS=3600  # as tentativas contam dentro desta janela
 
@@ -29,12 +29,40 @@ alertar() {
     ALERTA_JANELA=1800 "$ALERTA" "$1" "${2:-}" || true
 }
 
+# `unhealthy` nem sempre é sonda reprovada. Ao pausar um contêiner, o Docker
+# desliga a sonda e o marca `unhealthy` sem contar falha nenhuma; despausado,
+# ele continua assim até a sonda seguinte, um `interval:` depois (30 s no
+# Wealthfolio). O `backup-db.sh` pausa todo dia o contêiner rotulado com
+# `mspa.backup.volume` para copiar o SQLite, e reiniciar nessa janela derrubaria
+# a cópia ao meio, ou o aplicativo logo depois dela, com alerta à toa. Medido
+# no Docker 29.6.2: pausado ou recém-despausado, `FailingStreak` 0; com a
+# sonda reprovando de verdade, 3. No VPS1, a primeira cópia (03/10/2026)
+# deixou o Wealthfolio `unhealthy` por instantes, com 0 falhas.
+#
+# Poupa, então, o contêiner pausado (alguém o pausou de propósito, e uma pausa
+# que não termina o vigia acusa pelo /health parado) e o que não teve nenhuma
+# sonda reprovada. Qualquer outra leitura, inclusive um `inspect` que falhe,
+# segue o caminho de sempre. Imprime o motivo de poupar.
+poupar() {
+    local leitura
+    leitura=$(docker inspect -f '{{.State.Paused}} {{.State.Health.FailingStreak}}' "$1" 2>/dev/null) \
+        || return 1
+    case "$leitura" in
+        "true "*) echo "pausado" ;;
+        "false 0") echo "nenhuma sonda reprovada (é como o Docker marca o contêiner recém-despausado)" ;;
+        *) return 1 ;;
+    esac
+}
+
 # Contêineres doentes agora. `health=unhealthy` não inclui `starting`, então o
 # período de carência declarado em `start_period:` é respeitado de graça.
 doentes=$(docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null || true)
 
 if [ "${1:-}" = "--estado" ]; then
     echo "doentes agora: ${doentes:-nenhum}"
+    for nome in $doentes; do
+        motivo=$(poupar "$nome") && echo "  $nome: não reinicia, $motivo"
+    done
     for marca in "$ESTADO"/*; do
         [ -e "$marca" ] || continue
         echo "  $(basename "$marca"): $(cat "$marca" 2>/dev/null) tentativa(s), última $(date -d "@$(stat -c %Y "$marca")" '+%d/%m %H:%M')"
@@ -57,6 +85,11 @@ done
 [ -z "$doentes" ] && exit 0
 
 for nome in $doentes; do
+    if motivo=$(poupar "$nome"); then
+        registrar "$nome unhealthy, mas não reinicia: $motivo"
+        continue
+    fi
+
     marca="$ESTADO/$nome"
     tentativas=0
     if [ -f "$marca" ]; then

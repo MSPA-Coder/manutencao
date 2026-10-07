@@ -18,13 +18,9 @@
 # IP.
 
 server {
-    # O `http2` repetido aqui não é decoração. Até o nginx 1.25 o HTTP/2 é
-    # propriedade do SOCKET, não do bloco `server`: com quatro vhosts pedindo
-    # `http2` e o servidor padrão do mesmo socket omitindo, a configuração do
-    # socket fica ambígua. Declarar igual em todos os blocos da 443 remove a
-    # ambiguidade em vez de depender da ordem de carga.
-    listen 443 ssl http2 default_server;
-    listen [::]:443 ssl http2 default_server;
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
     server_name _;
 
     ssl_reject_handshake on;

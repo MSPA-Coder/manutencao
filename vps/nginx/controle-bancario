@@ -21,10 +21,9 @@ server {
 }
 
 server {
-    # `listen ... ssl http2` e não `http2 on;`: a diretiva separada só existe a
-    # partir do nginx 1.25.1; a forma abaixo preserva compatibilidade com 1.24.
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name bancario-mspa.duckdns.org;
 
     ssl_certificate /etc/letsencrypt/live/bancario-mspa.duckdns.org/fullchain.pem;

@@ -40,7 +40,9 @@ cada aplicação.
   interna `patrimonio-internal`. `tests/nginx_test.sh` prova a recusa com
   pedidos de verdade, e o instalador confere o 404 em cada domínio que fecha a
   rota.
-- Os vhosts mantêm `listen ... ssl http2` por compatibilidade com Nginx 1.24.
+- Os vhosts usam `listen ... ssl;` seguido de `http2 on;` (Nginx 1.25.1 ou
+  superior, o que vale nos dois VPS desde o Ubuntu 26.04, Nginx 1.28). A forma
+  antiga `listen ... ssl http2` está obsoleta e gera aviso no `nginx -t`.
 
 ## Instalação
 

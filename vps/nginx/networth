@@ -17,8 +17,9 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name networth-mspa.duckdns.org;
 
     ssl_certificate /etc/letsencrypt/live/networth-mspa.duckdns.org/fullchain.pem;

@@ -382,19 +382,18 @@ end_case '--sem-ci implanta, avisa e alerta'
 
 begin_case
 SCENARIO=success
-CI_FIXTURE=vermelho
 run_deploy bancario --check
-assert_eq 0 "$EXIT_CODE" '--check deve sair zero mesmo com a CI vermelha'
-assert_output 'NÃO VERDE: check-runs reprovados: 1 failure' '--check deve mostrar o estado da CI'
-assert_no_log 'git <merge>' '--check não deve fazer fast-forward'
-end_case '--check mostra a CI sem mudar nada'
+[ "$EXIT_CODE" -ne 0 ] || fail '--check removido deve ser recusado'
+assert_no_log 'git <fetch>' '--check removido deve parar antes de buscar o main'
+assert_output 'Opção desconhecida: --check (use --sem-ci)' '--check removido deve apontar o comando suportado'
+end_case '--check removido é recusado antes de tocar no servidor'
 
 begin_case
 SCENARIO=success
 run_deploy bancario --forcar
 [ "$EXIT_CODE" -ne 0 ] || fail 'opção desconhecida deve sair não zero'
 assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --forcar' 'a saída deve nomear a opção recusada'
+assert_output 'Opção desconhecida: --forcar (use --sem-ci)' 'a saída deve nomear a opção recusada'
 end_case 'opção desconhecida para antes de qualquer coisa'
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

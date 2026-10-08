@@ -2,7 +2,6 @@
 # Implanta um projeto no VPS a partir do main do GitHub.
 #
 #   ./deploy.sh <projeto>           implanta
-#   ./deploy.sh <projeto> --check   só mostra o que mudaria, CI inclusa
 #   ./deploy.sh <projeto> --sem-ci  implanta mesmo sem CI verde (emergência)
 #   ./deploy.sh --status            estado de todos os projetos
 #
@@ -339,19 +338,17 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--check] [--sem-ci]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--sem-ci]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi
 
 projeto_info "$1"
-CHECK=
 SEM_CI=0
 for opcao in "${@:2}"; do
     case "$opcao" in
-        --check) CHECK=--check ;;
         --sem-ci) SEM_CI=1 ;;
-        *) echo "Opção desconhecida: $opcao (use --check ou --sem-ci)" >&2; exit 1 ;;
+        *) echo "Opção desconhecida: $opcao (use --sem-ci)" >&2; exit 1 ;;
     esac
 done
 cd "$APPS/$DIR"
@@ -400,12 +397,6 @@ elif conferir_ci "$novo"; then
 else
     ci_verde=0
     echo "  NÃO VERDE: $CI_RESUMO"
-fi
-
-if [ "$CHECK" = "--check" ]; then
-    echo
-    echo "(--check: nada foi alterado)"
-    exit 0
 fi
 
 # Recusar aqui não exige rollback: nada mudou no servidor ainda. A saída de

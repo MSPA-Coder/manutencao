@@ -65,7 +65,6 @@ verifica.
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda|portal|wealthfolio> --check
 ~/deploy.sh <bancario|conforto|megasena|renda|portal|wealthfolio>
 ~/deploy.sh <projeto> --sem-ci   # emergência: implanta sem CI verde e alerta
 ~/deploy.sh --status
@@ -74,8 +73,7 @@ No VPS, a interface é:
 Antes do fast-forward, o deploy pergunta à API do GitHub se todos os
 check-runs do commit novo terminaram verdes (`neutral` e `skipped` contam como
 verdes). CI vermelha, ainda rodando, ausente ou uma API que não responde: o
-deploy recusa antes de tocar no servidor, e o `--check` mostra o estado. O
-portal e o Wealthfolio ficam de fora porque são privados e a API anônima não
+deploy recusa antes de tocar no servidor. O portal e o Wealthfolio ficam de fora porque são privados e a API anônima não
 os alcança. `--sem-ci` existe para quando a API estiver fora justo na hora de
 um conserto, e avisa pelo alerta.
 

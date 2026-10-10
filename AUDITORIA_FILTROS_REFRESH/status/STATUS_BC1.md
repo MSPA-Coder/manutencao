@@ -1,0 +1,22 @@
+# STATUS BC1 (CRV) - FINAL
+
+- Aba: tab-19 (viewport 1366x900). Fechada ao fim.
+- Lote concluido: 36 de 38 casos executados (R001-R038 menos R014 e R033).
+- Contagem por codigo (36 linhas em status/ACHADOS_BC1.csv): R=29, OK=6 (R002, R007, R008, R024, R028, R037), S=1 (R027), F=0 (como codigo; F aparece em obs).
+- Perda de moeda/portfolio na URL apos POST com redirecionamento (F em obs): R004, R006, R011, R015, R019, R023, R025, R029, R031, R034. R009 perdeu portfolio_id=1 (sem controle visivel).
+- Nao executados:
+  - R014: a propria variacao esta marcada "nao testado" no lote; sem movimento de teste proprio.
+  - R033 (desativar modo discreto): ao chegar, o botao ja dizia "Ativar modo discreto", ou seja, o modo estava desativado. R012 tinha ativado (confirmado: "Desativar modo discreto" logo depois). Provavelmente alterado por outro agente (preferencia global do app). Nao alterei para nao interferir.
+- Sonda: nao instalada antes do clique no R032 (falha minha; leitura manual, anotada). Em varios casos a sonda foi lida pelo estado guardado na aba (sessionStorage) depois de recarga, em vez de reinjetar o script inteiro.
+- Substituicoes de ids (lote citava ids que nao existiam): carteira 3 -> carteira 1 (BRL); posicao 33 -> 1 ou 34/35; posicao de opcao 8 -> criada por mim; ticker 32 -> criado por mim (AUDBC1A); transacao 31 -> 36 (criada por mim); provento -> 145 (criado por mim).
+- Desfazer (feito):
+  - transacao 36 excluida (R023 editou a nota antes);
+  - provento 145 excluido;
+  - posicao de acoes 35 excluida;
+  - posicao de opcao 8 excluida (R031);
+  - contrato de opcao AUDBC1A (id 7) excluido;
+  - ticker AUDBC1B (id 34) excluido (R025);
+  - posicao 34 excluida (R005).
+- Sobrou sem excluir:
+  - ticker AUDBC1A (id 32, nome "[AUD-BC1] ticker opcao A"): o app o ARQUIVOU em vez de excluir, porque tinha historico. Estado "Arquivado", botao Reativar. Nao ha exclusao definitiva pela tela.
+- Notas de metodo: POST de formulario comum, link de menu, GET de filtros globais e voltar/F5 recarregam a pagina inteira; classifiquei R. Trocas HTMX (expandir, filtro de corretora nas analises) saem como OK. Expansoes (ativo/ano) nao vao para a URL (R002, R007, R027).

@@ -1,0 +1,72 @@
+tela,tela_nome,verbo,url_template,endpoint,rota_endpoint,respostas_endpoint,hx_target,hx_swap,hx_include,confirma,origem
+banking/attachments/,bank_statements:attachments_view,hx-post,bank_statements:create_attachment,bank_statements:create_attachment,banking/attachment/,redirect-sem-query,#attachment-results,innerHTML,,,banking/attachments.html:17
+banking/attachments/,bank_statements:attachments_view,hx-post,bank_statements:delete_attachment,bank_statements:delete_attachment,banking/attachment/<int:attachment_id>/delete/,redirect-sem-query,#attachment-results,innerHTML,,,banking/_attachments_table.html:22
+banking/balance/,bank_statements:atualizar_saldo,POST,bank_statements:atualizar_saldo,bank_statements:atualizar_saldo,banking/balance/,redirect+query?,,,,,banking/atualizar_saldo.html:24
+banking/balance/,bank_statements:atualizar_saldo,POST,bank_statements:atualizar_saldo,bank_statements:atualizar_saldo,banking/balance/,redirect+query?,,,,,banking/atualizar_saldo.html:62
+banking/import/<int:batch_id>/fatura/,bank_statements:fatura,POST,bank_statements:processar_fatura,bank_statements:processar_fatura,banking/import/<int:batch_id>/fatura/processar/,redirect-sem-query,,,,,banking/fatura.html:45
+banking/imports/,bank_statements:imports_view,hx-post,bank_statements:stage_imports,bank_statements:stage_imports,banking/imports/stage/,204 HX-Redirect redirect-sem-query,#import-results,innerHTML,,,banking/imports.html:28
+banking/imports/,bank_statements:imports_view,hx-post,bank_statements:undo_import,bank_statements:undo_import,banking/import/<int:batch_id>/undo/,redirect-sem-query,#import-results,innerHTML,,,banking/_import_table.html:40
+banking/imports/confirm/,bank_statements:confirm_imports,POST,bank_statements:process_imports,bank_statements:process_imports,banking/imports/confirm/process/,204 HX-Redirect redirect-sem-query,,,,,banking/pending_imports_confirm.html:22
+banking/reclassification/,bank_statements:reclassificacao,POST,bank_statements:reclassificacao,bank_statements:reclassificacao,banking/reclassification/,redirect+query,,,,,banking/reclassificacao.html:26
+banking/reclassification/,bank_statements:reclassificacao,POST,bank_statements:reclassificacao,bank_statements:reclassificacao,banking/reclassification/,redirect+query,,,,,banking/reclassificacao.html:139
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:bulk_action_lines,bank_statements:bulk_action_lines,banking/reconcile/bulk/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:9
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:bulk_action_lines,bank_statements:bulk_action_lines,banking/reconcile/bulk/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:28
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:reconcile,bank_statements:reconcile,banking/reconcile/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:95
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:create_entry_from_line,bank_statements:create_entry_from_line,banking/reconcile/create-entry/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:125
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:ignore_line,bank_statements:ignore_line,banking/ignore/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:150
+banking/reconciliation/,bank_statements:reconciliation_view,hx-post,bank_statements:undo_reconciliation,bank_statements:undo_reconciliation,banking/reconcile/undo/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:202
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:bulk_action_lines,bank_statements:bulk_action_lines,banking/reconcile/bulk/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:9
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:bulk_action_lines,bank_statements:bulk_action_lines,banking/reconcile/bulk/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:28
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:reconcile,bank_statements:reconcile,banking/reconcile/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:95
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:create_entry_from_line,bank_statements:create_entry_from_line,banking/reconcile/create-entry/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:125
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:ignore_line,bank_statements:ignore_line,banking/ignore/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:150
+banking/reconciliation/refresh/,bank_statements:reconciliation_refresh,hx-post,bank_statements:undo_reconciliation,bank_statements:undo_reconciliation,banking/reconcile/undo/,redirect-sem-query,#reconciliation-results,innerHTML,,,banking/_reconciliation_tables.html:202
+change-password/,accounts:change_password,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,accounts/change_password.html:20
+management/,management:management_view,POST,management:create_tag,management:create_tag,management/tag/,redirect+query?,,,,,management/partials/management_content.html:14
+management/,management:management_view,POST,management:create_project,management:create_project,management/project/,redirect+query?,,,,,management/partials/management_content.html:23
+management/,management:management_view,POST,management:save_budget,management:save_budget,management/budget/,redirect+query?,,,,,management/partials/management_content.html:33
+management/,management:management_view,POST,management:assign_tag,management:assign_tag,management/assign-tag/,redirect+query?,,,,,management/partials/management_content.html:62
+management/,management:management_view,POST,management:assign_project,management:assign_project,management/assign-project/,redirect+query?,,,,,management/partials/management_content.html:79
+management/,management:management_view,POST,management:retire_tag,management:retire_tag,management/tag/retire/,redirect+query?,,,,,management/partials/management_content.html:105
+management/,management:management_view,POST,management:retire_project,management:retire_project,management/project/retire/,redirect+query?,,,,,management/partials/management_content.html:108
+management/,management:management_view,POST,management:retire_budget,management:retire_budget,management/budget/retire/,redirect+query?,,,,,management/partials/management_content.html:111
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:72
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:89
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:113
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:129
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:143
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:179
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:222
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:234
+permissions/,core:permissions,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,permissions/index.html:250
+settings/,core:settings_home,POST,core:settings_update_password_policy,core:settings_update_password_policy,settings/password-policy/,redirect-sem-query,,,,,settings/index.html:24
+settings/,core:settings_home,POST,core:settings_update_login_lockout,core:settings_update_login_lockout,settings/login-lockout-policy/,redirect-sem-query,,,,,settings/index.html:50
+settings/,core:settings_home,POST,core:settings_update_recurring_projection,core:settings_update_recurring_projection,settings/recurring-projection/,redirect-sem-query,,,,,settings/index.html:68
+settings/,core:settings_home,POST,core:settings_run_recurring_projection,core:settings_run_recurring_projection,settings/recurring-projection/run/,redirect-sem-query,,,,,settings/index.html:85
+settings/,core:settings_home,POST,core:settings_update_recurring_projection,core:settings_update_recurring_projection,settings/recurring-projection/,redirect-sem-query,,,,,settings/index.html:97
+settings/database/,core:settings_database,POST,core:settings_health_check,core:settings_health_check,settings/database/health-check/,redirect-sem-query,,,,,settings/database.html:24
+settings/database/,core:settings_database,POST,core:settings_optimize,core:settings_optimize,settings/database/optimize/,redirect-sem-query,,,,,settings/database.html:28
+settings/monthly-close/,core:settings_monthly_close,POST,core:settings_close_month,core:settings_close_month,settings/month-close/close/,redirect+query,,,,,settings/monthly_close.html:70
+settings/monthly-close/,core:settings_monthly_close,POST,core:settings_reopen_month,core:settings_reopen_month,settings/month-close/reopen/,redirect+query,,,,,settings/monthly_close.html:122
+settings/profile/,core:settings_profile,POST,core:settings_update_theme,core:settings_update_theme,settings/theme/,redirect-sem-query,,,,,settings/profile.html:23
+settings/profile/,core:settings_profile,POST,core:settings_update_table_scroll,core:settings_update_table_scroll,settings/table-scroll/,redirect-sem-query,,,,,settings/profile.html:41
+tables/accounts/,banking:accounts_view,POST,banking:delete_account,banking:delete_account,tables/accounts/<int:account_id>/delete/,HX-Redirect redirect-sem-query,,,,,tables/_accounts_table.html:15
+tables/accounts/,banking:accounts_view,POST,banking:update_account,banking:update_account,tables/accounts/<int:account_id>/update/,HX-Redirect redirect-sem-query,,,,,tables/_accounts_table.html:27
+tables/accounts/,banking:accounts_view,POST,banking:create_account,banking:create_account,tables/accounts/create/,HX-Redirect redirect-sem-query,,,,,tables/accounts.html:24
+tables/banks/,banking:institutions_view,POST,banking:delete_institution,banking:delete_institution,tables/banks/<int:institution_id>/delete/,HX-Redirect redirect-sem-query,,,,,tables/_institutions_table.html:16
+tables/banks/,banking:institutions_view,POST,banking:update_institution,banking:update_institution,tables/banks/<int:institution_id>/update/,HX-Redirect redirect-sem-query,,,,,tables/_institutions_table.html:28
+tables/banks/,banking:institutions_view,POST,banking:create_institution,banking:create_institution,tables/banks/create/,HX-Redirect redirect-sem-query,,,,,tables/banks.html:24
+tables/categories/,transactions:categories_view,POST,transactions:delete_category,transactions:delete_category,tables/categories/<int:category_id>/delete/,HX-Redirect redirect-sem-query,,,,,tables/_categories_table.html:18
+tables/categories/,transactions:categories_view,POST,transactions:update_category,transactions:update_category,tables/categories/<int:category_id>/update/,HX-Redirect redirect-sem-query,,,,,tables/_categories_table.html:30
+tables/categories/,transactions:categories_view,POST,transactions:create_category,transactions:create_category,tables/categories/create/,HX-Redirect redirect-sem-query,,,,,tables/categories.html:24
+tables/categories/,transactions:categories_view,POST,transactions:create_category_group,transactions:create_category_group,tables/category-groups/create/,HX-Redirect redirect-sem-query,,,,,tables/categories.html:70
+tables/categories/,transactions:categories_view,POST,transactions:delete_category_group,transactions:delete_category_group,tables/category-groups/<int:group_id>/delete/,HX-Redirect redirect-sem-query,,,,,tables/categories.html:95
+tables/categories/,transactions:categories_view,POST,transactions:update_category_group,transactions:update_category_group,tables/category-groups/<int:group_id>/update/,HX-Redirect redirect-sem-query,,,,,tables/categories.html:107
+tables/owners/,accounts:owners_view,POST,accounts:delete_owner,accounts:delete_owner,tables/owners/<int:owner_id>/delete/,HX-Redirect redirect-sem-query,,,,,tables/_owners_table.html:8
+tables/owners/,accounts:owners_view,POST,accounts:update_owner,accounts:update_owner,tables/owners/<int:owner_id>/update/,HX-Redirect redirect-sem-query,,,,,tables/_owners_table.html:20
+tables/owners/,accounts:owners_view,POST,accounts:create_owner,accounts:create_owner,tables/owners/create/,HX-Redirect redirect-sem-query,,,,,tables/owners.html:24
+transactions/,transactions:transactions_view,POST,transactions:transaction_edit,transactions:transaction_edit,transaction/<int:tx_id>/,204 HX-Trigger redirect+query?,,,,,transactions/_table_body.html:80
+transactions/,transactions:transactions_view,POST,transactions:transaction_new,transactions:transaction_new,transaction/,204 HX-Trigger redirect+query?,,,,,transactions/index.html:85
+transactions/,transactions:transactions_view,POST,transactions:mark_realized,transactions:mark_realized,mark_realized/<int:tx_id>/,204 HX-Trigger redirect+query?,,,,,transactions/index.html:121
+transactions/,transactions:transactions_view,POST,transactions:mark_unrealized,transactions:mark_unrealized,mark_unrealized/<int:tx_id>/,204 HX-Trigger redirect+query?,,,,,transactions/index.html:148
+transactions/,transactions:transactions_view,POST,,?,logout/,HX-Redirect redirect-sem-query,,,,,transactions/index.html:166

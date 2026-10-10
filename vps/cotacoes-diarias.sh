@@ -27,6 +27,11 @@
 #     esconderia o Yahoo fora do ar, então é falha, que pede o deploy do CRV;
 #   - checkout sem contêiner web: o CRV está aqui e a série não está sendo
 #     mantida. Falha, e o `OnFailure=` da unidade alerta.
+#
+# DEPOIS DA IMPORTAÇÃO, desde 10/10/2026, o mesmo contêiner roda
+# `flask expurgar-outbox-v4`, que mantém o outbox do contrato patrimônio v4 em
+# 30 dias (ver `app/patrimonio/outbox.py` no CRV). Checkout sem o comando pula
+# essa parte sem falhar.
 
 set -euo pipefail
 
@@ -74,6 +79,18 @@ for importador in "$DIR_APPS"/*/"$IMPORTADOR_REL"; do
     else
         registrar "ERRO: $projeto: a importação falhou: $saida"
         falhas=$((falhas + 1))
+    fi
+
+    # Retenção do outbox do contrato patrimônio v4 (30 dias), no mesmo contêiner.
+    # Só onde o comando já existe: o CRV anterior a 10/10/2026 não o tem, e
+    # cobrar o deploy aqui faria a importação, que funcionou, sair com falha.
+    if grep -q -- 'expurgar-outbox-v4' "$checkout/app/cli.py" 2>/dev/null; then
+        if saida=$(docker exec "$container" flask --app app:create_app expurgar-outbox-v4 2>&1); then
+            registrar "$projeto: $saida"
+        else
+            registrar "ERRO: $projeto: o expurgo do outbox v4 falhou: $saida"
+            falhas=$((falhas + 1))
+        fi
     fi
 done
 

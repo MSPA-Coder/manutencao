@@ -228,6 +228,33 @@ assert_eq 0 "$EXIT_CODE" 'cópia antiga com substituta pode sair'
     || fail 'a cópia nova não podia sair'
 end_case 'apagar remove a cópia de volume que já tem substituta'
 
+# --------------------------------------------------------------------------
+# Arquivo que não é backup do projeto (10/10/2026)
+
+begin_case
+# O caso real: um dump manual numa pasta própria, sem `.sha256`. O BackupRestore
+# recusa a sincronização INTEIRA diante de uma linha que não conhece.
+com_dump mega_sena 20261010_060012
+mkdir -p "$DEST_TMP/manual"
+printf 'x' >"$DEST_TMP/manual/crv_antes_excluir_simulada_20261009_165006.dump"
+printf 'x' >"$DEST_TMP/mega_sena/mega_sena_antes_de_mexer.dump"
+roda listar tudo
+assert_eq 0 "$EXIT_CODE" 'listar sai zero'
+assert_eq 'mega_sena/mega_sena_banco_20261010_060012.dump 24 abc123' "$(cat "$SAIDA")" \
+    'só o que o backup-db.sh produziu sai na listagem'
+end_case 'listar não anuncia dump manual, nem em pasta própria nem na do projeto'
+
+begin_case
+# O dump manual é o arquivo mais NOVO da pasta. Contado como "mais recente", ele
+# deixaria o último dump de verdade sair do servidor.
+com_dump mega_sena 20261009_060000
+idade "$DEST_TMP/mega_sena/mega_sena_banco_20261009_060000.dump" 86400
+printf 'x' >"$DEST_TMP/mega_sena/mega_sena_antes_de_mexer.dump"
+roda apagar mega_sena/mega_sena_banco_20261009_060000.dump
+[ "$EXIT_CODE" -ne 0 ] || fail 'o último dump saiu porque havia um dump manual mais novo'
+[ -e "$DEST_TMP/mega_sena/mega_sena_banco_20261009_060000.dump" ] || fail 'o dump sumiu'
+end_case 'dump manual mais novo não libera a remoção do último dump'
+
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

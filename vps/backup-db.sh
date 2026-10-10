@@ -77,6 +77,39 @@ descobrir_projetos() {
     done | sort
 }
 
+# Só é backup de um projeto o nome que este script produz para ele
+# (`fazer_dump` e `fazer_copia`): `<slug>_banco_<carimbo>.dump` e
+# `<slug>_volume_<carimbo>.tar.gz`. `eh_backup <pasta> <ext> <arquivo>`.
+#
+# POR QUE (10/10/2026): um dump manual deixado em `~/backups/manual/` fez o
+# ciclo acusar "manual tem backup anterior e nenhum contêiner postgres" e sair
+# com falha, e o mesmo arquivo derrubou a sincronização do BackupRestore (ver
+# `eh_backup_do_projeto` no `backup-agent.sh`, que segue a mesma regra). Dump
+# manual mora em `~/backups-arquivados/`; se cair aqui, não vira histórico de
+# projeto, não conta como o mais recente e a retenção não o apaga.
+eh_backup() {
+    local slug tipo
+    slug=$(basename "$1")
+    case "$2" in
+        dump)   tipo=banco ;;
+        tar.gz) tipo=volume ;;
+        *)      return 1 ;;
+    esac
+    [[ "$(basename "$3")" =~ ^${slug}_${tipo}_[0-9]{8}_[0-9]{6}\.${2//./\\.}$ ]]
+}
+
+# Os backups de uma pasta, do mais novo para o mais velho, um por linha.
+# `backups_do_projeto <pasta> <ext>`.
+backups_do_projeto() {
+    local arq
+    # shellcheck disable=SC2012  # o `ls -t` só ordena; quem decide é o nome que
+    # passa por `eh_backup` (slug e carimbo, sem espaço nem quebra de linha).
+    ls -1t "$1"/*."$2" 2>/dev/null | while IFS= read -r arq; do
+        eh_backup "$1" "$2" "$arq" || continue
+        printf '%s\n' "$arq"
+    done || true
+}
+
 # Projetos que JÁ tiveram dump e agora não têm contêiner rodando.
 #
 # É o único caso que a descoberta sozinha não enxerga: contêiner parado não
@@ -85,15 +118,16 @@ descobrir_projetos() {
 # aviso que a lista fixa dava — e amplia, porque vale para qualquer projeto já
 # visto, e não só para os que alguém lembrou de escrever.
 #
-# Pasta sem nenhum `.dump` não conta: é resto de tentativa, não banco perdido.
-# A mesma pergunta vale para os volumes, trocando a extensão (`tar.gz`) e a
-# lista do que está rodando (a de `descobrir_volumes`).
+# Pasta sem nenhum backup do projeto não conta: é resto de tentativa, ou dump
+# manual (ver `eh_backup`), não banco perdido. A mesma pergunta vale para os
+# volumes, trocando a extensão (`tar.gz`) e a lista do que está rodando (a de
+# `descobrir_volumes`).
 descobrir_desaparecidos() {
     local rodando="$1" ext="$2" dir slug
     for dir in "$DEST"/*/; do
         [ -d "$dir" ] || continue
         slug=$(basename "$dir")
-        compgen -G "$dir/*.$ext" >/dev/null || continue
+        [ -n "$(backups_do_projeto "$dir" "$ext")" ] || continue
         printf '%s\n' "$rodando" | grep -q "^${slug}:" && continue
         printf '%s\n' "$slug"
     done
@@ -146,10 +180,7 @@ lsn_atual() { consultar "$1" 'SELECT pg_current_wal_lsn()'; }
 motivo_backup() {
     local dir="$1" lsn="$2" ultimo guardado idade_s idade_d
 
-    # shellcheck disable=SC2012  # este script é quem nomeia os dumps, e o nome
-    # é slug + carimbo de tempo: sem espaço, sem quebra de linha, nada que o
-    # `ls` possa quebrar. Vale para as quatro ocorrências deste arquivo.
-    ultimo=$(ls -1t "$dir"/*.dump 2>/dev/null | head -1 || true)
+    ultimo=$(backups_do_projeto "$dir" dump | head -1 || true)
     [ -z "$ultimo" ] && { echo "primeiro backup"; return 0; }
 
     [ -r "$dir/.ultimo.lsn" ] || { echo "marcador de LSN ausente"; return 0; }
@@ -172,10 +203,8 @@ motivo_backup() {
 # cada tipo é o piso, e um não protege o outro.
 aplicar_retencao() {
     local dir="$1" ext="$2" mais_novo
-    # shellcheck disable=SC2012  # ver o motivo em `motivo_backup`. Aqui há uma
-    # segunda rede: quem protege o dump mais novo é o `-ef` abaixo, que compara
-    # inode e não nome.
-    mais_novo=$(ls -1t "$dir"/*."$ext" 2>/dev/null | head -1 || true)
+    # Quem protege o mais novo é o `-ef` abaixo, que compara inode e não nome.
+    mais_novo=$(backups_do_projeto "$dir" "$ext" | head -1 || true)
     [ -z "$mais_novo" ] && return 0
 
     # O `-ef` é o piso: o mais recente nunca sai, por mais velho que seja. Era
@@ -184,6 +213,7 @@ aplicar_retencao() {
     # recusava a opção e a retenção não removia nada, sem erro.
     while IFS= read -r -d '' velho; do
         [ "$velho" -ef "$mais_novo" ] && continue
+        eh_backup "$dir" "$ext" "$velho" || continue
         rm -f "$velho" "$velho.sha256"
         log "  retenção: removido $(basename "$velho")"
     done < <(find "$dir" -maxdepth 1 -name "*.$ext" -mtime +"$RETENCAO_DIAS" \
@@ -321,8 +351,7 @@ copiar_volume() {
 # Fora isso, vale a regra dos dumps: na dúvida, grava.
 motivo_copia() {
     local dir="$1" sha="$2" ultimo idade_d
-    # shellcheck disable=SC2012  # ver o motivo em `motivo_backup`.
-    ultimo=$(ls -1t "$dir"/*.tar.gz 2>/dev/null | head -1 || true)
+    ultimo=$(backups_do_projeto "$dir" tar.gz | head -1 || true)
     [ -z "$ultimo" ] && { echo "primeira cópia"; return 0; }
 
     idade_d=$(( ( $(date +%s) - $(stat -c %Y "$ultimo") ) / 86400 ))
@@ -505,14 +534,15 @@ estado() {
     for slug in $(slugs_conhecidos); do
         local dir="$DEST/$slug"
         local n ultimo quando tam conf
-        # Contagem por glob: `ls | wc -l` com pipefail dispara o ramo de erro
-        # quando a pasta está vazia, e a contagem sai duplicada.
+        # Só os backups do projeto (ver `eh_backup`); `mapfile` e não
+        # `ls | wc -l`, que com pipefail dispara o ramo de erro quando a pasta
+        # está vazia e a contagem sai duplicada.
         local -a arquivos=()
-        shopt -s nullglob; arquivos=("$dir"/*.dump "$dir"/*.tar.gz); shopt -u nullglob
+        mapfile -t arquivos < <(backups_do_projeto "$dir" dump; backups_do_projeto "$dir" tar.gz)
         n=${#arquivos[@]}
         ultimo=""
         if [ "$n" -gt 0 ]; then
-            # shellcheck disable=SC2012  # ver o motivo em `motivo_backup`.
+            # shellcheck disable=SC2012  # nomes já filtrados por `eh_backup`.
             ultimo=$(ls -1t "${arquivos[@]}" 2>/dev/null | head -1 || true)
         fi
         if [ -n "$ultimo" ]; then

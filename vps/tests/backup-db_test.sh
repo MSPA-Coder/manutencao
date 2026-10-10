@@ -245,6 +245,18 @@ assert_saida 'conforto_termico tem backup anterior' 'banco com histórico e sem 
 end_case 'banco que tinha backup e sumiu conta como falha'
 
 begin_case
+# 10/10/2026: um dump manual em `~/backups/manual/` fez o ciclo sair com falha
+# ("manual tem backup anterior") e disparar o OnFailure= do serviço.
+contêiner mp-portal-postgres-1 postgres:17-alpine mp-portal
+mkdir -p "$DEST_TMP/manual"
+printf 'x' >"$DEST_TMP/manual/crv_antes_excluir_simulada_20261009_165006.dump"
+roda
+assert_eq 0 "$EXIT_CODE" 'pasta com dump manual não é banco desaparecido'
+assert_sem_saida 'manual tem backup anterior' 'dump manual não vira histórico de projeto'
+assert_saida 'ciclo concluído sem falhas' 'o ciclo termina limpo'
+end_case 'dump manual em pasta própria não é banco desaparecido'
+
+begin_case
 contêiner mp-portal-postgres-1 postgres:17-alpine mp-portal
 roda
 assert_eq 0 "$EXIT_CODE" 'VPS novo com um banco só é operação normal'

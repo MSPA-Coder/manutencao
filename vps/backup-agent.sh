@@ -91,24 +91,47 @@ resolver_dump() {
     printf '%s' "$real"
 }
 
+# Só é backup de um projeto o nome que o `backup-db.sh` produz para ele:
+# `<slug>_banco_<carimbo>.dump` ou `<slug>_volume_<carimbo>.tar.gz`, o mesmo
+# formato que `resolver_dump` exige de quem pede.
+#
+# POR QUE (10/10/2026): um dump manual deixado em `~/backups/manual/`
+# (`crv_antes_excluir_simulada_<carimbo>.dump`, sem `.sha256`) saiu no `listar`,
+# o BackupRestore recusou a linha e, com ela, a sincronização INTEIRA: nenhum
+# dump de nenhum projeto deste servidor foi baixado naquela noite. O `listar`
+# anunciava um arquivo que o próprio `enviar` recusaria. E o `mais_recente`
+# contava qualquer `*.dump` da pasta: um dump manual mais novo ali dentro
+# deixaria o `apagar` remover o último backup de verdade.
+eh_backup_do_projeto() {
+    local slug="$1" arquivo="$2"
+    [[ "$arquivo" =~ ^${slug}_(banco_[0-9]{8}_[0-9]{6}\.dump|volume_[0-9]{8}_[0-9]{6}\.tar\.gz)$ ]]
+}
+
 # O mais recente do MESMO TIPO (`dump` ou `tar.gz`): é o piso que o
 # `backup-db.sh` mantém para cada um, e uma cópia de volume mais nova não pode
 # liberar a remoção do último dump, nem o contrário.
 mais_recente() {
-    local dir="$1" ext="$2"
-    # shellcheck disable=SC2012  # os nomes são gerados por backup-db.sh (slug e
-    # carimbo de tempo, sem espaço nem quebra de linha), então o `ls` não tem o
-    # que quebrar. A alternativa com `find -printf '%T@ %p'` compraria robustez
-    # contra nomes que este diretório nunca terá, ao preço de ilegibilidade na
-    # linha que decide qual dump é o mais novo.
-    ls -1t "$dir"/*."$ext" 2>/dev/null | head -1 || true
+    local dir="$1" ext="$2" slug arq
+    slug=$(basename "$dir")
+    # shellcheck disable=SC2012  # o `ls -t` só ordena; o que vale é o nome que
+    # passa por `eh_backup_do_projeto` (slug e carimbo, sem espaço nem quebra de
+    # linha). A alternativa com `find -printf '%T@ %p'` compraria robustez
+    # contra nomes que não contam, ao preço de ilegibilidade na linha que decide
+    # qual dump é o mais novo.
+    ls -1t "$dir"/*."$ext" 2>/dev/null | while IFS= read -r arq; do
+        eh_backup_do_projeto "$slug" "$(basename "$arq")" || continue
+        printf '%s\n' "$arq"
+        break
+    done || true
 }
 
 # `listar` sem argumento mostra só os dumps, de propósito: o BackupRestore que
 # já está instalado recusa a sincronização INTEIRA quando encontra uma linha
 # fora do formato de dump. Quem sabe ler as cópias de volume pede `listar
 # tudo`; um agente antigo ignora o argumento e responde só os dumps, então
-# cliente e agente podem ser atualizados em qualquer ordem.
+# cliente e agente podem ser atualizados em qualquer ordem. Pelo mesmo motivo,
+# arquivo que não é backup do projeto não sai na listagem (ver
+# `eh_backup_do_projeto`).
 verbo_listar() {
     local modo="${1:-}" slug dir arq tam hash ext
     local -a extensoes=(dump)
@@ -124,6 +147,7 @@ verbo_listar() {
         for ext in "${extensoes[@]}"; do
             for arq in "$dir"/*."$ext"; do
                 [ -e "$arq" ] || continue
+                eh_backup_do_projeto "$slug" "$(basename "$arq")" || continue
                 tam=$(stat -c %s "$arq")
                 hash=$(cat "$arq.sha256" 2>/dev/null || echo "sem-hash")
                 printf '%s/%s %s %s\n' "$slug" "$(basename "$arq")" "$tam" "$hash"

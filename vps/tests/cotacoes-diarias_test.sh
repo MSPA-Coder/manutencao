@@ -10,7 +10,9 @@
 #     sem a opção -- rodar assim esconderia o Yahoo fora do ar;
 #   - CRV sem contêiner web: falha, porque a série deixaria de ser mantida em
 #     silêncio;
-#   - importação que reprova dentro do contêiner, e Docker indisponível: falha.
+#   - importação que reprova dentro do contêiner, e Docker indisponível: falha;
+#   - desde 10/10/2026, o expurgo do outbox v4 roda depois da importação, no
+#     mesmo contêiner, só onde o comando existe; se reprova, é falha.
 #
 # `docker` e `logger` são scripts falsos no PATH, e o script exercitado é o
 # mesmo arquivo que roda no servidor.
@@ -54,6 +56,7 @@ begin_case() {
     : >"$CASE_TMP/containers"
     : >"$CHAMADAS"
     EXEC_SAIDA=0
+    EXPURGO_SAIDA=0
     DOCKER_PS_FALHA=0
 }
 
@@ -68,16 +71,20 @@ end_case() {
 }
 
 # Um checkout em ~/apps. `crv` traz o importador e um comando que aceita
-# `--estrito`; `crv-antigo` traz o importador e um comando sem a opção.
+# `--estrito`; `crv-com-expurgo` traz também o `expurgar-outbox-v4`;
+# `crv-antigo` traz o importador e um comando sem a opção.
 checkout() {
     local nome=$1 tipo=${2:-}
     mkdir -p "$CASE_TMP/apps/$nome"
     case "$tipo" in
-        crv|crv-antigo)
+        crv|crv-com-expurgo|crv-antigo)
             mkdir -p "$CASE_TMP/apps/$nome/app/quotes"
             : >"$CASE_TMP/apps/$nome/app/quotes/history_import.py"
             if [ "$tipo" = crv ]; then
                 printf '@click.option(\n    "--estrito",\n    is_flag=True,\n)\n' \
+                    >"$CASE_TMP/apps/$nome/app/cli.py"
+            elif [ "$tipo" = crv-com-expurgo ]; then
+                printf '@click.option(\n    "--estrito",\n)\n@click.command("expurgar-outbox-v4")\n' \
                     >"$CASE_TMP/apps/$nome/app/cli.py"
             else
                 printf '@click.command("import-position-history")\n' \
@@ -114,6 +121,12 @@ case "$1" in
         exit 0
         ;;
     exec)
+        case "$*" in
+            *expurgar-outbox-v4*)
+                printf '7 linha(s) do outbox v4 com mais de 30 dia(s) removida(s).\n'
+                exit "$EXPURGO_SAIDA"
+                ;;
+        esac
         printf '1234 daily quotes imported for 9 tickers.\n'
         if [ "$EXEC_SAIDA" != 0 ]; then
             printf 'Error: Ainda detidos ou de referência, sem série: PETR4\n' >&2
@@ -130,7 +143,7 @@ EOF
 roda() {
     instalar_falsos
     CONTAINERS_FILE="$CASE_TMP/containers" CHAMADAS="$CHAMADAS" EXEC_SAIDA="$EXEC_SAIDA" \
-        DOCKER_PS_FALHA="$DOCKER_PS_FALHA" \
+        EXPURGO_SAIDA="$EXPURGO_SAIDA" DOCKER_PS_FALHA="$DOCKER_PS_FALHA" \
         DIR_APPS="$CASE_TMP/apps" PATH="$CASE_TMP/bin:$PATH" \
         bash "$COTACOES" >"$SAIDA" 2>&1
     CODIGO=$?
@@ -205,6 +218,34 @@ assert_eq 1 "$CODIGO" 'Docker indisponível é falha'
 assert_eq 0 "$(execs)" 'sem consultar o Docker, nada é executado'
 assert_saida 'não foi possível consultar o Docker' 'a falha diz o motivo'
 end_case 'Docker indisponível: falha com o motivo'
+
+begin_case
+checkout controle-renda-variavel crv-com-expurgo
+em_execucao controle-renda-variavel-web-1 controle-renda-variavel web
+roda
+assert_eq 0 "$CODIGO" 'importação e expurgo sem erro saem com sucesso'
+grep -Fq 'exec controle-renda-variavel-web-1 flask --app app:create_app expurgar-outbox-v4' "$CHAMADAS" \
+    || fail 'o expurgo roda no contêiner web do CRV'
+assert_eq 2 "$(execs)" 'a importação e o expurgo, uma vez cada'
+assert_saida 'controle-renda-variavel: 7 linha(s) do outbox v4' 'a saída do expurgo é registrada'
+end_case 'CRV com o comando: o expurgo do outbox roda depois da importação'
+
+begin_case
+checkout controle-renda-variavel crv
+em_execucao controle-renda-variavel-web-1 controle-renda-variavel web
+roda
+assert_eq 0 "$CODIGO" 'CRV sem o comando de expurgo não é falha'
+grep -Fq 'expurgar-outbox-v4' "$CHAMADAS" && fail 'sem o comando no checkout, o expurgo não é chamado'
+end_case 'CRV anterior ao expurgo: pula o expurgo sem falhar'
+
+begin_case
+checkout controle-renda-variavel crv-com-expurgo
+em_execucao controle-renda-variavel-web-1 controle-renda-variavel web
+EXPURGO_SAIDA=1
+roda
+assert_eq 1 "$CODIGO" 'expurgo que reprova é falha'
+assert_saida 'o expurgo do outbox v4 falhou' 'a falha do expurgo é registrada'
+end_case 'expurgo que reprova dentro do contêiner: falha'
 
 printf '\n%d caso(s), %d falha(s)\n' "$TOTAL" "$FAILED"
 [ "$FAILED" -eq 0 ]

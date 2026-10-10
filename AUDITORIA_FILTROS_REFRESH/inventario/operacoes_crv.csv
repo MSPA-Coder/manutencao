@@ -1,0 +1,66 @@
+tela,tela_nome,verbo,url_template,endpoint,rota_endpoint,respostas_endpoint,hx_target,hx_swap,hx_include,confirma,origem
+/,portfolio.index,hx-post,portfolio.rtd_service_partial,portfolio.rtd_service_partial,/partials/rtd-service,render,closest label,outerHTML,,,partials/collector.html:65
+/,portfolio.index,POST,portfolio.delete_position_movement,portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,redirect-sem-query,,,,,partials/position_movements.html:39
+/dividends/<int:dividend_id>/edit,portfolio.edit_dividend,POST,portfolio.update_dividend,portfolio.update_dividend,/dividends/<int:dividend_id>,redirect-sem-query,,,,,dividend_form.html:5
+/dividends/<int:dividend_id>/edit,portfolio.edit_dividend,POST,portfolio.delete_dividend,portfolio.delete_dividend,/dividends/<int:dividend_id>/delete,redirect-sem-query,,,,,dividend_form.html:42
+/dividends/import,portfolio.import_dividends,POST,portfolio.import_dividends,portfolio.import_dividends,/dividends/import,redirect-sem-query,,,,,dividend_import.html:4
+/dividends/new,portfolio.new_dividend,POST,portfolio.update_dividend,portfolio.update_dividend,/dividends/<int:dividend_id>,redirect-sem-query,,,,,dividend_form.html:5
+/dividends/new,portfolio.new_dividend,POST,portfolio.delete_dividend,portfolio.delete_dividend,/dividends/<int:dividend_id>/delete,redirect-sem-query,,,,,dividend_form.html:42
+/login,auth.login,POST,auth.login,auth.login,/login,redirect+query redirect-sem-query,,,,,login.html:18
+/minha-senha,account.change_password,POST,auth.logout,auth.logout,/logout,redirect-sem-query,,,,,change_password.html:19
+/minha-senha,account.change_password,POST,account.change_password,account.change_password,/minha-senha,redirect-sem-query,,,,,change_password.html:54
+/options,options.index,POST,portfolio.delete_position_movement,portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,redirect-sem-query,,,,,partials/position_movements.html:39
+/options/new,options.new_position,POST,options.update_position,options.update_position,/options/positions/<int:position_id>,redirect-sem-query,,,,,option_form.html:5
+/options/new,options.new_position,POST,options.delete_position,options.delete_position,/options/positions/<int:position_id>/delete,redirect-sem-query,,,,,option_form.html:60
+/options/positions/<int:position_id>/close,options.close_position_form,POST,options.close_position,options.close_position,/options/positions/<int:position_id>/close,redirect-sem-query,,,,,close_option_form.html:4
+/options/positions/<int:position_id>/close,options.close_position_form,POST,portfolio.delete_position_movement,portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,redirect-sem-query,,,,,partials/position_movements.html:39
+/options/positions/<int:position_id>/edit,options.edit_position,POST,options.update_position,options.update_position,/options/positions/<int:position_id>,redirect-sem-query,,,,,option_form.html:5
+/options/positions/<int:position_id>/edit,options.edit_position,POST,options.delete_position,options.delete_position,/options/positions/<int:position_id>/delete,redirect-sem-query,,,,,option_form.html:60
+/partials/collector-heartbeat,portfolio.collector_heartbeat_partial,hx-post,portfolio.rtd_service_partial,portfolio.rtd_service_partial,/partials/rtd-service,render,closest label,outerHTML,,,partials/collector.html:65
+/partials/rtd-service,portfolio.rtd_service_partial,hx-post,portfolio.rtd_service_partial,portfolio.rtd_service_partial,/partials/rtd-service,render,closest label,outerHTML,,,partials/collector.html:65
+/positions/<int:position_id>,portfolio.position_detail,POST,portfolio.delete_position_movement,portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,redirect-sem-query,,,,,partials/position_movements.html:39
+/positions/<int:position_id>/close,portfolio.close_position_form,POST,portfolio.close_position,portfolio.close_position,/positions/<int:position_id>/close,redirect-sem-query,,,,,close_position_form.html:4
+/positions/<int:position_id>/close,portfolio.close_position_form,POST,portfolio.delete_position_movement,portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,redirect-sem-query,,,,,partials/position_movements.html:39
+/positions/<int:position_id>/edit,portfolio.edit_position,POST,portfolio.update_position,portfolio.update_position,/positions/<int:position_id>,redirect-sem-query,,,,,position_form.html:5
+/positions/<int:position_id>/edit,portfolio.edit_position,POST,portfolio.delete_position,portfolio.delete_position,/positions/<int:position_id>/delete,redirect-sem-query,,,,,position_form.html:83
+/positions/<int:position_id>/movements/<int:movement_id>/edit,portfolio.edit_position_movement,POST,portfolio.update_position_movement,portfolio.update_position_movement,/positions/<int:position_id>/movements/<int:movement_id>,redirect-sem-query,,,,,position_movement_form.html:4
+/positions/new,portfolio.new_position,POST,portfolio.update_position,portfolio.update_position,/positions/<int:position_id>,redirect-sem-query,,,,,position_form.html:5
+/positions/new,portfolio.new_position,POST,portfolio.delete_position,portfolio.delete_position,/positions/<int:position_id>/delete,redirect-sem-query,,,,,position_form.html:83
+/preferences,portfolio.preferences,POST,,?,,,,,,,preferences.html:4
+/quotes,portfolio.quote_history,hx-post,portfolio.import_quote_history,portfolio.import_quote_history,/quotes/import,redirect+query,#quotes-results,outerHTML,,sim,partials/quotes_results.html:139
+/quotes,portfolio.quote_history,hx-post,portfolio.import_position_quote_history,portfolio.import_position_quote_history,/quotes/import-position-history,redirect+query,#quotes-results,outerHTML,,sim,partials/quotes_results.html:154
+/quotes,portfolio.quote_history,POST,portfolio.create_quote_history_entry,portfolio.create_quote_history_entry,/quotes,redirect+query,,,,,partials/quotes_results.html:170
+/quotes,portfolio.quote_history,hx-post,portfolio.create_quote_history_entry,portfolio.create_quote_history_entry,/quotes,redirect+query,#quotes-results,outerHTML,closest form,sim,partials/quotes_results.html:186
+/quotes,portfolio.quote_history,hx-post,portfolio.delete_quote_history_by_date,portfolio.delete_quote_history_by_date,/quotes/delete-by-date,redirect+query,#quotes-results,outerHTML,closest form,sim,partials/quotes_results.html:190
+/settings,portfolio.settings,POST,,?,,,,,,,settings.html:6
+/settings,portfolio.settings,hx-post,portfolio.rtd_service_partial,portfolio.rtd_service_partial,/partials/rtd-service,render,closest label,outerHTML,,,partials/collector.html:65
+/tables/brokers,portfolio.table_brokers,POST,portfolio.create_broker,portfolio.create_broker,/tables/brokers,redirect-sem-query,,,,,table_brokers.html:6
+/tables/brokers,portfolio.table_brokers,POST,portfolio.update_broker,portfolio.update_broker,/tables/brokers/<int:broker_id>,redirect-sem-query,,,,,table_brokers.html:21
+/tables/brokers,portfolio.table_brokers,POST,portfolio.delete_broker,portfolio.delete_broker,/tables/brokers/<int:broker_id>/delete,redirect-sem-query,,,,,table_brokers.html:32
+/tables/brokers,portfolio.table_brokers,POST,portfolio.activate_broker,portfolio.activate_broker,/tables/brokers/<int:broker_id>/activate,redirect-sem-query,,,,,table_brokers.html:39
+/tables/options/contracts,options.table_contracts,POST,options.create_contract,options.create_contract,/tables/options/contracts,redirect-sem-query,,,,,table_contracts.html:6
+/tables/options/contracts,options.table_contracts,POST,options.update_contract,options.update_contract,/tables/options/contracts/<int:contract_id>,redirect-sem-query,,,,,table_contracts.html:35
+/tables/options/contracts,options.table_contracts,POST,options.delete_contract,options.delete_contract,/tables/options/contracts/<int:contract_id>/delete,redirect-sem-query,,,,,table_contracts.html:56
+/tables/options/expirations,options.table_expirations,POST,options.create_expiration,options.create_expiration,/tables/options/expirations,redirect-sem-query,,,,,table_expirations.html:6
+/tables/options/expirations,options.table_expirations,POST,options.update_expiration,options.update_expiration,/tables/options/expirations/<int:expiration_id>,redirect-sem-query,,,,,table_expirations.html:22
+/tables/options/expirations,options.table_expirations,POST,options.delete_expiration,options.delete_expiration,/tables/options/expirations/<int:expiration_id>/delete,redirect-sem-query,,,,,table_expirations.html:33
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.create_portfolio,portfolio.create_portfolio,/tables/portfolios,redirect-sem-query,#portfolios-results,outerHTML,,sim,partials/portfolios_results.html:17
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.update_portfolio,portfolio.update_portfolio,/tables/portfolios/<int:portfolio_id>,redirect-sem-query,#portfolios-results,outerHTML,,sim,partials/portfolios_results.html:47
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.delete_portfolio,portfolio.delete_portfolio,/tables/portfolios/<int:portfolio_id>/delete,redirect-sem-query,#portfolios-results,outerHTML,,sim,partials/portfolios_results.html:68
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.activate_portfolio,portfolio.activate_portfolio,/tables/portfolios/<int:portfolio_id>/activate,redirect-sem-query,#portfolios-results,outerHTML,,,partials/portfolios_results.html:77
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.remove_portfolio_ticker,portfolio.remove_portfolio_ticker,/tables/portfolios/<int:portfolio_id>/tickers/<int:ticker_id>/delete,redirect-sem-query,#portfolios-results,outerHTML,,sim,partials/portfolios_results.html:120
+/tables/portfolios,portfolio.table_portfolios,hx-post,portfolio.add_portfolio_ticker,portfolio.add_portfolio_ticker,/tables/portfolios/<int:portfolio_id>/tickers,redirect-sem-query,#portfolios-results,outerHTML,,sim,partials/portfolios_results.html:144
+/tables/tickers,portfolio.table_tickers,POST,portfolio.create_ticker,portfolio.create_ticker,/tables/tickers,redirect-sem-query,,,,,table_tickers.html:6
+/tables/tickers,portfolio.table_tickers,POST,portfolio.update_ticker,portfolio.update_ticker,/tables/tickers/<int:ticker_id>,redirect-sem-query,,,,,table_tickers.html:41
+/tables/tickers,portfolio.table_tickers,POST,portfolio.delete_ticker,portfolio.delete_ticker,/tables/tickers/<int:ticker_id>/delete,redirect-sem-query,,,,,table_tickers.html:65
+/tables/tickers,portfolio.table_tickers,POST,portfolio.activate_ticker,portfolio.activate_ticker,/tables/tickers/<int:ticker_id>/activate,redirect-sem-query,,,,,table_tickers.html:72
+/transactions,portfolio.transactions,POST,portfolio.delete_transaction,portfolio.delete_transaction,/transactions/<int:transaction_id>/delete,redirect-sem-query,,,,,partials/transactions_results.html:56
+/transactions,portfolio.transactions,POST,portfolio.delete_transaction,portfolio.delete_transaction,/transactions/<int:transaction_id>/delete,redirect-sem-query,,,,,partials/transactions_results.html:69
+/transactions/<int:transaction_id>/edit,portfolio.edit_transaction,POST,portfolio.update_transaction,portfolio.update_transaction,/transactions/<int:transaction_id>,redirect-sem-query,,,,,transaction_form.html:5
+/transactions/<int:transaction_id>/edit,portfolio.edit_transaction,POST,portfolio.delete_transaction,portfolio.delete_transaction,/transactions/<int:transaction_id>/delete,redirect-sem-query,,,,,transaction_form.html:48
+/transactions/new,portfolio.new_transaction,POST,portfolio.update_transaction,portfolio.update_transaction,/transactions/<int:transaction_id>,redirect-sem-query,,,,,transaction_form.html:5
+/transactions/new,portfolio.new_transaction,POST,portfolio.delete_transaction,portfolio.delete_transaction,/transactions/<int:transaction_id>/delete,redirect-sem-query,,,,,transaction_form.html:48
+/users,users.index,hx-post,users.create,users.create,/users,render,#users-results,outerHTML,,sim,users.html:14
+/users,users.index,hx-post,users.edit,users.edit,/users/<int:user_id>/edit,render,#users-results,outerHTML,,sim,partials/users_results.html:18
+/users,users.index,hx-post,users.reset_user_password,users.reset_user_password,/users/<int:user_id>/reset-password,render,#users-results,outerHTML,,sim,partials/users_results.html:30
+/users,users.index,hx-post,users.change_active,users.change_active,/users/<int:user_id>/active,render,#users-results,outerHTML,,sim,partials/users_results.html:41

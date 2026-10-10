@@ -1,0 +1,21 @@
+# STATUS A1 (CB) - lote concluído
+
+- Aba: tab-2 (viewport 1366x900; resetado e fechado no fim).
+- Caso atual: nenhum. Lote encerrado.
+- Casos feitos: telas 1 a 5 (Lançamentos, Operações, Dashboard, Relatório de próximos movimentos, Projeções), com as variações possíveis em cada uma.
+- Contagem (ACHADOS_A1.csv, 56 linhas): OK 36, R 8, M 5, F 6, P 1, C 0, S 0, U 0.
+- Limpeza: nenhum [AUD-A1] sobrou. Verificado por leitura de Nov/2026 a Mar/2027 na conta 6 e Nov/2026 na conta 3. A transferência não criou registro.
+  - Excluídos por mim (só [AUD-A1]): lançamento simples (1.1/1.5x), parcelado (escopos "somente este" e "este e próximos"), recorrente (escopo "todos"). Nenhum lançamento pré-existente foi tocado.
+- Notas de método:
+  - Clique em Cancelar/Voltar às vezes não teve efeito na primeira vez; repetido, teve.
+  - Voltar (back) do histórico mostra snapshot anterior à operação; recarga manual mostra o estado real.
+  - Algumas ações de menu lateral não alcançaram o link pelo ref (fora da área visível): menu da tela 2 e 3 não testado; menu da tela 1 testado (Dashboard -> Lançamentos).
+  - Drilldowns dos relatórios foram verificados abrindo o href (clique não alcançou o elemento). Relatórios (4 e 5) e 2.X1 usados como arrival check.
+- Achados principais:
+  - Coluna Tipo some quando se aplica Categoria (P). Filtros de coluna Tipo, Status, Início e Titular trocam appMain inteiro (M), em todas as telas com painel.
+  - Salvar/Realizar/Desfazer/Editar em formulário ou modal: recarga cheia (R), URL recebe new_* e formulário reabre; a moeda (currency) sai da URL, mas o filtro continua na tela (regra de esclarecimento: OK com nota, não contabilizado como perda).
+  - Cancelar do Novo lançamento e Menu lateral zeram filtros de contexto (F).
+  - "Ver operação" leva a Operações sem filtros de Lançamentos (F); voltar restaura.
+  - Drilldowns dos relatórios (upcoming/projections) levam só o mês/período; intervalo de datas do relatório não viaja (F).
+  - Transferência entre contas (categoria Transferência) falhou no servidor: "A confirmação visual é necessária para aplicar a alteração neste registro e nos próximos" (repetido 7x), formulário reabriu vazio.
+- Não testado / sem efeito: botão "Incluir" do painel de filtros (1.X3); "Realizar" de linhas fora do território; cabeçalhos "Lançamentos" e "Parcelas" dos relatórios (4.X1, 5.X1); alternância Receita/Despesa do Dashboard (3.X1, fora da área visível).

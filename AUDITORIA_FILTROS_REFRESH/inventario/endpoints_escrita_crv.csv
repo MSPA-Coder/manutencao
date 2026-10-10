@@ -1,0 +1,56 @@
+endpoint,rota,metodos,respostas,ramo_htmx,ajudantes,telas_de_origem
+account.change_password,/minha-senha,GET POST,redirect-sem-query,,,/minha-senha
+auth.login,/login,GET POST,redirect+query redirect-sem-query,,,/login
+auth.logout,/logout,POST,redirect-sem-query,,,/minha-senha
+options.close_position,/options/positions/<int:position_id>/close,POST,redirect-sem-query,,,/options/positions/<int:position_id>/close
+options.create_contract,/tables/options/contracts,POST,redirect-sem-query,,,/tables/options/contracts
+options.create_expiration,/tables/options/expirations,POST,redirect-sem-query,,,/tables/options/expirations
+options.create_position,/options/positions,POST,redirect-sem-query,,,
+options.delete_contract,/tables/options/contracts/<int:contract_id>/delete,POST,redirect-sem-query,,,/tables/options/contracts
+options.delete_expiration,/tables/options/expirations/<int:expiration_id>/delete,POST,redirect-sem-query,,,/tables/options/expirations
+options.delete_position,/options/positions/<int:position_id>/delete,POST,redirect-sem-query,,,/options/new /options/positions/<int:position_id>/edit
+options.update_contract,/tables/options/contracts/<int:contract_id>,POST,redirect-sem-query,,,/tables/options/contracts
+options.update_expiration,/tables/options/expirations/<int:expiration_id>,POST,redirect-sem-query,,,/tables/options/expirations
+options.update_position,/options/positions/<int:position_id>,POST,redirect-sem-query,,,/options/new /options/positions/<int:position_id>/edit
+portfolio.activate_broker,/tables/brokers/<int:broker_id>/activate,POST,redirect-sem-query,,_tables_redirect,/tables/brokers
+portfolio.activate_portfolio,/tables/portfolios/<int:portfolio_id>/activate,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.activate_ticker,/tables/tickers/<int:ticker_id>/activate,POST,redirect-sem-query,,_tables_redirect,/tables/tickers
+portfolio.add_portfolio_ticker,/tables/portfolios/<int:portfolio_id>/tickers,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.close_position,/positions/<int:position_id>/close,POST,redirect-sem-query,,,/positions/<int:position_id>/close
+portfolio.collector_agent_failure,/api/collector/failure,POST,?,,,
+portfolio.collector_agent_quotes,/api/collector/quotes,POST,?,,,
+portfolio.create_broker,/tables/brokers,POST,redirect-sem-query,,_tables_redirect,/tables/brokers
+portfolio.create_dividend,/dividends,POST,redirect-sem-query,,,
+portfolio.create_portfolio,/tables/portfolios,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.create_position,/positions,POST,redirect-sem-query,,,
+portfolio.create_quote_history_entry,/quotes,POST,redirect+query,sim,_quote_management_response,/quotes
+portfolio.create_ticker,/tables/tickers,POST,redirect-sem-query,,_tables_redirect,/tables/tickers
+portfolio.create_transaction,/transactions,POST,redirect-sem-query,,,
+portfolio.delete_broker,/tables/brokers/<int:broker_id>/delete,POST,redirect-sem-query,,_tables_redirect,/tables/brokers
+portfolio.delete_dividend,/dividends/<int:dividend_id>/delete,POST,redirect-sem-query,,,/dividends/<int:dividend_id>/edit /dividends/new
+portfolio.delete_portfolio,/tables/portfolios/<int:portfolio_id>/delete,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.delete_position,/positions/<int:position_id>/delete,POST,redirect-sem-query,,,/positions/<int:position_id>/edit /positions/new
+portfolio.delete_position_movement,/positions/<int:position_id>/movements/<int:movement_id>/delete,POST,redirect-sem-query,,,/ /options /options/positions/<int:position_id>/close /positions/<int:position_id> /positions/<int:position_id>/close
+portfolio.delete_quote_history_by_date,/quotes/delete-by-date,POST,redirect+query,sim,_quote_management_response,/quotes
+portfolio.delete_ticker,/tables/tickers/<int:ticker_id>/delete,POST,redirect-sem-query,,_tables_redirect,/tables/tickers
+portfolio.delete_transaction,/transactions/<int:transaction_id>/delete,POST,redirect-sem-query,,,/transactions /transactions/<int:transaction_id>/edit /transactions/new
+portfolio.import_dividends,/dividends/import,GET POST,redirect-sem-query,,,/dividends/import
+portfolio.import_position_quote_history,/quotes/import-position-history,POST,redirect+query,sim,_quote_management_response,/quotes
+portfolio.import_quote_history,/quotes/import,POST,redirect+query,sim,_quote_management_response,/quotes
+portfolio.preferences,/preferences,GET POST,redirect-sem-query,,,
+portfolio.remove_portfolio_ticker,/tables/portfolios/<int:portfolio_id>/tickers/<int:ticker_id>/delete,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.request_collector_refresh,/settings/collector/refresh,POST,redirect-sem-query,,,
+portfolio.rtd_service_partial,/partials/rtd-service,GET POST,render,,,/ /partials/collector-heartbeat /partials/rtd-service /settings
+portfolio.settings,/settings,GET POST,redirect-sem-query,,,
+portfolio.toggle_values_privacy,/privacy/toggle-values,POST,redirect-sem-query,,,
+portfolio.update_broker,/tables/brokers/<int:broker_id>,POST,redirect-sem-query,,_tables_redirect,/tables/brokers
+portfolio.update_dividend,/dividends/<int:dividend_id>,POST,redirect-sem-query,,,/dividends/<int:dividend_id>/edit /dividends/new
+portfolio.update_portfolio,/tables/portfolios/<int:portfolio_id>,POST,redirect-sem-query,sim,_portfolios_response,/tables/portfolios
+portfolio.update_position,/positions/<int:position_id>,POST,redirect-sem-query,,,/positions/<int:position_id>/edit /positions/new
+portfolio.update_position_movement,/positions/<int:position_id>/movements/<int:movement_id>,POST,redirect-sem-query,,,/positions/<int:position_id>/movements/<int:movement_id>/edit
+portfolio.update_ticker,/tables/tickers/<int:ticker_id>,POST,redirect-sem-query,,_tables_redirect,/tables/tickers
+portfolio.update_transaction,/transactions/<int:transaction_id>,POST,redirect-sem-query,,,/transactions/<int:transaction_id>/edit /transactions/new
+users.change_active,/users/<int:user_id>/active,POST,render,sim,_response,/users
+users.create,/users,POST,render,sim,_response,/users
+users.edit,/users/<int:user_id>/edit,POST,render,sim,_response,/users
+users.reset_user_password,/users/<int:user_id>/reset-password,POST,render,sim,_response,/users

@@ -1,0 +1,10 @@
+static/js/core/application.js:271: requestSubmit() não inclui o name/value do botão clicado, o que quebra
+static/js/core/application.js:277: if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter || undefined);
+static/js/core/application.js:278: else form.submit();
+static/js/core/application.js:283: o botão pra requestSubmit(). Espelha esse par num campo hidden real no
+static/js/core/application.js:311: indo para `requestSubmit()`. Espelhar no clique, antes de qualquer
+static/js/dashboard.js:135: window.location.href = transactionUrlFor(extras);
+static/js/dashboard.js:142: window.location.href = transactionUrlFor({
+static/js/profile.js:27: form.requestSubmit();
+static/js/transactions.js:303: if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
+static/js/transactions.js:304: else form.submit();

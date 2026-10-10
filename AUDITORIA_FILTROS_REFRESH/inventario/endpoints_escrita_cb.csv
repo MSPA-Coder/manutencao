@@ -1,0 +1,54 @@
+endpoint,rota,metodos,respostas,ramo_htmx,ajudantes,telas_de_origem
+accounts:change_password,change-password/,GET POST,redirect+query,,,
+accounts:create_owner,tables/owners/create/,POST,HX-Redirect redirect-sem-query,sim,,tables/owners/
+accounts:delete_owner,tables/owners/<int:owner_id>/delete/,POST,HX-Redirect redirect-sem-query,sim,,tables/owners/
+accounts:update_owner,tables/owners/<int:owner_id>/update/,POST,HX-Redirect redirect-sem-query,sim,,tables/owners/
+bank_statements:atualizar_saldo,banking/balance/,GET POST,redirect+query?,,,banking/balance/
+bank_statements:bulk_action_lines,banking/reconcile/bulk/,POST,redirect-sem-query,sim,,banking/reconciliation/ banking/reconciliation/refresh/
+bank_statements:create_attachment,banking/attachment/,POST,redirect-sem-query,sim,,banking/attachments/
+bank_statements:create_entry_from_line,banking/reconcile/create-entry/,POST,redirect-sem-query,sim,,banking/reconciliation/ banking/reconciliation/refresh/
+bank_statements:delete_attachment,banking/attachment/<int:attachment_id>/delete/,POST,redirect-sem-query,sim,,banking/attachments/
+bank_statements:ignore_line,banking/ignore/,POST,redirect-sem-query,sim,,banking/reconciliation/ banking/reconciliation/refresh/
+bank_statements:process_imports,banking/imports/confirm/process/,POST,204 HX-Redirect redirect-sem-query,sim,,banking/imports/confirm/
+bank_statements:processar_fatura,banking/import/<int:batch_id>/fatura/processar/,POST,redirect-sem-query,,,banking/import/<int:batch_id>/fatura/
+bank_statements:reclassificacao,banking/reclassification/,GET POST,redirect+query,,,banking/reclassification/
+bank_statements:reconcile,banking/reconcile/,POST,redirect-sem-query,sim,,banking/reconciliation/ banking/reconciliation/refresh/
+bank_statements:stage_imports,banking/imports/stage/,POST,204 HX-Redirect redirect-sem-query,sim,,banking/imports/
+bank_statements:undo_import,banking/import/<int:batch_id>/undo/,POST,redirect-sem-query,sim,,banking/imports/
+bank_statements:undo_reconciliation,banking/reconcile/undo/,POST,redirect-sem-query,sim,,banking/reconciliation/ banking/reconciliation/refresh/
+banking:create_account,tables/accounts/create/,POST,HX-Redirect redirect-sem-query,sim,,tables/accounts/
+banking:create_institution,tables/banks/create/,POST,HX-Redirect redirect-sem-query,sim,,tables/banks/
+banking:delete_account,tables/accounts/<int:account_id>/delete/,POST,HX-Redirect redirect-sem-query,sim,,tables/accounts/
+banking:delete_institution,tables/banks/<int:institution_id>/delete/,POST,HX-Redirect redirect-sem-query,sim,,tables/banks/
+banking:update_account,tables/accounts/<int:account_id>/update/,POST,HX-Redirect redirect-sem-query,sim,,tables/accounts/
+banking:update_institution,tables/banks/<int:institution_id>/update/,POST,HX-Redirect redirect-sem-query,sim,,tables/banks/
+core:permissions,permissions/,GET POST,redirect+query?,,,
+core:settings_close_month,settings/month-close/close/,POST,redirect+query,,_monthly_close_redirect,settings/monthly-close/
+core:settings_health_check,settings/database/health-check/,POST,redirect-sem-query,,,settings/database/
+core:settings_optimize,settings/database/optimize/,POST,redirect-sem-query,,,settings/database/
+core:settings_reopen_month,settings/month-close/reopen/,POST,redirect+query,,_monthly_close_redirect,settings/monthly-close/
+core:settings_run_recurring_projection,settings/recurring-projection/run/,POST,redirect-sem-query,,,settings/
+core:settings_update_login_lockout,settings/login-lockout-policy/,POST,redirect-sem-query,,,settings/
+core:settings_update_password_policy,settings/password-policy/,POST,redirect-sem-query,,,settings/
+core:settings_update_recurring_projection,settings/recurring-projection/,POST,redirect-sem-query,,,settings/
+core:settings_update_table_scroll,settings/table-scroll/,POST,redirect-sem-query,,,settings/profile/
+core:settings_update_theme,settings/theme/,POST,redirect-sem-query,,,settings/profile/
+management:assign_project,management/assign-project/,POST,redirect+query?,,_redirect_to_panel,management/
+management:assign_tag,management/assign-tag/,POST,redirect+query?,,_redirect_to_panel,management/
+management:create_project,management/project/,POST,redirect+query?,,_redirect_to_panel,management/
+management:create_tag,management/tag/,POST,redirect+query?,,_redirect_to_panel,management/
+management:retire_budget,management/budget/retire/,POST,redirect+query?,,_redirect_to_panel,management/
+management:retire_project,management/project/retire/,POST,redirect+query?,,_redirect_to_panel,management/
+management:retire_tag,management/tag/retire/,POST,redirect+query?,,_redirect_to_panel,management/
+management:save_budget,management/budget/,POST,redirect+query?,,_redirect_to_panel,management/
+transactions:create_category,tables/categories/create/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/
+transactions:create_category_group,tables/category-groups/create/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/
+transactions:delete_category,tables/categories/<int:category_id>/delete/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/
+transactions:delete_category_group,tables/category-groups/<int:group_id>/delete/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/
+transactions:mark_realized,mark_realized/<int:tx_id>/,POST,204 HX-Trigger redirect+query?,sim,_redirect_to_transactions,transactions/
+transactions:mark_unrealized,mark_unrealized/<int:tx_id>/,POST,204 HX-Trigger redirect+query?,sim,_redirect_to_transactions,transactions/
+transactions:transaction_delete,transaction/delete/<int:tx_id>/,POST,204 HX-Trigger redirect+query?,sim,_redirect_to_transactions _invalid_operation_scope_response,
+transactions:transaction_edit,transaction/<int:tx_id>/,GET POST,204 HX-Trigger redirect+query?,sim,_redirect_to_transactions _invalid_operation_scope_response,transactions/
+transactions:transaction_new,transaction/,GET POST,204 HX-Trigger redirect+query?,sim,_redirect_to_transactions,transactions/
+transactions:update_category,tables/categories/<int:category_id>/update/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/
+transactions:update_category_group,tables/category-groups/<int:group_id>/update/,POST,HX-Redirect redirect-sem-query,sim,,tables/categories/

@@ -44,6 +44,7 @@ COTACAO_VIVA_MAX_HORAS=120    # RTD vem de um PC Windows; 5 dias cobre o feriado
 WF_MERCADO_MAX_HORAS=8        # o Wealthfolio sincroniza cotações a cada 6h
 WF_IMPORTACAO_FALHAS_MAX=3    # a importação roda a cada 15 min: 3 falhas na última hora é persistente
 WF_IMPORTACAO_SILENCIO_MIN=10 # piso do silêncio tolerado; o limite real é 3 ciclos do agendador (ver abaixo)
+WF_IMPORTACAO_CRON_TOLERANCIA_MIN=30 # com cron: minutos após o disparo antes de exigir a linha da execução
 
 # Os domínios são lidos dos vhosts habilitados NESTE servidor.
 #
@@ -283,10 +284,8 @@ fi
 # Wealthfolio (importação e cotações). O servidor loga, a cada 6h, "Periodic
 # market data sync completed: N synced, M skipped, K failed" e, quando a
 # importação do CB ou do CRV falha, "Patrimonio sync failed for source X". A
-# importação que dá certo NÃO deixa rastro no log, então o que se vê daqui é: o
-# servidor segue vivo o bastante para sincronizar cotações, e a importação não
-# está falhando em série. Um batimento próprio da importação pede uma linha de
-# log nova no patch 0005 (e um rebuild do Wealthfolio, de 35 a 60 min): pendência.
+# importação, boa ou má, grava "Patrimonio sync run finished" (patch 0008): é o
+# batimento que mostra se o agendador (cron ou intervalo) parou em silêncio.
 #
 # Títulos fixos, com os números no corpo: o `alerta.sh` reconhece repetição pelo
 # título.
@@ -295,6 +294,71 @@ fi
 # (o `sed` do BusyBox, nos testes, não entende `\x1b`).
 ESC=$(printf '\033')
 sem_cor() { sed "s/${ESC}\[[0-9;]*m//g"; }
+
+# Um campo de cron (`*`, lista, faixa, `/passo`) casa com o valor? Só inteiros;
+# os nomes de mês e de dia da semana não são aceitos (o agendador do Wealthfolio
+# também não os aceita).
+campo_cron_casa() { # $1 = campo, $2 = valor, $3 = menor valor do campo
+    local item faixa passo ini fim itens
+    IFS=, read -ra itens <<<"$1"   # array, não `for item in $1`: o `*` viraria glob
+    for item in "${itens[@]}"; do
+        faixa=${item%%/*}
+        passo=1
+        [ "$faixa" != "$item" ] && passo=${item#*/}
+        case "$passo" in ''|*[!0-9]*|0) continue ;; esac
+        if [ "$faixa" = '*' ]; then
+            ini=$3; fim=99
+        elif [ "${faixa#*-}" != "$faixa" ]; then
+            ini=${faixa%-*}; fim=${faixa#*-}
+        else
+            ini=$faixa; fim=$faixa
+            [ "$passo" -gt 1 ] && fim=99
+        fi
+        case "$ini$fim" in *[!0-9]*|'') continue ;; esac
+        if [ "$2" -ge "$ini" ] && [ "$2" -le "$fim" ] && [ $(( ( $2 - ini ) % passo )) -eq 0 ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Epoch do último disparo do cron `$1` (cinco campos, America/Sao_Paulo, como o
+# agendador do Wealthfolio; UTC-3 fixo, sem horário de verão desde 2019, o que dispensa
+# o banco de fusos) que já passou em `$2`, olhando até 8 dias para trás.
+# Sem saída se a expressão não tem cinco campos ou nada casou.
+ultimo_disparo_cron() {
+    local cmin chor cdom cmon cdow resto
+    read -r cmin chor cdom cmon cdow resto <<<"$1"
+    [ -n "$cdow" ] && [ -z "$resto" ] || return 0
+    local base=$(( $2 / 3600 * 3600 )) h t hor dom mon dow m ok_dia
+    for h in $(seq 0 192); do
+        t=$(( base - h * 3600 ))
+        read -r hor dom mon dow < <(TZ=BRT3 date -d "@$t" '+%H %d %m %w' 2>/dev/null) || return 0
+        [ -n "$dow" ] || return 0
+        hor=$((10#$hor)); dom=$((10#$dom)); mon=$((10#$mon))
+        campo_cron_casa "$chor" "$hor" 0 || continue
+        campo_cron_casa "$cmon" "$mon" 1 || continue
+        # Domingo vale 0 e 7. Dia do mês e dia da semana, quando os dois são
+        # restritos, valem como "ou" (regra do cron).
+        ok_dia=1
+        if [ "$cdom" != '*' ] && [ "$cdow" != '*' ]; then
+            ok_dia=0
+            campo_cron_casa "$cdom" "$dom" 1 && ok_dia=1
+            { campo_cron_casa "$cdow" "$dow" 0 || { [ "$dow" -eq 0 ] && campo_cron_casa "$cdow" 7 0; }; } && ok_dia=1
+        else
+            campo_cron_casa "$cdom" "$dom" 1 || continue
+            campo_cron_casa "$cdow" "$dow" 0 || { [ "$dow" -eq 0 ] && campo_cron_casa "$cdow" 7 0; } || continue
+        fi
+        [ "$ok_dia" -eq 1 ] || continue
+        for m in $(seq 59 -1 0); do
+            [ $(( t + m * 60 )) -le "$2" ] || continue
+            if campo_cron_casa "$cmin" "$m" 0; then
+                echo $(( t + m * 60 ))
+                return 0
+            fi
+        done
+    done
+}
 
 container_do_servico() {
     "$DOCKER" ps -q --filter "label=com.docker.compose.project=$1" \
@@ -387,20 +451,58 @@ GET /api/v1/patrimonio-sync/status (exige login)."
     # Batimento da importação CB/CRV. O alerta acima só vê a importação quando ela
     # FALHA; uma importação que parou em silêncio não deixa falha nenhuma. O servidor
     # grava uma linha "Patrimonio sync run finished" a cada execução, boa ou má
-    # (patch 0006), então a AUSÊNCIA dela por 3 ciclos é a parada. A falha em si
+    # (patch 0008), então a AUSÊNCIA dela por 3 ciclos é a parada. A falha em si
     # continua sendo o alerta de cima.
     #
     # Não alerta quando não dá para afirmar que ela devia estar rodando: sem o
     # intervalo no ambiente do contêiner, com o agendador desligado (0) ou com o
     # contêiner novo demais para ter completado o primeiro ciclo (atraso inicial de
-    # 60 s mais o ciclo). Ordem de implantação: a imagem com o patch 0006 ANTES deste
+    # 60 s mais o ciclo). Ordem de implantação: a imagem com o patch 0008 ANTES deste
     # vigia; numa imagem anterior a linha não existe e o alerta seria falso.
     intervalo_wf=$("$DOCKER" inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$wf" 2>/dev/null \
         | sed -n 's/^WF_PATRIMONIO_SYNC_INTERVAL_SECS=//p' | head -1)
     inicio_wf=$("$DOCKER" inspect -f '{{.State.StartedAt}}' "$wf" 2>/dev/null | head -1)
     case "$intervalo_wf" in ''|*[!0-9]*) intervalo_wf=0 ;; esac
     inicio_epoch=$(date -d "$inicio_wf" +%s 2>/dev/null || echo 0)
-    if [ "$intervalo_wf" -le 0 ] || [ "$inicio_epoch" -le 0 ]; then
+    # Agendador por cron (patch 0007): tem precedência sobre o intervalo, que deixa
+    # de valer quando `WF_PATRIMONIO_SYNC_CRON` está preenchida. O silêncio normal
+    # vai até o próximo disparo (horas, ou o fim de semana inteiro), então o que se
+    # mede é o último disparo que já devia ter rodado: precisa haver uma linha
+    # "run finished" desde então. Sem alerta se o contêiner subiu depois do
+    # disparo (não estava no ar para rodá-lo) ou se o disparo é recente demais
+    # (tolerância de WF_IMPORTACAO_CRON_TOLERANCIA_MIN para a importação terminar).
+    cron_wf=$("$DOCKER" inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$wf" 2>/dev/null \
+        | sed -n 's/^WF_PATRIMONIO_SYNC_CRON=//p' | head -1)
+    if [ -n "$cron_wf" ] && [ "$inicio_epoch" -gt 0 ]; then
+        agora_epoch=${VIGIA_AGORA:-$(date +%s)}
+        disparo=$(ultimo_disparo_cron "$cron_wf" "$agora_epoch")
+        if [ -z "$disparo" ]; then
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: não medido (cron '${cron_wf}' ilegível ou sem disparo nos últimos 8 dias)"
+        elif [ "$inicio_epoch" -gt $(( disparo - 60 )) ]; then
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: contêiner subiu depois do último disparo do cron '${cron_wf}', nada a medir até o próximo"
+        elif [ $(( agora_epoch - disparo )) -lt $(( WF_IMPORTACAO_CRON_TOLERANCIA_MIN * 60 )) ]; then
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: último disparo do cron '${cron_wf}' há $(( (agora_epoch - disparo) / 60 )) min, dentro da tolerância de ${WF_IMPORTACAO_CRON_TOLERANCIA_MIN} min"
+        else
+            desde_min=$(( (agora_epoch - disparo) / 60 + 2 ))
+            n_batimento=$("$DOCKER" logs --since "${desde_min}m" "$wf" 2>&1 | sem_cor \
+                | grep -c 'Patrimonio sync run finished' || true)
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: ${n_batimento} execução(ões) desde o último disparo do cron '${cron_wf}' (há ${desde_min} min)"
+            if [ "$n_batimento" -eq 0 ]; then
+                alertar "WEALTHFOLIO importação do CB/CRV parada" \
+"O log do Wealthfolio não tem nenhuma execução da importação do CB/CRV desde o
+último disparo do agendador (cron '${cron_wf}', há ${desde_min} min), e o contêiner
+já estava no ar nessa hora. Cada execução grava uma linha, mesmo quando falha:
+sem linha, o agendador parou. O processo responde e o painel continua abrindo,
+mas os saldos e as posições deixaram de ser atualizados.
+
+Conferir:  docker logs --since ${desde_min}m $wf 2>&1 | grep -i 'Patrimonio sync'
+Reiniciar, se for o caso:  cd ~/apps/wealthfolio-teste && docker compose restart
+
+Se o contêiner foi construído antes do patch 0008 a linha não existe (o aviso
+é falso): reconstrua a imagem a partir do main do WealthfolioTeste."
+            fi
+        fi
+    elif [ "$intervalo_wf" -le 0 ] || [ "$inicio_epoch" -le 0 ]; then
         [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: não medido (agendador desligado, sem o intervalo no ambiente ou início do contêiner ilegível)"
     else
         silencio_min=$(( intervalo_wf * 3 / 60 + 2 ))
@@ -422,7 +524,7 @@ continua abrindo, mas os saldos e as posições deixaram de ser atualizados.
 Conferir:  docker logs --since ${silencio_min}m $wf 2>&1 | grep -i 'Patrimonio sync'
 Reiniciar, se for o caso:  cd ~/apps/wealthfolio-teste && docker compose restart
 
-Se o contêiner foi construído antes do patch 0006 a linha não existe (o aviso
+Se o contêiner foi construído antes do patch 0008 a linha não existe (o aviso
 é falso): reconstrua a imagem a partir do main do WealthfolioTeste."
             fi
         fi

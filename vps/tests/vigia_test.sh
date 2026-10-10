@@ -102,7 +102,7 @@ case "$1" in
     logs)
         case "$*" in
             *"--since 1h"*) cat "$FAKE/wf_log_1h" 2>/dev/null ;;
-            *"--since 47m"*) cat "$FAKE/wf_log_bat" 2>/dev/null ;;
+            *"--since "[0-9]*m*) cat "$FAKE/wf_log_bat" 2>/dev/null ;;
             *) cat "$FAKE/wf_log_8h" 2>/dev/null ;;
         esac
         exit 0 ;;
@@ -359,7 +359,7 @@ assert_saida 'ALERTARIA: WEALTHFOLIO sem sincronizar cotações' '--estado diz o
 end_case '--estado mostra o frescor do Wealthfolio sem alertar'
 
 # --------------------------------------------------------------------------
-# Batimento da importação CB/CRV (a linha "run finished" que o patch 0006 grava)
+# Batimento da importação CB/CRV (a linha "run finished" que o patch 0008 grava)
 # --------------------------------------------------------------------------
 
 BATIDA='2026-10-08T15:45:00Z  INFO wealthfolio_server::api::patrimonio_sync: 912: Patrimonio sync run finished: cb=ready crv=ready
@@ -383,7 +383,7 @@ wf_importador '2026-09-01T00:00:00Z' 900 ''
 roda
 assert_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'sem nenhuma execução nos últimos 47 min'
 assert_alerta '47 min' 'o corpo diz a janela'
-assert_alerta 'patch 0006' 'o corpo avisa do contêiner antigo'
+assert_alerta 'patch 0008' 'o corpo avisa do contêiner antigo'
 end_case 'importação sem batimento alerta'
 
 begin_case
@@ -412,6 +412,77 @@ roda --estado
 assert_saida 'batimento da importação CB/CRV: 0 execução(ões) nos últimos 47 min' '--estado mostra a contagem'
 assert_saida 'ALERTARIA: WEALTHFOLIO importação do CB/CRV parada' '--estado diz o que faria'
 end_case '--estado mostra o batimento da importação sem alertar'
+
+# --------------------------------------------------------------------------
+# Batimento da importação com o agendador por cron (patch 0007)
+# --------------------------------------------------------------------------
+# O cron tem precedência sobre o intervalo: o silêncio normal vai até o próximo
+# disparo, então o vigia mede a partir do último disparo (America/Sao_Paulo).
+# VIGIA_AGORA fixa o relógio. 2026-10-10 é sábado; o último disparo de
+# `0 8,14 * * 1-5` foi na sexta, 14:00 em Brasília = 17:00Z.
+
+CRON_PADRAO='0 8,14 * * 1-5'
+
+wf_cron() { # $1 = início do contêiner, $2 = cron, $3 = log do batimento, $4 = agora (UTC)
+    wf_com_log "$MERCADO_OK" ''
+    printf '%s\n' "$1" >"$FAKE/wf_inicio"
+    printf 'PATH=/usr/bin\nWF_PATRIMONIO_SYNC_CRON=%s\nWF_PATRIMONIO_SYNC_INTERVAL_SECS=900\n' "$2" >"$FAKE/wf_env"
+    printf '%s' "$3" >"$FAKE/wf_log_bat"
+    export VIGIA_AGORA
+    VIGIA_AGORA=$(date -u -d "$4" +%s)
+}
+
+begin_case
+wf_cron '2026-10-09T23:40:00Z' "$CRON_PADRAO" '' '2026-10-10T12:00:00Z'
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação' 'sábado, contêiner subiu depois do último disparo: nada devia ter rodado'
+end_case 'cron: contêiner posterior ao último disparo não alerta'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' "$CRON_PADRAO" '' '2026-10-10T12:00:00Z'
+roda
+assert_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'o disparo de sexta 14:00 não deixou linha'
+assert_alerta "cron '$CRON_PADRAO'" 'o corpo diz qual cron'
+end_case 'cron: disparo sem linha alerta'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' "$CRON_PADRAO" "$BATIDA" '2026-10-10T12:00:00Z'
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação' 'o disparo deixou a linha'
+end_case 'cron: disparo com linha não alerta'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' "$CRON_PADRAO" '' '2026-10-06T11:10:00Z'
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação' '10 min depois do disparo das 08:00 ainda está dentro da tolerância'
+end_case 'cron: disparo recente demais não alerta'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' "$CRON_PADRAO" '' '2026-10-06T12:00:00Z'
+roda
+assert_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' '60 min depois do disparo das 08:00, sem linha'
+end_case 'cron: terça depois do disparo sem linha alerta'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' 'não é cron' '' '2026-10-10T12:00:00Z'
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação' 'cron ilegível: não dá para afirmar que devia rodar'
+end_case 'cron ilegível não alerta o batimento'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' '0 */3 * * *' '' '2026-10-10T16:00:00Z'
+roda --estado
+assert_saida "cron '0 */3 * * *' (há 62 min)" '--estado: último disparo 12:00 em Brasília (15:00Z), passo de 3 h'
+end_case 'cron: passo */3 acha o disparo das 12:00'
+
+begin_case
+wf_cron '2026-09-01T00:00:00Z' '30 9 * * 7' '' '2026-10-10T12:00:00Z'
+roda --estado
+assert_saida "(há " 'domingo como 7 acha o disparo de domingo 09:30 em Brasília (12:30Z)'
+assert_saida 'ALERTARIA: WEALTHFOLIO importação do CB/CRV parada' 'sem linha desde domingo'
+end_case 'cron: domingo escrito como 7'
+
+unset VIGIA_AGORA
 
 dominio_com_health() {
     printf 'server {\n    server_name %s;\n}\n' "$1" >"$CASE_TMP/vhosts/$1"

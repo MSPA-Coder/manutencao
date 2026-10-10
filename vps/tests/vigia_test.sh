@@ -93,9 +93,16 @@ case "$1" in
         cat >/dev/null
         [ -e "$FAKE/crv_saida" ] && cat "$FAKE/crv_saida"
         exit "$(cat "$FAKE/crv_rc" 2>/dev/null || echo 0)" ;;
+    inspect)
+        case "$*" in
+            *StartedAt*) cat "$FAKE/wf_inicio" 2>/dev/null ;;
+            *Config.Env*) cat "$FAKE/wf_env" 2>/dev/null ;;
+        esac
+        exit 0 ;;
     logs)
         case "$*" in
             *"--since 1h"*) cat "$FAKE/wf_log_1h" 2>/dev/null ;;
+            *"--since 47m"*) cat "$FAKE/wf_log_bat" 2>/dev/null ;;
             *) cat "$FAKE/wf_log_8h" 2>/dev/null ;;
         esac
         exit 0 ;;
@@ -350,6 +357,61 @@ roda --estado
 assert_saida 'frescor do Wealthfolio: sincronização de cotações 0x' '--estado mostra o batimento'
 assert_saida 'ALERTARIA: WEALTHFOLIO sem sincronizar cotações' '--estado diz o que faria'
 end_case '--estado mostra o frescor do Wealthfolio sem alertar'
+
+# --------------------------------------------------------------------------
+# Batimento da importação CB/CRV (a linha "run finished" que o patch 0006 grava)
+# --------------------------------------------------------------------------
+
+BATIDA='2026-10-08T15:45:00Z  INFO wealthfolio_server::api::patrimonio_sync: 912: Patrimonio sync run finished: cb=ready crv=ready
+'
+
+wf_importador() { # $1 = início do contêiner, $2 = intervalo (vazio = variável ausente), $3 = log do batimento
+    wf_com_log "$MERCADO_OK" ''
+    printf '%s\n' "$1" >"$FAKE/wf_inicio"
+    if [ -n "$2" ]; then printf 'PATH=/usr/bin\nWF_PATRIMONIO_SYNC_INTERVAL_SECS=%s\n' "$2" >"$FAKE/wf_env"; else printf 'PATH=/usr/bin\n' >"$FAKE/wf_env"; fi
+    printf '%s' "$3" >"$FAKE/wf_log_bat"
+}
+
+begin_case
+wf_importador '2026-09-01T00:00:00Z' 900 "$BATIDA"
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'há uma execução recente'
+end_case 'importação com batimento recente não alerta'
+
+begin_case
+wf_importador '2026-09-01T00:00:00Z' 900 ''
+roda
+assert_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'sem nenhuma execução nos últimos 47 min'
+assert_alerta '47 min' 'o corpo diz a janela'
+assert_alerta 'patch 0006' 'o corpo avisa do contêiner antigo'
+end_case 'importação sem batimento alerta'
+
+begin_case
+wf_importador "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 900 ''
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'contêiner recém-criado ainda não fechou um ciclo'
+end_case 'contêiner novo demais não alerta o batimento'
+
+begin_case
+wf_importador '2026-09-01T00:00:00Z' 0 ''
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'agendador desligado de propósito'
+end_case 'agendador desligado (0) não alerta o batimento'
+
+begin_case
+wf_importador '2026-09-01T00:00:00Z' '' ''
+roda
+assert_sem_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV parada' 'sem o intervalo no ambiente não dá para afirmar que devia rodar'
+end_case 'sem o intervalo no ambiente não alerta o batimento'
+
+begin_case
+wf_importador '2026-09-01T00:00:00Z' 900 ''
+roda --estado
+[ "$EXIT_CODE" -eq 0 ] || fail "--estado deve sair zero (obtido $EXIT_CODE)"
+[ -s "$ALERTAS" ] && fail "--estado não pode alertar (alertou: $(head -1 "$ALERTAS"))"
+assert_saida 'batimento da importação CB/CRV: 0 execução(ões) nos últimos 47 min' '--estado mostra a contagem'
+assert_saida 'ALERTARIA: WEALTHFOLIO importação do CB/CRV parada' '--estado diz o que faria'
+end_case '--estado mostra o batimento da importação sem alertar'
 
 dominio_com_health() {
     printf 'server {\n    server_name %s;\n}\n' "$1" >"$CASE_TMP/vhosts/$1"

@@ -43,6 +43,7 @@ COTACAO_DIARIA_MAX_DIAS=5     # série diária do Yahoo; cobre fim de semana + C
 COTACAO_VIVA_MAX_HORAS=120    # RTD vem de um PC Windows; 5 dias cobre o feriado mais longo
 WF_MERCADO_MAX_HORAS=8        # o Wealthfolio sincroniza cotações a cada 6h
 WF_IMPORTACAO_FALHAS_MAX=3    # a importação roda a cada 15 min: 3 falhas na última hora é persistente
+WF_IMPORTACAO_SILENCIO_MIN=10 # piso do silêncio tolerado; o limite real é 3 ciclos do agendador (ver abaixo)
 
 # Os domínios são lidos dos vhosts habilitados NESTE servidor.
 #
@@ -381,6 +382,50 @@ Ela roda a cada 15 min; falha em série não é um soluço de deploy.
 Conferir:  docker logs --since 1h $wf 2>&1 | grep -i 'Patrimonio sync'
 O estado por fonte está na tela do add-on (Settings > Addons) e em
 GET /api/v1/patrimonio-sync/status (exige login)."
+    fi
+
+    # Batimento da importação CB/CRV. O alerta acima só vê a importação quando ela
+    # FALHA; uma importação que parou em silêncio não deixa falha nenhuma. O servidor
+    # grava uma linha "Patrimonio sync run finished" a cada execução, boa ou má
+    # (patch 0006), então a AUSÊNCIA dela por 3 ciclos é a parada. A falha em si
+    # continua sendo o alerta de cima.
+    #
+    # Não alerta quando não dá para afirmar que ela devia estar rodando: sem o
+    # intervalo no ambiente do contêiner, com o agendador desligado (0) ou com o
+    # contêiner novo demais para ter completado o primeiro ciclo (atraso inicial de
+    # 60 s mais o ciclo). Ordem de implantação: a imagem com o patch 0006 ANTES deste
+    # vigia; numa imagem anterior a linha não existe e o alerta seria falso.
+    intervalo_wf=$("$DOCKER" inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$wf" 2>/dev/null \
+        | sed -n 's/^WF_PATRIMONIO_SYNC_INTERVAL_SECS=//p' | head -1)
+    inicio_wf=$("$DOCKER" inspect -f '{{.State.StartedAt}}' "$wf" 2>/dev/null | head -1)
+    case "$intervalo_wf" in ''|*[!0-9]*) intervalo_wf=0 ;; esac
+    inicio_epoch=$(date -d "$inicio_wf" +%s 2>/dev/null || echo 0)
+    if [ "$intervalo_wf" -le 0 ] || [ "$inicio_epoch" -le 0 ]; then
+        [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: não medido (agendador desligado, sem o intervalo no ambiente ou início do contêiner ilegível)"
+    else
+        silencio_min=$(( intervalo_wf * 3 / 60 + 2 ))
+        [ "$silencio_min" -lt "$WF_IMPORTACAO_SILENCIO_MIN" ] && silencio_min=$WF_IMPORTACAO_SILENCIO_MIN
+        idade_min=$(( ( $(date +%s) - inicio_epoch ) / 60 ))
+        n_batimento=$("$DOCKER" logs --since "${silencio_min}m" "$wf" 2>&1 | sem_cor \
+            | grep -c 'Patrimonio sync run finished' || true)
+        if [ "$idade_min" -lt $(( silencio_min + 2 )) ]; then
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: contêiner com ${idade_min} min, novo demais para medir (limite ${silencio_min} min)"
+        else
+            [ "$MODO" = "--estado" ] && echo "batimento da importação CB/CRV: ${n_batimento} execução(ões) nos últimos ${silencio_min} min (agendador a cada ${intervalo_wf}s)"
+            if [ "$n_batimento" -eq 0 ]; then
+                alertar "WEALTHFOLIO importação do CB/CRV parada" \
+"O log do Wealthfolio não tem nenhuma execução da importação do CB/CRV nos últimos
+${silencio_min} min. Ela roda a cada ${intervalo_wf}s e grava uma linha por execução,
+mesmo quando falha: sem linha, o agendador parou. O processo responde e o painel
+continua abrindo, mas os saldos e as posições deixaram de ser atualizados.
+
+Conferir:  docker logs --since ${silencio_min}m $wf 2>&1 | grep -i 'Patrimonio sync'
+Reiniciar, se for o caso:  cd ~/apps/wealthfolio-teste && docker compose restart
+
+Se o contêiner foi construído antes do patch 0006 a linha não existe (o aviso
+é falso): reconstrua a imagem a partir do main do WealthfolioTeste."
+            fi
+        fi
     fi
 fi
 

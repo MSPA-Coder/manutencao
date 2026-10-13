@@ -13,9 +13,12 @@
 # POR QUE CONFERIR A CI ANTES: o servidor espelha o `main`, e nada impedia de
 # publicar um `main` vermelho -- o do NetWorth ficou assim em 28/09/2026. Agora
 # o commit só é aplicado se todos os check-runs de produto/segurança terminaram
-# verdes no GitHub e os checks de teste daquele app estão presentes. Os checks
-# dos atualizadores de dependências e do auto-merge não testam o artefato; eles
-# não podem bloquear nem substituir a CI. Ver `conferir_ci`.
+# verdes no GitHub e os checks de teste daquele app estão presentes. No
+# Wealthfolio, a CI do app pertence ao commit candidato, mas a suíte lenta da
+# imagem só roda quando mudam Dockerfile/patches; nesse caso, conferimos o
+# último commit que alterou essas entradas, que pode ser ancestral do candidato.
+# Os checks auxiliares não testam o artefato e não substituem a CI. Ver
+# `validar_ci_deploy`.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
 # o banco inteiramente fora do ar. Os seis projetos expõem `/health`, que
@@ -69,6 +72,7 @@ projeto_info() {
     CI_MOTIVO=
     CI_TESTE_1=
     CI_TESTE_2=
+    CI_IMAGEM_TESTE_1=
     case "$1" in
         bancario|controle-bancario)
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
@@ -102,8 +106,8 @@ projeto_info() {
             DOMINIO=wealthfolio-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/WealthfolioTeste
             CI_EXIGIDA=1
-            CI_TESTE_1='Build, testes dos patches e partida'
-            CI_TESTE_2='Patches, add-on e Compose'
+            CI_TESTE_1='Patches, add-on e Compose'
+            CI_IMAGEM_TESTE_1='Build, testes dos patches e partida'
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
             echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
@@ -162,7 +166,9 @@ verificar_saude() {
 
 # CI DO COMMIT. Antes de tocar na produção, pergunta ao GitHub se todos os
 # check-runs de produto/segurança terminaram bem e se os testes do app estão
-# presentes. Os checks exatos são definidos em `projeto_info`.
+# presentes. Os checks exatos são definidos em `projeto_info`. Para conferir
+# o workflow composto da imagem num SHA ancestral, `somente_nome` limita a
+# análise àquele check-run; a CI completa do candidato já foi conferida antes.
 #
 # Checks de dependabot (`Dependabot`, `update-uv-graph`, `update-pip-graph`) e
 # do auto-merge são automações auxiliares, não validam o app e às vezes falham
@@ -179,7 +185,7 @@ verificar_saude() {
 # limite dela (60 pedidos por hora por IP) sobra para deploy feito à mão.
 CI_RESUMO=
 conferir_ci() {
-    local sha=$1 resposta codigo corpo total estados conclusoes
+    local sha=$1 somente_nome=${2:-} resposta codigo corpo total estados conclusoes
     local n_estados n_conclusoes analise parse_ok n_runs n_ci pendentes
     local encontrou_1 encontrou_2 reprovados
     resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
@@ -213,7 +219,7 @@ conferir_ci() {
         return 1
     fi
 
-    analise=$(printf '%s\n' "$corpo" | awk -v esperado1="$CI_TESTE_1" -v esperado2="$CI_TESTE_2" '
+    analise=$(printf '%s\n' "$corpo" | awk -v esperado1="$CI_TESTE_1" -v esperado2="$CI_TESTE_2" -v somente="$somente_nome" '
         function campo(objeto, chave, padrao, valor) {
             padrao = "\"" chave "\"[[:space:]]*:[[:space:]]*\"[^\"]*\""
             if (!match(objeto, padrao)) return ""
@@ -234,6 +240,7 @@ conferir_ci() {
                 malformados++
                 return
             }
+            if (somente != "" && nome != somente) return
             if (nome == "Dependabot" || nome == "update-uv-graph" ||
                 nome == "update-pip-graph" || nome == "Auto merge") return
 
@@ -315,8 +322,57 @@ conferir_ci() {
         CI_RESUMO="check-runs de CI/teste reprovados: $reprovados"
         return 1
     fi
-    CI_RESUMO="$n_ci check-runs verdes"
+    if [ "$n_ci" -eq 1 ]; then
+        CI_RESUMO="1 check-run verde"
+    else
+        CI_RESUMO="$n_ci check-runs verdes"
+    fi
     return 0
+}
+
+# O workflow de imagem do Wealthfolio tem filtro de caminhos: commits do
+# add-on executam e exigem a CI do app, enquanto Dockerfile/patches também
+# exigem a suíte lenta da imagem. Quando os dois tipos de commit chegam juntos
+# antes do deploy diário, a imagem foi testada no commit ancestral que mudou
+# essas entradas, não necessariamente no SHA mais novo. A busca é pelo último
+# commit da árvore que altera qualquer entrada coberta pelo workflow; a API
+# ainda precisa confirmar verde o check-run composto que inclui testes, partida
+# e análise Trivy.
+validar_ci_deploy() {
+    local sha=$1 resumo_app resumo_imagem imagem_sha
+    local teste_1_app=$CI_TESTE_1 teste_2_app=$CI_TESTE_2
+
+    if ! conferir_ci "$sha"; then
+        return 1
+    fi
+    resumo_app=$CI_RESUMO
+
+    if [ -z "$CI_IMAGEM_TESTE_1" ]; then
+        CI_RESUMO=$resumo_app
+        return 0
+    fi
+
+    if ! imagem_sha=$(git log -1 --format=%H "$sha" -- \
+            Dockerfile .dockerignore patches .github/workflows/imagem.yml) ||
+       ! [[ "$imagem_sha" =~ ^[0-9a-f]{40}$ ]]; then
+        CI_RESUMO="não foi possível localizar o último commit que alterou as entradas da imagem"
+        return 1
+    fi
+    CI_TESTE_1=$CI_IMAGEM_TESTE_1
+    CI_TESTE_2=
+    if conferir_ci "$imagem_sha" "$CI_IMAGEM_TESTE_1"; then
+        resumo_imagem=$CI_RESUMO
+        CI_TESTE_1=$teste_1_app
+        CI_TESTE_2=$teste_2_app
+        CI_RESUMO="app ${sha:0:7}: $resumo_app; imagem ${imagem_sha:0:7}: $resumo_imagem"
+        return 0
+    fi
+
+    resumo_imagem=$CI_RESUMO
+    CI_TESTE_1=$teste_1_app
+    CI_TESTE_2=$teste_2_app
+    CI_RESUMO="CI do app verde ($resumo_app), mas a imagem em ${imagem_sha:0:7} não está verde ($resumo_imagem)"
+    return 1
 }
 
 esperar_compose() {
@@ -550,7 +606,7 @@ echo "CI do commit ${novo:0:7}:"
 if [ "$CI_EXIGIDA" = 0 ]; then
     ci_verde=1
     echo "  não conferida: $CI_MOTIVO"
-elif conferir_ci "$novo"; then
+elif validar_ci_deploy "$novo"; then
     ci_verde=1
     echo "  $CI_RESUMO"
 else

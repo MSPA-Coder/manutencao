@@ -14,7 +14,7 @@ services:
         read_only: true
 
   nginx-test:
-    image: nginx:1.28
+    image: public.ecr.aws/nginx/nginx:1.28
     pull_policy: always
     entrypoint: ["sh", "/repo/vps/tests/nginx_test.sh"]
     network_mode: none

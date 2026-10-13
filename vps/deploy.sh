@@ -90,7 +90,7 @@ projeto_info() {
             CI_EXIGIDA=0; CI_MOTIVO="repositório privado; a API anônima não o alcança" ;;
         wealthfolio)
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
-            DOMINIO=networth-mspa.duckdns.org
+            DOMINIO=wealthfolio-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/WealthfolioTeste
             CI_EXIGIDA=0; CI_MOTIVO="repositório privado e sem CI"
             PADRAO_SAUDE='^ok$' ;;

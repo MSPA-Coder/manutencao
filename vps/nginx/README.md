@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `networth`, `portal` | `sites-available/` | Vhosts TLS dos aplicativos; variam por domínio, porta e `client_max_body_size`, e os do CB e do CRV fecham `/patrimonio/`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `wealthfolio`, `portal` | `sites-available/` | Vhosts TLS da frota. O arquivo `wealthfolio` serve `wealthfolio-mspa.duckdns.org` e encaminha para o Wealthfolio na porta 18088. O hostname histórico `networth-mspa.duckdns.org` e o vhost `networth` foram retirados depois da confirmação do novo domínio; não há alias legado. Os vhosts variam por domínio, porta e `client_max_body_size`; os do CB e do CRV fecham `/patrimonio/`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |

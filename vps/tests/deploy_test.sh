@@ -77,7 +77,10 @@ case "${1:-}" in
         elif [ "${2:-}" = "origin/main" ]; then printf '%s\n' "${REMOTE_SHA:-$NEW_SHA}"
         else cat "$FAKE_HEAD"
         fi ;;
-    log) printf '2222222 mudança de teste\n' ;;
+    log)
+        if [ "${2:-}" = "-1" ]; then printf '%s\n' "${IMAGE_SHA:-}"
+        else printf '2222222 mudança de teste\n'
+        fi ;;
     diff) printf ' arquivo | 1 +\n' ;;
     merge)
         [ "$SCENARIO" = ff_failure ] && exit 1
@@ -135,7 +138,13 @@ EOF
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case " $* " in
     *api.github.com*)
-        [ "$CI_HTTP" != 200 ] || cat "$CHECK_RUNS_DIR/$CI_FIXTURE.json"
+        if [ "$CI_HTTP" = 200 ]; then
+            if [ -n "${IMAGE_SHA:-}" ] && [[ "$*" == *"/commits/$IMAGE_SHA/check-runs?"* ]]; then
+                cat "$CHECK_RUNS_DIR/$IMAGE_FIXTURE.json"
+            else
+                cat "$CHECK_RUNS_DIR/$CI_FIXTURE.json"
+            fi
+        fi
         printf '\n%s' "$CI_HTTP"
         exit 0 ;;
 esac
@@ -177,6 +186,7 @@ run_deploy() {
         SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
         REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
         CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
+        IMAGE_SHA="${IMAGE_SHA:-}" IMAGE_FIXTURE="$IMAGE_FIXTURE" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -188,6 +198,8 @@ begin_case() {
     CI_FIXTURE=verde
     CI_HTTP=200
     REMOTE_SHA=$NEW_SHA
+    IMAGE_SHA=3333333333333333333333333333333333333333
+    IMAGE_FIXTURE=wealthfolio
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -309,15 +321,17 @@ end_case 'falha também durante rollback alerta grave e não registra SHA novo'
 
 begin_case
 SCENARIO=wealthfolio_success
-CI_FIXTURE=wealthfolio
+CI_FIXTURE=wealthfolio-addon
+IMAGE_FIXTURE=wealthfolio
 add_patrimonio_override wealthfolio-teste
 run_deploy wealthfolio
 assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
 assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
 assert_log 'https://api.github.com/repos/MSPA-Coder/WealthfolioTeste/commits/2222222222222222222222222222222222222222/check-runs?per_page=100' 'Wealthfolio público deve conferir a CI do SHA exato'
-assert_output '3 check-runs verdes' 'Wealthfolio público deve exigir seus dois grupos de testes e a análise'
-end_case 'Wealthfolio público exige CI verde e usa a rede privada'
+assert_log 'https://api.github.com/repos/MSPA-Coder/WealthfolioTeste/commits/3333333333333333333333333333333333333333/check-runs?per_page=100' 'Wealthfolio deve conferir o último commit que alterou a imagem'
+assert_output 'app 2222222: 1 check-run verde; imagem 3333333: 1 check-run verde' 'Wealthfolio deve exigir a CI atual do add-on e os testes do SHA que mudou a imagem'
+end_case 'Wealthfolio valida a CI do candidato e a imagem no último commit que a alterou'
 
 begin_case
 SCENARIO=success
@@ -345,6 +359,24 @@ recusou_antes_de_tocar() {
     [ ! -e "$CASE_TMP/state/controle-bancario.commit" ] || fail 'recusa pela CI não deve registrar estado'
     assert_output 'ABORTADO: a CI de 2222222 não está verde' 'a recusa deve dizer que a CI não está verde'
 }
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=wealthfolio-addon
+IMAGE_FIXTURE=wealthfolio-image-failure
+run_deploy wealthfolio
+recusou_antes_de_tocar
+assert_output 'imagem em 3333333 não está verde (check-runs de CI/teste reprovados: 1 failure)' 'falha da imagem ancestral deve bloquear o deploy'
+end_case 'Wealthfolio recusa quando os testes do último commit de imagem falham'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=wealthfolio-addon
+IMAGE_SHA=
+run_deploy wealthfolio
+recusou_antes_de_tocar
+assert_output 'não foi possível localizar o último commit que alterou as entradas da imagem' 'ausência de SHA de imagem deve falhar fechada'
+end_case 'Wealthfolio recusa quando não consegue localizar o commit de imagem'
 
 begin_case
 SCENARIO=success

@@ -1,0 +1,9 @@
+{
+  "total_count": 4,
+  "check_runs": [
+    {"id": 1, "name": "update-pip-graph", "status": "completed", "conclusion": "success"},
+    {"id": 2, "name": "Analyze (python)", "status": "completed", "conclusion": "success"},
+    {"id": 3, "name": "Qualidade", "status": "completed", "conclusion": "success"},
+    {"id": 4, "name": "Runtime contracts", "status": "completed", "conclusion": "success"}
+  ]
+}

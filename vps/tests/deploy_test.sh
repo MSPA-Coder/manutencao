@@ -230,7 +230,7 @@ assert_log 'mv <-f> <-->' 'registro deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/state" -name '.controle-bancario.commit.*' -print)" ] || fail 'rename atômico não deve deixar arquivo temporário'
 assert_no_log 'git <reset>' 'sucesso não deve executar rollback'
 assert_log "https://api.github.com/repos/MSPA-Coder/sistema-financeiro/commits/$NEW_SHA/check-runs?per_page=100" 'a CI conferida deve ser a do commit novo, no repositório do projeto'
-assert_output '3 check-runs verdes' 'a saída deve dizer que a CI está verde'
+assert_output '2 check-runs verdes' 'a saída deve contar só os checks de produto'
 end_case 'sucesso registra SHA novo atomicamente'
 
 begin_case
@@ -270,6 +270,7 @@ end_case 'override que chega no merge é removida da configuração após rollba
 
 begin_case
 SCENARIO=success
+CI_FIXTURE=renda-verde
 add_patrimonio_override controle-renda-variavel
 run_deploy renda
 assert_eq 0 "$EXIT_CODE" 'deploy saudável de renda deve sair zero'
@@ -278,6 +279,7 @@ end_case 'renda usa a override quando ela existe'
 
 begin_case
 SCENARIO=success
+CI_FIXTURE=conforto-verde
 run_deploy conforto
 assert_eq 0 "$EXIT_CODE" 'deploy saudável sem override deve sair zero'
 assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 'projeto sem override deve usar apenas compose.yaml'
@@ -307,13 +309,14 @@ end_case 'falha também durante rollback alerta grave e não registra SHA novo'
 
 begin_case
 SCENARIO=wealthfolio_success
+CI_FIXTURE=wealthfolio
 add_patrimonio_override wealthfolio-teste
 run_deploy wealthfolio
 assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
 assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
 assert_log 'https://api.github.com/repos/MSPA-Coder/WealthfolioTeste/commits/2222222222222222222222222222222222222222/check-runs?per_page=100' 'Wealthfolio público deve conferir a CI do SHA exato'
-assert_output '3 check-runs verdes' 'Wealthfolio público deve exigir CI verde'
+assert_output '3 check-runs verdes' 'Wealthfolio público deve exigir seus dois grupos de testes e a análise'
 end_case 'Wealthfolio público exige CI verde e usa a rede privada'
 
 begin_case
@@ -329,9 +332,10 @@ assert_log "https://api.github.com/repos/MSPA-Coder/sistema-financeiro/commits/$
 end_case 'refresh reconstrói tags móveis sem mudança de código e exige CI verde'
 
 # ---------------------------------------------------------------------------
-# CI do commit (02/10/2026): o deploy só aplica um commit com todos os
-# check-runs terminados e verdes. Recusar acontece antes do fast-forward, então
-# a prova de "nada mudou" é não haver `merge`, `compose` nem estado novo.
+# CI do commit: o deploy só aplica um commit com todos os check-runs de
+# produto/segurança terminados e verdes, além dos grupos de testes esperados.
+# Atualizadores de dependências e auto-merge não validam o artefato. Recusar
+# acontece antes do fast-forward, então nada muda no servidor.
 # ---------------------------------------------------------------------------
 recusou_antes_de_tocar() {
     [ "$EXIT_CODE" -ne 0 ] || fail 'deploy recusado deve sair não zero'
@@ -347,7 +351,7 @@ SCENARIO=success
 CI_FIXTURE=vermelho
 run_deploy
 recusou_antes_de_tocar
-assert_output 'check-runs reprovados: 1 failure' 'a recusa deve contar o check-run reprovado'
+assert_output 'check-runs de CI/teste reprovados: 1 failure' 'a recusa deve contar o check-run reprovado'
 assert_no_log 'alerta <' 'recusa sem mudança no servidor não deve alertar'
 end_case 'CI vermelha recusa antes de tocar no servidor'
 
@@ -355,9 +359,41 @@ begin_case
 SCENARIO=success
 CI_FIXTURE=pendente
 run_deploy
+assert_eq 0 "$EXIT_CODE" 'atualizador pendente não deve bloquear testes já concluídos'
+assert_output '2 check-runs verdes' 'a contagem deve excluir o updater pendente'
+end_case 'Dependabot ainda rodando não bloqueia produto validado'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=ci-pendente
+run_deploy
 recusou_antes_de_tocar
-assert_output '1 de 3 check-runs ainda não terminaram' 'a recusa deve dizer que a CI ainda roda'
+assert_output '1 de 2 check-runs de CI/teste ainda não terminaram' 'a recusa deve dizer que o teste ainda roda'
 end_case 'CI ainda rodando recusa'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=helpers
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'falhas apenas nas automações auxiliares não devem bloquear'
+assert_output '2 check-runs verdes' 'a saída deve contar só análise e testes de produto'
+end_case 'falhas de Dependabot e auto-merge não substituem nem bloqueiam CI verde'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=helper-only
+run_deploy
+recusou_antes_de_tocar
+assert_output 'nenhum check-run de CI/teste para validar' 'sem check de produto o deploy deve recusar'
+end_case 'checks auxiliares sozinhos não autorizam deploy'
+
+begin_case
+SCENARIO=success
+CI_FIXTURE=product-red-helpers
+run_deploy
+recusou_antes_de_tocar
+assert_output 'check-runs de CI/teste reprovados: 1 failure' 'falha de produto deve bloquear mesmo com falhas auxiliares'
+end_case 'falha de teste continua bloqueando apesar dos erros dos bots'
 
 begin_case
 SCENARIO=success

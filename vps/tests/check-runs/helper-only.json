@@ -1,0 +1,8 @@
+{
+  "total_count": 3,
+  "check_runs": [
+    {"id": 1, "name": "update-uv-graph", "status": "completed", "conclusion": "failure"},
+    {"id": 2, "name": "Dependabot", "status": "completed", "conclusion": "failure"},
+    {"id": 3, "name": "Auto merge", "status": "in_progress", "conclusion": null}
+  ]
+}

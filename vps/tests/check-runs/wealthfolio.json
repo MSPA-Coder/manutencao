@@ -1,0 +1,9 @@
+{
+  "total_count": 4,
+  "check_runs": [
+    {"id": 1, "name": "Auto merge", "status": "completed", "conclusion": "failure"},
+    {"id": 2, "name": "Analyze (python)", "status": "completed", "conclusion": "success"},
+    {"id": 3, "name": "Build, testes dos patches e partida", "status": "completed", "conclusion": "success"},
+    {"id": 4, "name": "Patches, add-on e Compose", "status": "completed", "conclusion": "success"}
+  ]
+}

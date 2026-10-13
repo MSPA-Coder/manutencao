@@ -12,8 +12,10 @@
 #
 # POR QUE CONFERIR A CI ANTES: o servidor espelha o `main`, e nada impedia de
 # publicar um `main` vermelho -- o do NetWorth ficou assim em 28/09/2026. Agora
-# o commit só é aplicado se todos os check-runs dele terminaram verdes no
-# GitHub. Ver `conferir_ci`.
+# o commit só é aplicado se todos os check-runs de produto/segurança terminaram
+# verdes no GitHub e os checks de teste daquele app estão presentes. Os checks
+# dos atualizadores de dependências e do auto-merge não testam o artefato; eles
+# não podem bloquear nem substituir a CI. Ver `conferir_ci`.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
 # o banco inteiramente fora do ar. Os seis projetos expõem `/health`, que
@@ -65,23 +67,31 @@ PADRAO_SAUDE=$PADRAO_OK
 projeto_info() {
     CI_EXIGIDA=1
     CI_MOTIVO=
+    CI_TESTE_1=
+    CI_TESTE_2=
     case "$1" in
         bancario|controle-bancario)
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
             DOMINIO=bancario-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/sistema-financeiro ;;
+            REPO_GITHUB=MSPA-Coder/sistema-financeiro
+            CI_TESTE_1=Qualidade ;;
         conforto|conforto-termico)
             DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
             DOMINIO=conforto-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico ;;
+            REPO_GITHUB=MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico
+            CI_TESTE_1=Qualidade
+            CI_TESTE_2='Runtime contracts' ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101
             DOMINIO=megasena-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/mega-sena ;;
+            REPO_GITHUB=MSPA-Coder/mega-sena
+            CI_TESTE_1=Qualidade ;;
         renda|controle-renda-variavel)
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
             DOMINIO=renda-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/ControleRendaVariavel ;;
+            REPO_GITHUB=MSPA-Coder/ControleRendaVariavel
+            CI_TESTE_1=Qualidade
+            CI_TESTE_2='Contratos de runtime' ;;
         portal|mp-portal)
             DIR=mp-portal;              ENVF=.env.vps;    PORTA=5601
             DOMINIO=mp-solucoes.duckdns.org
@@ -92,6 +102,8 @@ projeto_info() {
             DOMINIO=wealthfolio-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/WealthfolioTeste
             CI_EXIGIDA=1
+            CI_TESTE_1='Build, testes dos patches e partida'
+            CI_TESTE_2='Patches, add-on e Compose'
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
             echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
@@ -148,28 +160,28 @@ verificar_saude() {
     return 1
 }
 
-# CI DO COMMIT (02/10/2026). Antes de tocar na produção, pergunta ao GitHub se
-# todos os check-runs do commit terminaram, e terminaram bem.
+# CI DO COMMIT. Antes de tocar na produção, pergunta ao GitHub se todos os
+# check-runs de produto/segurança terminaram bem e se os testes do app estão
+# presentes. Os checks exatos são definidos em `projeto_info`.
 #
-# TODOS, e não um nome: a CI dos aplicativos tem mais de um job (o CRV roda
-# `Qualidade` e `Contratos de runtime`), o CodeQL roda junto, e uma lista de
-# nomes aqui apodreceria a cada job novo -- a mesma lição das listas escritas
-# à mão do backup. `neutral` e `skipped` contam como verdes; o resto não. A API
-# devolve só a tentativa mais recente de cada job (`filter=latest`, o padrão),
-# então um job refeito e aprovado substitui o que tinha falhado.
+# Checks de dependabot (`Dependabot`, `update-uv-graph`, `update-pip-graph`) e
+# do auto-merge são automações auxiliares, não validam o app e às vezes falham
+# por limitações do próprio atualizador. Todos os demais continuam bloqueando
+# se falharem ou não terminarem. `neutral` e `skipped` contam como verdes. A
+# API devolve a tentativa mais recente de cada job (`filter=latest`, o padrão).
 #
-# SEM jq NEM python, porque a suíte também roda na imagem `bash:5.2`, que não
-# tem nenhum dos dois. As chaves `"status"` e `"conclusion"` aparecem uma vez
-# por check-run (texto livre que as contenha vem com as aspas escapadas e não
-# casa), e as duas contagens são conferidas contra `total_count`: uma resposta
-# que não bata é tratada como desconhecida, e desconhecida não publica.
+# O parser pequeno em awk preserva o vínculo entre nome, status e conclusão de
+# cada objeto JSON. As contagens também são comparadas com `total_count`; JSON
+# incompleto, sem os testes esperados ou desconhecido nunca publica. Não usa jq
+# nem Python, para a suíte seguir executável na imagem mínima `bash:5.2`.
 #
 # A API anônima basta porque os repositórios conferidos são públicos, e o
 # limite dela (60 pedidos por hora por IP) sobra para deploy feito à mão.
 CI_RESUMO=
 conferir_ci() {
     local sha=$1 resposta codigo corpo total estados conclusoes
-    local n_estados n_conclusoes pendentes reprovados
+    local n_estados n_conclusoes analise parse_ok n_runs n_ci pendentes
+    local encontrou_1 encontrou_2 reprovados
     resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
                    -H 'Accept: application/vnd.github+json' \
                    "https://api.github.com/repos/$REPO_GITHUB/commits/$sha/check-runs?per_page=100" \
@@ -200,18 +212,110 @@ conferir_ci() {
         CI_RESUMO="resposta da API fora do esperado ($total check-runs, $n_estados estados, $n_conclusoes conclusões)"
         return 1
     fi
-    pendentes=$(printf '%s\n' "$estados" | grep -cv '^completed$' || true)
-    if [ "$pendentes" -gt 0 ]; then
-        CI_RESUMO="$pendentes de $total check-runs ainda não terminaram"
+
+    analise=$(printf '%s\n' "$corpo" | awk -v esperado1="$CI_TESTE_1" -v esperado2="$CI_TESTE_2" '
+        function campo(objeto, chave, padrao, valor) {
+            padrao = "\"" chave "\"[[:space:]]*:[[:space:]]*\"[^\"]*\""
+            if (!match(objeto, padrao)) return ""
+            valor = substr(objeto, RSTART, RLENGTH)
+            sub(/^[^:]*:[[:space:]]*\"/, "", valor)
+            sub(/\"$/, "", valor)
+            return valor
+        }
+        function processar(objeto, nome, estado, conclusao, padrao) {
+            nome = campo(objeto, "name")
+            estado = campo(objeto, "status")
+            conclusao = campo(objeto, "conclusion")
+            if (conclusao == "") {
+                padrao = "\"conclusion\"[[:space:]]*:[[:space:]]*null"
+                if (match(objeto, padrao)) conclusao = "null"
+            }
+            if (nome == "" || estado == "" || conclusao == "") {
+                malformados++
+                return
+            }
+            if (nome == "Dependabot" || nome == "update-uv-graph" ||
+                nome == "update-pip-graph" || nome == "Auto merge") return
+
+            ativos++
+            if (nome == esperado1) achou1 = 1
+            if (esperado2 != "" && nome == esperado2) achou2 = 1
+            if (estado != "completed") pendentes++
+            else if (conclusao != "success" && conclusao != "neutral" && conclusao != "skipped")
+                falhas[++n_falhas] = conclusao
+        }
+        { json = json $0 "\n" }
+        END {
+            inicio = index(json, "\"check_runs\"")
+            if (!inicio) { print "ERRO"; exit }
+            posicao = inicio + index(substr(json, inicio), "[")
+            if (posicao <= inicio) { print "ERRO"; exit }
+
+            dentro = 0
+            em_string = 0
+            escape = 0
+            for (i = posicao; i <= length(json); i++) {
+                caractere = substr(json, i, 1)
+                if (em_string) {
+                    if (dentro) objeto = objeto caractere
+                    if (escape) escape = 0
+                    else if (caractere == "\\") escape = 1
+                    else if (caractere == "\"") em_string = 0
+                    continue
+                }
+                if (caractere == "\"") {
+                    em_string = 1
+                    if (dentro) objeto = objeto caractere
+                } else if (caractere == "{") {
+                    if (dentro == 0) objeto = ""
+                    dentro++
+                    objeto = objeto caractere
+                } else if (caractere == "}") {
+                    objeto = objeto caractere
+                    dentro--
+                    if (dentro == 0) {
+                        n_runs++
+                        processar(objeto)
+                    }
+                } else if (dentro > 0) objeto = objeto caractere
+                else if (caractere == "]") break
+            }
+
+            if (malformados > 0) { print "ERRO"; exit }
+            printf "OK\t%d\t%d\t%d\t%d\t%d\n", n_runs, ativos, pendentes, achou1, achou2
+            for (i = 1; i <= n_falhas; i++) print falhas[i]
+        }
+    ')
+    parse_ok=$(printf '%s\n' "$analise" | sed -n '1p')
+    if [[ "$parse_ok" != OK$'\t'* ]]; then
+        CI_RESUMO="não foi possível interpretar os check-runs da API"
         return 1
     fi
-    reprovados=$(printf '%s\n' "$conclusoes" | grep -Ev '^(success|neutral|skipped)$' \
+    IFS=$'\t' read -r parse_ok n_runs n_ci pendentes encontrou_1 encontrou_2 \
+        <<<"$(printf '%s\n' "$analise" | sed -n '1p')"
+    if [ "$n_runs" -ne "$total" ]; then
+        CI_RESUMO="resposta da API fora do esperado ($total check-runs, $n_runs objetos)"
+        return 1
+    fi
+    if [ "$n_ci" -eq 0 ]; then
+        CI_RESUMO="nenhum check-run de CI/teste para validar (só automações auxiliares)"
+        return 1
+    fi
+    if [ "$encontrou_1" -ne 1 ] || { [ -n "$CI_TESTE_2" ] && [ "$encontrou_2" -ne 1 ]; }; then
+        CI_RESUMO="check-run obrigatório ausente: ${CI_TESTE_1}${CI_TESTE_2:+ e $CI_TESTE_2}"
+        return 1
+    fi
+    if [ "$pendentes" -gt 0 ]; then
+        CI_RESUMO="$pendentes de $n_ci check-runs de CI/teste ainda não terminaram"
+        return 1
+    fi
+    reprovados=$(printf '%s\n' "$analise" | sed '1d' | grep -Ev '^(success|neutral|skipped)$' \
                  | sort | uniq -c | awk '{printf "%s%s %s", sep, $1, $2; sep=", "}' || true)
     if [ -n "$reprovados" ]; then
-        CI_RESUMO="check-runs reprovados: $reprovados"
+        CI_RESUMO="check-runs de CI/teste reprovados: $reprovados"
         return 1
     fi
-    CI_RESUMO="$total check-runs verdes"
+    CI_RESUMO="$n_ci check-runs verdes"
     return 0
 }
 

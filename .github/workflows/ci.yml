@@ -14,6 +14,9 @@ on:
   # O `push` acima continua restrito a `main`: o que interessa la e o estado
   # do branch que a producao espelha.
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 3 * * 1"
 
 permissions:
   contents: read
@@ -27,9 +30,8 @@ jobs:
     # `Qualidade` é o nome exigido pelo ruleset do `main` como status check
     # obrigatório. Renomear o job derruba a proteção do branch em silêncio.
     name: Qualidade
-    # Fixado, e não `ubuntu-latest`: o `latest` migra de imagem sem aviso e
-    # muda ferramenta debaixo do teste. Os outros repositórios já usavam a
-    # forma fixa; este era o único fora.
+      # Imagem do runner escolhida para esta suíte e atualizada pelo GitHub;
+      # as imagens Docker usadas abaixo são puxadas novamente em cada execução.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -54,13 +56,8 @@ jobs:
             bash -n "$script"
           done < <(find vps -type f -name '*.sh' -print0)
 
-      # RODA COMO CONTÊINER, NÃO COMO ACTION -- mesma política dos repositórios
-      # irmãos: `allowed_actions: selected` com apenas `github_owned_allowed`.
-      # Uma action de terceiro é barrada antes de o workflow rodar, e o sintoma
-      # é `startup_failure` sem log nenhum.
-      #
-      # Imagem fixada por digest, pelo mesmo motivo que as actions são fixadas
-      # por SHA.
+      # As imagens são declaradas no Compose e puxadas novamente em toda CI
+      # e na rodada semanal, para testar as tags móveis mais recentes.
       #
       # REPROVA EM QUALQUER ACHADO, de propósito. As exceções são os
       # `# shellcheck disable=` no código, cada um com o motivo escrito ao
@@ -70,10 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           find vps -type f -name '*.sh' -print0 \
-            | xargs -0 docker run --rm \
-                -v "$PWD:/mnt:ro" -w /mnt \
-                koalaman/shellcheck-alpine:v0.10.0@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
-                shellcheck -f gcc
+            | xargs -0 docker compose -f .github/docker-compose.yml run --rm --no-deps shellcheck
 
       # `nginx -t` sobre os vhosts versionados, num andaime com certificados
       # autoassinados. Até aqui, o primeiro a descobrir um erro de sintaxe ou
@@ -83,13 +77,13 @@ jobs:
       # que aceita `http2 on;`, usado pelos vhosts.
       # Ver o cabeçalho de `vps/tests/nginx_test.sh`.
       - name: Conferir a configuração do Nginx
-        run: |
-          docker run --rm -v "$PWD:/repo:ro" \
-            nginx:1.28@sha256:146adea4768b83c607d0bdfa4188464e3da6e0a3ad4475db1d1d8f64f27c29cc \
-            sh /repo/vps/tests/nginx_test.sh
+        run: docker compose -f .github/docker-compose.yml run --rm --no-deps nginx-test
 
       - name: Testar o deploy
         run: bash vps/tests/deploy_test.sh
+
+      - name: Testar a atualização automática dos stacks
+        run: bash vps/tests/atualizar-stacks_test.sh
 
       # O instalador tinha suíte hermética desde que foi escrito, mas ela nunca
       # havia sido ligada à CI -- rodava só quando alguém lembrava.

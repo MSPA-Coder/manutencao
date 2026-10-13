@@ -59,10 +59,9 @@ PADRAO_SAUDE=$PADRAO_OK
 # NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
 #
-# `REPO_GITHUB` é onde a CI do commit é conferida. Os dois privados ficam com
-# `CI_EXIGIDA=0` e o motivo escrito: a API anônima não alcança repositório
-# privado, e o Wealthfolio nem tem CI. Para ligar num deles, o servidor precisa
-# de um token de leitura e este script, de enviá-lo.
+# `REPO_GITHUB` é onde a CI do commit é conferida. Todos os repositórios de
+# aplicativos deste deploy são públicos; a API anônima basta e nenhum token do
+# GitHub precisa ficar no VPS.
 projeto_info() {
     CI_EXIGIDA=1
     CI_MOTIVO=
@@ -92,7 +91,7 @@ projeto_info() {
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=wealthfolio-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/WealthfolioTeste
-            CI_EXIGIDA=0; CI_MOTIVO="repositório privado e sem CI"
+            CI_EXIGIDA=1
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
             echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
@@ -142,7 +141,7 @@ verificar_saude() {
                        "https://$DOMINIO/health" 2>/dev/null || true)
         VERIF_CODE=$(printf '%s' "$resposta" | tail -1)
         VERIF_CORPO=$(printf '%s' "$resposta" | sed '$d')
-        if printf '%s' "$VERIF_CORPO" | grep -Eq "$PADRAO_SAUDE"; then
+        if grep -Eq "$PADRAO_SAUDE" <<<"$VERIF_CORPO"; then
             return 0
         fi
     done
@@ -227,7 +226,7 @@ esperar_compose() {
             echo "Não foi possível consultar o estado do Compose." >&2
             return 1
         fi
-        if ! printf '%s\n' "$estados" | grep -qi 'starting'; then
+        if ! grep -qi 'starting' <<<"$estados"; then
             printf '%s\n' "$estados" | sed 's/^/  /'
             return 0
         fi
@@ -256,6 +255,48 @@ registrar_implantacao_saudavel() {
     fi
 }
 
+# Guarda as imagens exatas que estão servindo antes de reconstruir. As tags de
+# base são móveis; reconstruir o código antigo durante um rollback poderia
+# baixar a mesma base que causou a falha. O rollback retagueia os IDs antigos e
+# sobe sem build, preservando a imagem que já estava saudável.
+IMAGENS_ANTERIORES=
+capturar_imagens_anteriores() {
+    local containers container imagem
+    containers=$(compose ps -q) || {
+        echo "Não foi possível listar os contêineres atuais para rollback." >&2
+        return 1
+    }
+    if [ -z "$containers" ]; then
+        echo "Nenhum contêiner atual para preservar antes do deploy." >&2
+        return 1
+    fi
+    install -d -m 700 "$ESTADO_DIR" || return 1
+    IMAGENS_ANTERIORES=$(mktemp "$ESTADO_DIR/.${DIR}.imagens.XXXXXX") || return 1
+    chmod 600 "$IMAGENS_ANTERIORES" || return 1
+    while IFS= read -r container; do
+        [ -n "$container" ] || continue
+        if ! imagem=$(docker inspect --format '{{.Image}} {{.Config.Image}}' "$container") ||
+           ! [[ "$imagem" =~ ^sha256:[a-f0-9]{64}[[:space:]]+[^[:space:]]+$ ]]; then
+            echo "Não foi possível registrar a imagem atual do contêiner $container." >&2
+            return 1
+        fi
+        printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
+    done <<<"$containers"
+    [ -s "$IMAGENS_ANTERIORES" ]
+}
+
+retaggear_imagens_anteriores() {
+    local id referencia
+    [ -s "$IMAGENS_ANTERIORES" ] || {
+        echo "O registro das imagens anteriores está ausente." >&2
+        return 1
+    }
+    while read -r id referencia; do
+        [ -n "$id" ] && [ -n "$referencia" ] || return 1
+        docker image tag "$id" "$referencia" || return 1
+    done <"$IMAGENS_ANTERIORES"
+}
+
 # Único caminho para toda falha posterior a um fast-forward bem-sucedido.
 # Cada comando potencialmente falho está dentro de um `if`: `set -e` nunca
 # consegue encerrar o processo antes de tentarmos restaurar a versão anterior.
@@ -269,8 +310,10 @@ rollback_deploy() {
 
     if ! git reset --hard "$atual"; then
         detalhe_rollback="git reset --hard não conseguiu restaurar ${atual:0:7}"
-    elif ! compose up -d --build; then
-        detalhe_rollback="Compose não conseguiu reconstruir/subir ${atual:0:7}"
+    elif ! retaggear_imagens_anteriores; then
+        detalhe_rollback="não foi possível restaurar as imagens que estavam saudáveis"
+    elif ! compose up -d --no-build; then
+        detalhe_rollback="Compose não conseguiu subir as imagens anteriores de ${atual:0:7}"
     elif ! esperar_compose; then
         detalhe_rollback="a espera do Compose falhou ao restaurar ${atual:0:7}"
     elif verificar_saude "$TENTATIVAS_SAUDE"; then
@@ -292,6 +335,7 @@ O commit ruim CONTINUA no main do GitHub. O próximo deploy deste projeto
 vai tentar aplicá-lo outra vez. Conferir antes:
 
   cd /home/ubuntu/apps/$DIR && git log --oneline ${atual:0:7}..origin/main"
+        rm -f -- "$IMAGENS_ANTERIORES"
         return 1
     else
         detalhe_rollback="/health não confirmou saúde após restaurar ${atual:0:7} (HTTP $VERIF_CODE)"
@@ -315,6 +359,7 @@ Diagnóstico inicial:
   docker compose --env-file $ENVF ${COMPOSE_FILES[*]} ps
   docker compose --env-file $ENVF ${COMPOSE_FILES[*]} logs --tail 50
   df -h /"
+    rm -f -- "$IMAGENS_ANTERIORES"
     return 1
 }
 
@@ -338,19 +383,25 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--sem-ci]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--sem-ci] [--refresh]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi
 
 projeto_info "$1"
 SEM_CI=0
+REFRESH=0
 for opcao in "${@:2}"; do
     case "$opcao" in
         --sem-ci) SEM_CI=1 ;;
-        *) echo "Opção desconhecida: $opcao (use --sem-ci)" >&2; exit 1 ;;
+        --refresh) REFRESH=1 ;;
+        *) echo "Opção desconhecida: $opcao (use --sem-ci ou --refresh)" >&2; exit 1 ;;
     esac
 done
+if [ "$SEM_CI" = 1 ] && [ "$REFRESH" = 1 ]; then
+    echo "Opções incompatíveis: --sem-ci e --refresh não podem ser combinadas." >&2
+    exit 1
+fi
 cd "$APPS/$DIR"
 
 echo "== $DIR =="
@@ -377,18 +428,22 @@ if ! atual=$(git rev-parse HEAD) || ! novo=$(git rev-parse origin/main); then
     exit 1
 fi
 
-if [ "$atual" = "$novo" ]; then
+if [ "$atual" = "$novo" ] && [ "$REFRESH" = 0 ]; then
     echo "Já está na versão do main ($(git rev-parse --short HEAD)). Nada a fazer."
     exit 0
 fi
 
-echo "Mudanças a aplicar:"
-git log --oneline "$atual..$novo" | sed 's/^/  /'
-echo "Arquivos:"
-git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
+if [ "$atual" != "$novo" ]; then
+    echo "Mudanças a aplicar:"
+    git log --oneline "$atual..$novo" | sed 's/^/  /'
+    echo "Arquivos:"
+    git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
+elif [ "$REFRESH" = 1 ]; then
+    echo "SHA inalterado; reconstruindo as tags-base móveis após CI verde."
+fi
 
 echo "CI do commit ${novo:0:7}:"
-if [ "$CI_EXIGIDA" != 1 ]; then
+if [ "$CI_EXIGIDA" = 0 ]; then
     ci_verde=1
     echo "  não conferida: $CI_MOTIVO"
 elif conferir_ci "$novo"; then
@@ -422,7 +477,12 @@ fi
 # e comprovadamente respondia.
 echo
 echo "-- atualizando código (voltando para ${atual:0:7} se der errado) --"
-if ! git merge --ff-only origin/main; then
+if ! capturar_imagens_anteriores; then
+    echo "ABORTADO: não foi possível preservar as imagens atuais; nada foi alterado." >&2
+    exit 1
+fi
+if [ "$atual" != "$novo" ] && ! git merge --ff-only origin/main; then
+    rm -f -- "$IMAGENS_ANTERIORES"
     echo "ABORTADO: origin/main não pôde ser aplicado por fast-forward." >&2
     echo "O deploy não começou e o HEAD permanece em ${atual:0:7}; não há rollback a fazer." >&2
     exit 1
@@ -453,6 +513,7 @@ if verificar_saude "$TENTATIVAS_SAUDE"; then
 commit confirmado em $ESTADO_DIR. O código não foi revertido."
         exit 1
     fi
+    rm -f -- "$IMAGENS_ANTERIORES"
 
     # Poda o cache por tamanho, pois deploys frequentes podem manter todas as
     # camadas jovens mesmo quando o consumo de disco cresce. O teto preserva

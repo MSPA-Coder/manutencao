@@ -73,15 +73,26 @@ No VPS, a interface é:
 Antes do fast-forward, o deploy pergunta à API do GitHub se todos os
 check-runs do commit novo terminaram verdes (`neutral` e `skipped` contam como
 verdes). CI vermelha, ainda rodando, ausente ou uma API que não responde: o
-deploy recusa antes de tocar no servidor. O portal e o Wealthfolio ficam de fora porque são privados e a API anônima não
-os alcança. `--sem-ci` existe para quando a API estiver fora justo na hora de
-um conserto, e avisa pelo alerta.
+deploy recusa antes de tocar no servidor. O Wealthfolio agora é público e usa
+o mesmo gate; o portal segue fora da automação porque a hospedagem dele é a
+Hostinger, fora deste VPS. `--sem-ci` existe para quando a API estiver fora
+justo na hora de um conserto, e avisa pelo alerta.
+
+O `atualizar-stacks.timer` verifica commits diariamente às 12:00 UTC. Quando
+algum `main` avança, valida o backup completo com `backup-db.sh --forcar` e
+chama o `deploy.sh` em série para cada app; cada deploy exige CI verde e
+confirma `/health` público. O `reconstruir-bases.timer` faz o mesmo a cada
+quarta-feira, para reconstruir as tags móveis das imagens-base mesmo sem
+mudança de código. Se uma imagem nova falhar, o deploy restaura os IDs exatos
+que estavam no ar, sem rebuild durante o rollback. Migrações de banco não são
+revertidas automaticamente; por isso o backup validado é obrigatório antes de
+qualquer reconstrução automática.
 
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
-automático devolve o checkout ao SHA anterior, reconstrói a imagem e só registra
-o estado depois que o endpoint público confirma saúde. Mesmo quando a reversão
-recupera o site, o deploy original termina com erro e o commit defeituoso
-permanece em `main` até ser corrigido.
+automático devolve o checkout ao SHA anterior, restaura as imagens anteriores e
+só registra o estado depois que o endpoint público confirma saúde. Mesmo
+quando a reversão recupera o site, o deploy original termina com erro e o
+commit defeituoso permanece em `main` até ser corrigido.
 
 Teste hermético do fluxo, sem rede ou acesso ao VPS:
 

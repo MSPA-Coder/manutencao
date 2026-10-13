@@ -128,7 +128,7 @@ descobrir_desaparecidos() {
         [ -d "$dir" ] || continue
         slug=$(basename "$dir")
         [ -n "$(backups_do_projeto "$dir" "$ext")" ] || continue
-        printf '%s\n' "$rodando" | grep -q "^${slug}:" && continue
+        grep -Eq "^${slug}:" <<<"$rodando" && continue
         printf '%s\n' "$slug"
     done
 }

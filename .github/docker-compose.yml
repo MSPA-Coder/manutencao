@@ -1,0 +1,25 @@
+name: manutencao-ci
+
+services:
+  shellcheck:
+    image: koalaman/shellcheck-alpine:latest
+    pull_policy: always
+    entrypoint: ["shellcheck", "-f", "gcc"]
+    working_dir: /repo
+    network_mode: none
+    volumes:
+      - type: bind
+        source: ../
+        target: /repo
+        read_only: true
+
+  nginx-test:
+    image: nginx:1.28
+    pull_policy: always
+    entrypoint: ["sh", "/repo/vps/tests/nginx_test.sh"]
+    network_mode: none
+    volumes:
+      - type: bind
+        source: ../
+        target: /repo
+        read_only: true

@@ -11,8 +11,8 @@
 # lógica, e erro de lógica é o que teste pega.
 #
 # O QUE ESTÁ SOB TESTE, e por que cada caso importa:
-#   - o critério da imagem `postgres:*` (e não "tem pg_dump dentro", que no VPS
-#     real aprova dois contêineres do ConfortoTermico que não são banco);
+#   - o critério das imagens `postgres:*` e `mspa-postgres:*` (e não "tem
+#     pg_dump dentro", que no VPS real aprova contêineres da aplicação);
 #   - a guarda de descoberta vazia, que é a diferença entre "não salvei nada" e
 #     "não salvei nada e disse que deu certo" -- o modo de falha que um backup
 #     não pode ter;
@@ -210,6 +210,16 @@ roda
 assert_eq 0 "$EXIT_CODE" 'ciclo sai bem'
 assert_eq 1 "$(grep -c '== mp_portal' "$SAIDA")" 'o contêiner da aplicação não vira banco'
 end_case 'descobre o banco pela imagem e ignora o contêiner da aplicação'
+
+begin_case
+# A imagem padrão da frota tem prefixo `mspa-`; era aceita pelo Compose, mas
+# rejeitada pela descoberta do backup no VPS.
+contêiner controle-renda-variavel-db-1 mspa-postgres:17-alpine controle-renda-variavel
+contêiner controle-renda-variavel-web-1 controle-renda-variavel:local controle-renda-variavel
+roda
+assert_eq 0 "$EXIT_CODE" 'imagem Postgres compartilhada é aceita'
+assert_eq 1 "$(grep -c '== controle_renda_variavel' "$SAIDA")" 'o banco é salvo uma vez'
+end_case 'descobre bancos da imagem compartilhada mspa-postgres'
 
 begin_case
 # O caso real do VPS: os aplicativos trazem o cliente do Postgres, então um

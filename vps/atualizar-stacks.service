@@ -1,0 +1,14 @@
+[Unit]
+Description=Atualiza stacks de produção após CI verde
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=docker
+WorkingDirectory=/home/ubuntu
+UMask=0077
+ExecStart=/home/ubuntu/atualizar-stacks.sh
+TimeoutStartSec=6h

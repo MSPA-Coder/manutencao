@@ -121,7 +121,7 @@ url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
 EOF
 )
 
-if printf '%s' "$RESPOSTA" | grep -q '"ok":true'; then
+if grep -q '"ok":true' <<<"$RESPOSTA"; then
     touch "$MARCA" 2>/dev/null
     registrar "enviado: $TITULO"
 else

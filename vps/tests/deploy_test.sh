@@ -74,7 +74,7 @@ case "${1:-}" in
     fetch) exit 0 ;;
     rev-parse)
         if [ "${2:-}" = "--short" ]; then cut -c1-7 "$FAKE_HEAD"
-        elif [ "${2:-}" = "origin/main" ]; then printf '%s\n' "$NEW_SHA"
+        elif [ "${2:-}" = "origin/main" ]; then printf '%s\n' "${REMOTE_SHA:-$NEW_SHA}"
         else cat "$FAKE_HEAD"
         fi ;;
     log) printf '2222222 mudança de teste\n' ;;
@@ -106,8 +106,14 @@ EOF
 #!/usr/bin/env bash
 printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 if [ "${1:-}" = builder ]; then exit 0; fi
+if [ "${1:-}" = inspect ]; then
+    printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
+    exit 0
+fi
+if [ "${1:-}" = image ] && [ "${2:-}" = tag ]; then exit 0; fi
 case " $* " in
-    *' up -d --build '*)
+    *' ps -q '*) printf 'fake-container\n'; exit 0 ;;
+    *' up -d --build '*|*' up -d --no-build '*)
         count=0; [ ! -f "$UP_COUNT" ] || count=$(cat "$UP_COUNT")
         count=$((count + 1)); printf '%s\n' "$count" >"$UP_COUNT"
         case "$SCENARIO:$count" in
@@ -165,11 +171,12 @@ EOF
 run_deploy() {
     local projeto=${1:-bancario}
     set +e
-    PATH="$CASE_TMP/bin:$PATH" \
-    APPS="$CASE_TMP/apps" ALERTA="$CASE_TMP/alerta.sh" ESTADO_DIR="$CASE_TMP/state" \
-    CALL_LOG="$CASE_TMP/calls.log" FAKE_HEAD="$CASE_TMP/head" UP_COUNT="$CASE_TMP/up-count" \
-    SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
-    CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
+    env PATH="$CASE_TMP/bin:$PATH" \
+        APPS="$CASE_TMP/apps" ALERTA="$CASE_TMP/alerta.sh" ESTADO_DIR="$CASE_TMP/state" \
+        CALL_LOG="$CASE_TMP/calls.log" FAKE_HEAD="$CASE_TMP/head" UP_COUNT="$CASE_TMP/up-count" \
+        SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
+        REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
+        CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -180,6 +187,7 @@ begin_case() {
     CASE_FAILED=0
     CI_FIXTURE=verde
     CI_HTTP=200
+    REMOTE_SHA=$NEW_SHA
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -231,7 +239,7 @@ run_deploy
 [ "$EXIT_CODE" -ne 0 ] || fail 'falha de fast-forward deve sair não zero'
 assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'HEAD deve permanecer no commit antigo'
 assert_no_log 'git <reset>' 'falha de fast-forward não deve executar reset'
-assert_no_log 'docker <compose>' 'falha de fast-forward não deve chamar Compose'
+assert_no_log '<up>' 'falha de fast-forward não deve subir ou alterar contêineres'
 end_case 'falha de fast-forward não tenta rollback'
 
 begin_case
@@ -240,8 +248,9 @@ add_patrimonio_override controle-bancario
 run_deploy
 [ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido deve continuar saindo não zero'
 assert_log "git <reset> <--hard> <$OLD_SHA>" 'rollback deve restaurar exatamente o SHA antigo'
-assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'rollback deve subir a imagem antiga com as duas definições Compose'
-assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 2 'deploy e rollback devem usar as duas definições Compose'
+assert_log 'docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <app:local>' 'rollback deve retaggear a imagem que estava saudável'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--no-build>' 'rollback deve subir a imagem anterior sem rebuild'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up>' 2 'deploy e rollback devem usar as duas definições Compose'
 assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <ps>' 'rollback deve conferir o mesmo projeto Compose'
 assert_log 'curl <-sSL>' 'rollback deve confirmar /health'
 assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback saudável deve registrar SHA antigo'
@@ -253,9 +262,9 @@ SCENARIO=override_merge_rollback
 run_deploy
 [ "$EXIT_CODE" -ne 0 ] || fail 'deploy com Compose quebrado deve falhar após rollback'
 assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'override criada no merge deve entrar no deploy novo'
-assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 'rollback deve recalcular os Compose após restaurar checkout sem override'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--no-build>' 'rollback deve recalcular os Compose após restaurar checkout sem override'
 assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 1 'override só deve ser usada no deploy novo'
-assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 1 'rollback deve usar somente compose.yaml após a remoção da override'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--no-build>' 1 'rollback deve usar somente compose.yaml após a remoção da override'
 [ ! -e "$CASE_TMP/apps/controle-bancario/compose.patrimonio-internal.yaml" ] || fail 'checkout antigo deve remover a override após rollback'
 end_case 'override que chega no merge é removida da configuração após rollback'
 
@@ -290,7 +299,7 @@ SCENARIO=rollback_failure
 run_deploy
 [ "$EXIT_CODE" -ne 0 ] || fail 'falha da reversão deve sair não zero'
 assert_log "git <reset> <--hard> <$OLD_SHA>" 'reversão falha ainda deve restaurar o código antigo'
-assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up> <-d> <--build>' 2 'deve tentar subir tanto o novo quanto o antigo'
+assert_log_count 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <up>' 2 'deve tentar subir a imagem nova e restaurar a anterior'
 assert_log 'alerta <DEPLOY QUEBRADO E REVERSÃO FALHOU: controle-bancario>' 'falha da reversão deve emitir alerta grave'
 [ ! -e "$CASE_TMP/state/controle-bancario.commit" ] || fail 'falha da reversão não deve registrar SHA'
 assert_no_log "mv <-f> <-->" 'falha da reversão não deve publicar arquivo de estado'
@@ -303,9 +312,21 @@ run_deploy wealthfolio
 assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
 assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
-assert_no_log 'api.github.com' 'repositório privado sem CI não deve consultar a API'
-assert_output 'não conferida: repositório privado e sem CI' 'a saída deve dizer por que a CI não foi conferida'
-end_case 'Wealthfolio usa health ok e override privada'
+assert_log 'https://api.github.com/repos/MSPA-Coder/WealthfolioTeste/commits/2222222222222222222222222222222222222222/check-runs?per_page=100' 'Wealthfolio público deve conferir a CI do SHA exato'
+assert_output '3 check-runs verdes' 'Wealthfolio público deve exigir CI verde'
+end_case 'Wealthfolio público exige CI verde e usa a rede privada'
+
+begin_case
+SCENARIO=success
+REMOTE_SHA=$OLD_SHA
+add_patrimonio_override controle-bancario
+run_deploy bancario --refresh
+assert_eq 0 "$EXIT_CODE" 'refresh de tags-base com CI verde deve sair zero'
+assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'refresh não deve mover o checkout'
+assert_no_log 'git <merge>' 'refresh sem alteração não deve fazer fast-forward'
+assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'refresh deve reconstruir o Compose depois da CI'
+assert_log "https://api.github.com/repos/MSPA-Coder/sistema-financeiro/commits/$OLD_SHA/check-runs?per_page=100" 'refresh deve validar a CI do SHA atual'
+end_case 'refresh reconstrói tags móveis sem mudança de código e exige CI verde'
 
 # ---------------------------------------------------------------------------
 # CI do commit (02/10/2026): o deploy só aplica um commit com todos os
@@ -385,7 +406,7 @@ SCENARIO=success
 run_deploy bancario --check
 [ "$EXIT_CODE" -ne 0 ] || fail '--check removido deve ser recusado'
 assert_no_log 'git <fetch>' '--check removido deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --check (use --sem-ci)' '--check removido deve apontar o comando suportado'
+assert_output 'Opção desconhecida: --check (use --sem-ci ou --refresh)' '--check removido deve apontar o comando suportado'
 end_case '--check removido é recusado antes de tocar no servidor'
 
 begin_case
@@ -393,7 +414,7 @@ SCENARIO=success
 run_deploy bancario --forcar
 [ "$EXIT_CODE" -ne 0 ] || fail 'opção desconhecida deve sair não zero'
 assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --forcar (use --sem-ci)' 'a saída deve nomear a opção recusada'
+assert_output 'Opção desconhecida: --forcar (use --sem-ci ou --refresh)' 'a saída deve nomear a opção recusada'
 end_case 'opção desconhecida para antes de qualquer coisa'
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

@@ -26,6 +26,7 @@ diretivas() { grep -vE '^[[:space:]]*(#|$)' "$1"; }
 
 eh_monotonico() { diretivas "$1" | grep -qE '^(OnBootSec|OnStartupSec|OnUnitActiveSec|OnUnitInactiveSec)='; }
 declara_persistent() { diretivas "$1" | grep -qE '^Persistent=true'; }
+calendario_contem() { diretivas "$1" | grep -Fxq "OnCalendar=$2"; }
 
 # Sem piso, um glob que não casa nada passaria vazio.
 timers=("$VPS_DIR"/*.timer)
@@ -57,6 +58,16 @@ eh_monotonico "$VPS_DIR/vigia.timer" || fail "vigia.timer deixou de ter OnBootSe
 # Timer com OnCalendar continua livre para usar Persistent=true (backup e expurgo dependem disso).
 TOTAL=$((TOTAL + 1))
 declara_persistent "$VPS_DIR/backup-db.timer" || fail "backup-db.timer perdeu Persistent=true (é OnCalendar; precisa recuperar a execução perdida)"
+
+# Deploy diário de commits testados e reconstrução semanal das tags-base.
+TOTAL=$((TOTAL + 1))
+calendario_contem "$VPS_DIR/atualizar-stacks.timer" '*-*-* 12:00:00 UTC' || fail "atualizar-stacks.timer perdeu a verificação diária às 12:00 UTC"
+TOTAL=$((TOTAL + 1))
+declara_persistent "$VPS_DIR/atualizar-stacks.timer" || fail "atualizar-stacks.timer precisa recuperar uma execução perdida"
+TOTAL=$((TOTAL + 1))
+calendario_contem "$VPS_DIR/reconstruir-bases.timer" 'Wed *-*-* 12:00:00 UTC' || fail "reconstruir-bases.timer perdeu a reconstrução semanal de quarta-feira"
+TOTAL=$((TOTAL + 1))
+declara_persistent "$VPS_DIR/reconstruir-bases.timer" || fail "reconstruir-bases.timer precisa recuperar uma execução perdida"
 
 if [ "$FAILED" -ne 0 ]; then
     printf '%s de %s verificações falharam\n' "$FAILED" "$TOTAL" >&2

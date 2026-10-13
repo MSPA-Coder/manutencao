@@ -151,7 +151,7 @@ for dominio in "${DOMINIOS[@]}"; do
     # dois-pontos (`"status": "ok"`). Espaço em JSON não é parte de contrato,
     # portanto o verificador aceita as duas serializações.
     #
-    # O Wealthfolio (domínio `networth-mspa`) responde o texto puro `ok`, sem
+    # O Wealthfolio (domínio `wealthfolio-mspa`) responde o texto puro `ok`, sem
     # JSON; o `deploy.sh` o aceita pelo mesmo critério (`PADRAO_SAUDE='^ok$'`).
     # Sem isto o vigia alertava "FORA DO AR" para um serviço no ar desde 29/09.
     if ! printf '%s' "$corpo" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' \

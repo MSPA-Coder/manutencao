@@ -55,7 +55,10 @@ PAUSA_MAX_SEGUNDOS=120
 # conversavam. Some-se a isso um segundo VPS, onde a lista dos cinco descreve
 # em parte a outra máquina, e manter a resposta à mão deixa de se pagar.
 #
-# O CRITÉRIO É A IMAGEM QUE O COMPOSE PEDIU (`postgres:*`):
+# O CRITÉRIO É A IMAGEM QUE O COMPOSE PEDIU (`postgres:*` ou
+# `mspa-postgres:*`): a segunda é a imagem compartilhada da frota, construída
+# localmente a partir da imagem oficial. Conferido no VPS em 13/10/2026: todos
+# os quatro bancos usam `mspa-postgres:17-alpine`.
 #   - não é o nome do contêiner, porque a frota já é inconsistente aí
 #     (`-postgres-1` em quatro projetos, `-db-1` no ControleRendaVariavel);
 #   - não é "tem `pg_dump` dentro", porque os aplicativos trazem o cliente do
@@ -69,7 +72,7 @@ descobrir_projetos() {
     local c imagem projeto
     for c in $(docker ps --format '{{.Names}}' 2>/dev/null); do
         imagem=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null) || continue
-        case "$imagem" in postgres:*) ;; *) continue ;; esac
+        case "$imagem" in postgres:*|mspa-postgres:*) ;; *) continue ;; esac
         projeto=$(docker inspect -f \
             '{{index .Config.Labels "com.docker.compose.project"}}' "$c" 2>/dev/null)
         [ -n "$projeto" ] || continue

@@ -20,6 +20,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=app-lock.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/app-lock.sh"
+
 # `DEST` vem do ambiente para que `tests/backup-db_test.sh` exercite ESTE
 # arquivo, e não uma cópia adaptada — mesma razão pela qual `instalar.sh` aceita
 # `DESTINO_SCRIPTS`, e pela mesma lição: uma suíte que aprova um arquivo
@@ -384,7 +389,19 @@ fazer_copia() {
     tmp="$dir/.${nome}.tmp"
     final="$dir/$nome"
 
-    copiar_volume "$container" "$caminho" "$tmp" || return 1
+    # A trava é deliberadamente estreita: só protege o snapshot que pausa o
+    # contêiner. Dumps PostgreSQL e backups de outros apps continuam podendo
+    # rodar durante o deploy de uma aplicação diferente.
+    if travar_app "$slug"; then
+        :
+    else
+        return $?
+    fi
+    if ! copiar_volume "$container" "$caminho" "$tmp"; then
+        destravar_app
+        return 1
+    fi
+    destravar_app
 
     sha=$(sha256sum "$tmp" | awk '{print $1}')
     if [ "$forcar" = sim ]; then

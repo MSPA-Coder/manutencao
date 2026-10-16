@@ -68,6 +68,7 @@ DONO_SYSTEMD=${DONO_SYSTEMD:-root:root}
 # chama assim, e renomear no servidor quebraria a memória de quem opera.
 INVENTARIO=(
     "alerta.sh|$DESTINO_SCRIPTS/alerta.sh|755|$DONO_SCRIPTS"
+    "app-lock.sh|$DESTINO_SCRIPTS/app-lock.sh|755|$DONO_SCRIPTS"
     "autocura.sh|$DESTINO_SCRIPTS/autocura.sh|755|$DONO_SCRIPTS"
     "atualizar-stacks.sh|$DESTINO_SCRIPTS/atualizar-stacks.sh|755|$DONO_SCRIPTS"
     "aviso-contatos.sh|$DESTINO_SCRIPTS/aviso-contatos.sh|755|$DONO_SCRIPTS"

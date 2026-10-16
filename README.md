@@ -9,9 +9,9 @@ deliberado e separado: [`vps/instalar.sh`](vps/instalar.sh), executado no
 servidor a partir do clone local, entrega os artefatos declarados no inventário
 e confere o resultado.
 
-[`docs/TESTES.md`](docs/TESTES.md) é a cópia canônica das diretrizes de teste
-comuns a todos os repositórios: cada um tem uma cópia idêntica em
-`docs/TESTES.md`. Para mudar uma regra, mude esta e copie para todos na mesma
+[`docs/TESTES.md`](docs/TESTES.md) é o texto-base das diretrizes de teste.
+Repositórios que carregam uma cópia devem mantê-la alinhada; nem todos têm uma.
+Para mudar uma regra, atualize o texto-base e as cópias existentes na mesma
 rodada.
 
 [`docs/contratos/`](docs/contratos/) guarda a cópia canônica do JSON Schema do
@@ -23,7 +23,7 @@ cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 | Componente | Fonte | Contrato operacional |
 |---|---|---|
 | Instalação da infraestrutura | [`vps/instalar.sh`](vps/instalar.sh) | Entrega no servidor os 33 artefatos do inventário a partir do clone de `main`, por rename atômico e com modo explícito. Recusa checkout sujo e fonte com CR, recarrega o systemd e reinicia apenas os timers cujas unidades mudaram, e relê tudo ao final — só sai com sucesso quando o servidor espelha o checkout. `--check` responde "em dia ou à deriva" sem escrever, saindo diferente de zero quando há diferença. |
-| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main` e só depois de todos os check-runs de produto/segurança terminarem verdes no GitHub (nos repositórios públicos), com os grupos de teste esperados presentes. No Wealthfolio, a CI do add-on é exigida no commit candidato; a suíte de imagem é exigida no último commit que mudou Dockerfile/patches, pois o workflow tem filtro de caminhos. Checks auxiliares do Dependabot e do auto-merge não testam o app e são excluídos. Recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. Um lock por aplicação serializa deploy manual/timer e o snapshot do volume rotulado, sem bloquear apps diferentes. |
+| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main` e só depois de todos os check-runs de produto/segurança terminarem verdes no GitHub (nos repositórios públicos), com os grupos de teste esperados presentes. No Wealthfolio, a CI do add-on é exigida no commit candidato; a suíte de imagem é exigida no último commit que mudou Dockerfile/patches, pois o workflow tem filtro de caminhos. Checks auxiliares do Dependabot não testam o app e são excluídos. Recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. Um lock por aplicação serializa deploy manual/timer e o snapshot do volume rotulado, sem bloquear apps diferentes. |
 | Limite do rollback | [`vps/deploy.sh`](vps/deploy.sh) | Migrações e dados não são revertidos automaticamente. Deploy com mudança de schema exige backup verificado, compatibilidade retroativa ou procedimento manual de reversão. |
 | Backup dos bancos e volumes | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Descobre os bancos pelos contêineres `postgres:*` e `mspa-postgres:*` rodando nesta máquina (a segunda é a imagem compartilhada da frota), produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. Contêiner com o rótulo `mspa.backup.volume=<caminho>` (hoje, o Wealthfolio e o SQLite dele) tem o diretório copiado em `.tar.gz` com o contêiner pausado por segundos, relido com `gzip -t` e `tar`, e só gravado quando difere da última cópia. Descoberta vazia de bancos é erro, e banco ou volume com histórico em disco que não está mais de pé é acusado. Só conta como backup o nome que o script produz (`<slug>_banco_<carimbo>.dump` e `<slug>_volume_<carimbo>.tar.gz`). **Dump manual mora em `~/backups-arquivados/`**, nunca em `~/backups`: lá ele não vira histórico nem entra na retenção, e o vigia acusa a pasta sem marcador. O timer agenda o ciclo diário. |
 | Acesso ao backup | [`vps/backup-agent.sh`](vps/backup-agent.sh) | Agente SSH preso por `command=` a quatro verbos: listar, enviar, apagar e consultar estado. Não oferece shell, restringe caminhos aos projetos que têm pasta em `~/backups` e nunca permite apagar o dump (ou a cópia de volume) mais recente. `listar` mostra só os dumps, que é o que o BackupRestore até a versão sem volumes entende; `listar tudo` inclui as cópias de volume. Os dois só anunciam os nomes que o `backup-db.sh` produz, os mesmos que `enviar` aceita: em 10/10/2026 um dump manual na listagem fez o BackupRestore recusar a sincronização de todos os projetos. Cada listagem grava `~/backups/.ultima_busca`: é o batimento da cópia fora do servidor, que o vigia confere. |
@@ -74,7 +74,7 @@ No VPS, a interface é:
 Antes do fast-forward, o deploy pergunta à API do GitHub se os check-runs de
 produto e segurança do commit novo terminaram verdes (`neutral` e `skipped`
 contam como verdes) e se os grupos de teste do aplicativo estão presentes.
-Checks auxiliares do Dependabot e do auto-merge são ignorados porque não
+Checks auxiliares do Dependabot são ignorados porque não
 validam o código que será implantado. No Wealthfolio, o teste do add-on precisa
 estar verde no commit candidato e a suíte lenta da imagem precisa estar verde
 no commit mais recente que alterou Dockerfile, `.dockerignore`, `patches/` ou

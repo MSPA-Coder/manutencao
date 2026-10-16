@@ -1,9 +1,10 @@
 # Diretrizes de teste
 
-Texto comum a todos os repositórios. A cópia canônica fica em
-`manutencao/docs/TESTES.md`; as demais são idênticas. Para mudar uma regra,
-mude a canônica e copie para todos na mesma rodada. O que é particular de um
-projeto (camadas, marcadores, comandos) fica no `AGENTS.md` dele.
+Texto-base mantido em `manutencao/docs/TESTES.md`. Os repositórios que carregam
+uma cópia devem mantê-la alinhada a esta versão; nem todo repositório tem uma
+cópia. Para mudar uma regra, atualize o texto-base e as cópias existentes na
+mesma rodada. O que é particular de um projeto (camadas, marcadores, comandos)
+fica no `AGENTS.md` dele.
 
 Base: os quatro pilares de Khorikov (*Unit Testing Principles, Practices, and
 Patterns*), o *Test Desiderata* de Kent Beck, testar comportamento e não

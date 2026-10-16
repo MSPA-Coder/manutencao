@@ -38,6 +38,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=app-lock.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/app-lock.sh"
+
 APPS=${APPS:-/home/ubuntu/apps}
 ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
 ESTADO_DIR=${ESTADO_DIR:-/home/ubuntu/.local/state/mspa-deploy}
@@ -561,6 +566,15 @@ done
 if [ "$SEM_CI" = 1 ] && [ "$REFRESH" = 1 ]; then
     echo "Opções incompatíveis: --sem-ci e --refresh não podem ser combinadas." >&2
     exit 1
+fi
+
+# O mesmo lock é tomado pelo backup quando ele copia o volume rotulado. Sem
+# isto, `docker pause` poderia congelar o contêiner entre o `compose up` e a
+# sonda do deploy, ou o deploy poderia recriá-lo no meio do snapshot SQLite.
+if travar_app "$DIR"; then
+    :
+else
+    exit $?
 fi
 cd "$APPS/$DIR"
 

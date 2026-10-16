@@ -170,6 +170,7 @@ roda() {
     instalar_docker_falso
     CASE_DIR="$CASE_TMP" \
     DEST="$DEST_TMP" \
+    APP_LOCK_DIR="$CASE_TMP/app-locks" APP_LOCK_TIMEOUT_SEGUNDOS="${APP_LOCK_TIMEOUT_SEGUNDOS:-300}" \
     PATH="$CASE_TMP/bin:$PATH" \
         bash "$BACKUP_DB" "$@" >"$SAIDA" 2>&1
     EXIT_CODE=$?
@@ -442,6 +443,23 @@ assert_saida 'wealthfolio_teste' 'o volume recém-rotulado aparece antes da prim
 assert_registro '' '--estado não pausa nada'
 end_case 'estado mostra o volume rotulado mesmo sem cópia ainda'
 
+begin_case
+com_wealthfolio
+mkdir -p "$CASE_TMP/app-locks"
+(
+    exec 9>"$CASE_TMP/app-locks/wealthfolio_teste.lock"
+    flock -n 9
+    sleep 3
+) &
+lock_pid=$!
+sleep 0.1
+APP_LOCK_TIMEOUT_SEGUNDOS=0 roda
+wait "$lock_pid"
+[ "$EXIT_CODE" -ne 0 ] || fail 'backup com lock do Wealthfolio ocupado deve falhar'
+assert_saida 'wealthfolio_teste está em outra operação' 'a contenção deve identificar o volume protegido'
+assert_registro '' 'backup bloqueado não pode pausar nem copiar o contêiner'
+end_case 'backup do volume não concorre com deploy do Wealthfolio'
+
 # O systemd encerra o serviço mandando TERM para o grupo inteiro (o script, o
 # `docker cp` e o `gzip`). O contêiner não pode ficar congelado por isso.
 begin_case
@@ -449,6 +467,7 @@ com_wealthfolio
 : >"$CASE_TMP/cp-lento"
 instalar_docker_falso
 CASE_DIR="$CASE_TMP" DEST="$DEST_TMP" PATH="$CASE_TMP/bin:$PATH" \
+    APP_LOCK_DIR="$CASE_TMP/app-locks" \
     setsid bash "$BACKUP_DB" >"$SAIDA" 2>&1 &
 pid=$!
 for _ in $(seq 1 100); do

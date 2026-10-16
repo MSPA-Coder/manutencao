@@ -182,6 +182,7 @@ run_deploy() {
     set +e
     env PATH="$CASE_TMP/bin:$PATH" \
         APPS="$CASE_TMP/apps" ALERTA="$CASE_TMP/alerta.sh" ESTADO_DIR="$CASE_TMP/state" \
+        APP_LOCK_DIR="$CASE_TMP/app-locks" APP_LOCK_TIMEOUT_SEGUNDOS="${APP_LOCK_TIMEOUT_SEGUNDOS:-300}" \
         CALL_LOG="$CASE_TMP/calls.log" FAKE_HEAD="$CASE_TMP/head" UP_COUNT="$CASE_TMP/up-count" \
         SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
         REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
@@ -200,6 +201,7 @@ begin_case() {
     REMOTE_SHA=$NEW_SHA
     IMAGE_SHA=3333333333333333333333333333333333333333
     IMAGE_FIXTURE=wealthfolio
+    APP_LOCK_TIMEOUT_SEGUNDOS=300
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -484,6 +486,24 @@ run_deploy bancario --forcar
 assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
 assert_output 'Opção desconhecida: --forcar (use --sem-ci ou --refresh)' 'a saída deve nomear a opção recusada'
 end_case 'opção desconhecida para antes de qualquer coisa'
+
+begin_case
+SCENARIO=success
+mkdir -p "$CASE_TMP/app-locks"
+(
+    exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
+    flock -n 9
+    sleep 3
+) &
+lock_pid=$!
+sleep 0.1
+APP_LOCK_TIMEOUT_SEGUNDOS=0
+run_deploy bancario
+wait "$lock_pid"
+assert_eq 75 "$EXIT_CODE" 'lock ocupado deve sinalizar indisponibilidade temporária'
+assert_no_log 'git <fetch>' 'lock ocupado deve parar antes de ler ou alterar o checkout'
+assert_output 'controle-bancario está em outra operação' 'a contenção deve identificar o app'
+end_case 'deploy manual não concorre com outra operação do mesmo app'
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

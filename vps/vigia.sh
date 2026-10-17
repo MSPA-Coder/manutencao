@@ -418,11 +418,16 @@ else
     n_mercado=$(printf '%s\n' "$log_mercado" | grep -c 'Periodic market data sync completed' || true)
     ultima_mercado=$(printf '%s\n' "$log_mercado" | tail -1)
     falhas_mercado=$(printf '%s' "$ultima_mercado" | sed -n 's/.* \([0-9][0-9]*\) failed.*/\1/p')
+    log_inicio_mercado=$("$DOCKER" logs --since "${WF_MERCADO_MAX_HORAS}h" "$wf" 2>&1 | sem_cor | grep 'Running scheduled broker sync' || true)
+    n_inicio_mercado=$(printf '%s\n' "$log_inicio_mercado" | grep -c 'Running scheduled broker sync' || true)
+    log_falha_provedor=$("$DOCKER" logs --since "${WF_MERCADO_MAX_HORAS}h" "$wf" 2>&1 | sem_cor | grep 'MarketData(ProviderExhausted' || true)
+    n_falha_provedor=$(printf '%s\n' "$log_falha_provedor" | grep -c 'MarketData(ProviderExhausted' || true)
+    ultima_falha_provedor=$(printf '%s\n' "$log_falha_provedor" | tail -1)
     log_importacao=$("$DOCKER" logs --since 1h "$wf" 2>&1 | sem_cor | grep 'Patrimonio sync failed for source' || true)
     n_importacao=$(printf '%s\n' "$log_importacao" | grep -c 'Patrimonio sync failed for source' || true)
     fontes_importacao=$(printf '%s\n' "$log_importacao" | sed -n 's/.*Patrimonio sync failed for source \([A-Za-z-]*\).*/\1/p' | sort | uniq -c | tr '\n' ' ')
-    [ "$MODO" = "--estado" ] && echo "frescor do Wealthfolio: sincronização de cotações ${n_mercado}x nas últimas ${WF_MERCADO_MAX_HORAS}h (última com ${falhas_mercado:-?} falha(s)); importação CB/CRV com ${n_importacao} falha(s) na última hora (limite ${WF_IMPORTACAO_FALHAS_MAX})"
-    if [ "$n_mercado" -eq 0 ]; then
+    [ "$MODO" = "--estado" ] && echo "frescor do Wealthfolio: sincronização de cotações concluída ${n_mercado}x, iniciada ${n_inicio_mercado}x e com ${n_falha_provedor} falha(s) de provedor nas últimas ${WF_MERCADO_MAX_HORAS}h; importação CB/CRV com ${n_importacao} falha(s) na última hora (limite ${WF_IMPORTACAO_FALHAS_MAX})"
+    if [ "$n_mercado" -eq 0 ] && [ "$n_inicio_mercado" -eq 0 ]; then
         alertar "WEALTHFOLIO sem sincronizar cotações" \
 "O log do Wealthfolio não tem nenhuma sincronização periódica de cotações nas
 últimas ${WF_MERCADO_MAX_HORAS}h (ela roda a cada 6h). O processo responde, mas o agendador interno
@@ -430,6 +435,17 @@ parou: é o mesmo servidor que importa o CB e o CRV a cada 15 min.
 
 Conferir:  docker logs --since ${WF_MERCADO_MAX_HORAS}h $wf 2>&1 | grep -i 'scheduler\\|Periodic'
 Reiniciar, se for o caso:  cd ~/apps/wealthfolio-teste && docker compose restart"
+    elif [ "$n_mercado" -eq 0 ] && [ "$n_falha_provedor" -gt 0 ]; then
+        alertar "WEALTHFOLIO falha ao sincronizar cotações" \
+"O agendador iniciou ${n_inicio_mercado} sincronização(ões) nas últimas
+${WF_MERCADO_MAX_HORAS}h, mas ${n_falha_provedor} tentativa(s) esgotaram todos os
+provedores de cotação. Ele está ativo; investigar os ativos e o provedor, sem
+reiniciar o contêiner às cegas.
+
+Última falha:
+  ${ultima_falha_provedor}
+
+Conferir: docker logs --since ${WF_MERCADO_MAX_HORAS}h $wf 2>&1 | grep -F 'ProviderExhausted'"
     elif [ -n "$falhas_mercado" ] && [ "$falhas_mercado" -gt 0 ]; then
         alertar "WEALTHFOLIO falha ao sincronizar cotações" \
 "A última sincronização periódica de cotações do Wealthfolio terminou com

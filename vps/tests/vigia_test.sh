@@ -319,6 +319,16 @@ assert_sem_alerta 'TITULO=WEALTHFOLIO sem sincronizar cotações' 'o batimento e
 end_case 'Wealthfolio com cotações falhando alerta'
 
 begin_case
+wf_com_log '2026-10-03T10:14:03Z  INFO wealthfolio_core::quotes::scheduler: Running scheduled broker sync...
+2026-10-03T10:14:04Z ERROR wealthfolio_core::quotes: MarketData(ProviderExhausted("All providers failed"))
+' ''
+roda
+assert_alerta 'TITULO=WEALTHFOLIO falha ao sincronizar cotações' 'provedores esgotados são uma falha de cotação'
+assert_alerta 'O agendador iniciou 1 sincronização' 'o alerta deixa claro que o agendador está ativo'
+assert_sem_alerta 'TITULO=WEALTHFOLIO sem sincronizar cotações' 'tentativa iniciada não é agendador parado'
+end_case 'provedores esgotados não são classificados como agendador parado'
+
+begin_case
 wf_com_log "$MERCADO_OK" "$FALHA_CRV$FALHA_CRV$FALHA_CRV"
 roda
 assert_alerta 'TITULO=WEALTHFOLIO importação do CB/CRV falhando' '3 falhas na última hora'
@@ -354,7 +364,7 @@ wf_com_log '' "$FALHA_CRV$FALHA_CRV$FALHA_CRV"
 roda --estado
 [ "$EXIT_CODE" -eq 0 ] || fail "--estado deve sair zero (obtido $EXIT_CODE)"
 [ -s "$ALERTAS" ] && fail "--estado não pode alertar (alertou: $(head -1 "$ALERTAS"))"
-assert_saida 'frescor do Wealthfolio: sincronização de cotações 0x' '--estado mostra o batimento'
+assert_saida 'frescor do Wealthfolio: sincronização de cotações concluída 0x' '--estado mostra o batimento'
 assert_saida 'ALERTARIA: WEALTHFOLIO sem sincronizar cotações' '--estado diz o que faria'
 end_case '--estado mostra o frescor do Wealthfolio sem alertar'
 

@@ -102,13 +102,13 @@ com seu snapshot, mas backup e deploy dos demais aplicativos continuam
 independentes. Se a outra operação não terminar em cinco minutos, a chamada
 termina sem tocar no app e informa a contenção.
 
-### Imagens validadas: bancário e renda
+### Imagens validadas: bancário, renda, Mega-Sena e Conforto
 
-Quando o commit candidato contém `compose.release.yaml`, estes dois apps
+Quando o commit candidato contém `compose.release.yaml`, estes quatro apps
 não são reconstruídos no VPS. O deploy consulta o run completo `CI`
 bem-sucedido de `main`, no SHA exato, e baixa as tags
 `run-<run_id>-<tentativa>` do GHCR (aplicação e PostgreSQL). Confere os
-labels de revisão/run da aplicação e resolve os dois digests antes de tocar
+labels de revisão/run da aplicação **e do PostgreSQL** e resolve os dois digests antes de tocar
 código ou contêineres. Confere também SO/arquitetura das duas imagens contra
 o daemon Docker e a disponibilidade dos IDs locais do snapshot de rollback;
 qualquer incompatibilidade/ID ausente recusa antes do fast-forward e da subida.
@@ -127,12 +127,23 @@ O GHCR cria pacotes privados por padrão: definir explicitamente a visibilidade
 ou provisionar leitura pelo mecanismo de credenciais Docker, sem tokens nos
 scripts/Git. Não atualizar aplicações pelo comando Compose de build neste
 caminho. Repositórios/pacotes: `sistema-financeiro[-postgres]` e
-`controlerendavariavel[-postgres]`, sob `ghcr.io/mspa-coder`.
+`controlerendavariavel[-postgres]`, `mega-sena[-postgres]` e
+`conforto-termico[-postgres]`, sob `ghcr.io/mspa-coder`.
 
-O rollback captura os IDs locais de web e banco e gera uma override temporária
+No Mega-Sena e no Conforto, `Qualidade` reúne domínio, tipos, Chromium e
+scanners. `Runtime contracts` recebe as mesmas candidatas nativas ARM64 como
+artefatos, sem rebuild, e testa smoke/papel restrito. Publicação depende dos
+dois jobs. O check obrigatório do Conforto permanece preservado.
+
+O rollback captura os IDs locais de aplicação e banco e gera uma override temporária
 também para migrate/provisionamento; não tenta retaguear referências
 `@sha256`, buscar outra tag ou reconstruir. O arquivo temporário é removido
 ao final. Migrações/dados continuam sem reversão automática.
+
+Os papéis são explícitos: `web/migrate` para CB/CRV, `app/migrate` para Mega
+e `ict/coletor/schema` para Conforto. Antes do fast-forward, este último exige
+snapshot recuperável tanto do ICT quanto do coletor. Cada papel restaurado
+conserva seu ID anterior; `schema` usa a imagem anterior do ICT.
 
 Só o servidor de banco declara `mspa.backup.postgres=true`; o backup o
 descobre mesmo quando Config.Image é um digest do GHCR ou ID local de

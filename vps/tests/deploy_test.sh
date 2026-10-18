@@ -61,6 +61,7 @@ make_fakes() {
         "$CASE_TMP/apps/controle-bancario" \
         "$CASE_TMP/apps/controle-renda-variavel" \
         "$CASE_TMP/apps/conforto-termico" \
+        "$CASE_TMP/apps/mega-sena" \
         "$CASE_TMP/apps/wealthfolio-teste" \
         "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
@@ -139,7 +140,7 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
         else printf '%s@sha256:%s\n' "$repo" "$FAKE_IMAGE_ID"
         fi
     else
-        if [ "$RUN_VARIANT" = wrong_label ]; then printf 'wrong-sha 900-2\n'
+        if [ "$RUN_VARIANT" = wrong_label ] || { [ "$RUN_VARIANT" = wrong_postgres_label ] && [[ "${!#}" == *-postgres@* ]]; }; then printf 'wrong-sha 900-2\n'
         else printf '%s 900-2\n' "$REMOTE_SHA"
         fi
     fi
@@ -147,7 +148,13 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
 fi
 if [ "${1:-}" = inspect ]; then
     if [[ "$*" == *com.docker.compose.service* ]]; then
-        if [ "${!#}" = fake-web ]; then printf 'web\n'; else printf 'postgres\n'; fi
+        case "${!#}" in
+            fake-ict) printf 'ict\n' ;;
+            fake-coletor) printf 'coletor\n' ;;
+            fake-app) printf 'app\n' ;;
+            fake-web) printf 'web\n' ;;
+            *) printf 'postgres\n' ;;
+        esac
     elif [ "$RUN_VARIANT" = previous_digest ]; then
         printf 'sha256:%s ghcr.io/mspa-coder/sistema-financeiro@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
     else printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
@@ -169,7 +176,13 @@ case " $* " in
 esac
 case " $* " in
     *' ps -q '*)
-        if [ "$ARTIFACT" = 1 ]; then printf 'fake-web\nfake-db\n'
+        if [ "$ARTIFACT" = 1 ]; then
+            case "$FAKE_PROJECT:$RUN_VARIANT" in
+                conforto:missing_collector) printf 'fake-ict\nfake-db\n' ;;
+                conforto:*) printf 'fake-ict\nfake-coletor\nfake-db\n' ;;
+                megasena:*) printf 'fake-app\nfake-db\n' ;;
+                *) printf 'fake-web\nfake-db\n' ;;
+            esac
         else printf 'fake-container\n'
         fi
         exit 0 ;;
@@ -259,6 +272,7 @@ run_deploy() {
         CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
         IMAGE_SHA="${IMAGE_SHA:-}" IMAGE_FIXTURE="$IMAGE_FIXTURE" \
         ARTIFACT="$ARTIFACT" RUN_VARIANT="$RUN_VARIANT" \
+        FAKE_PROJECT="$projeto" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -592,7 +606,7 @@ postgres=ghcr.io/mspa-coder/sistema-financeiro-postgres@sha256:$(printf '%064d' 
     "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'estado guarda os dois digests'
 end_case 'artefatos do run verde são implantados e registrados por digest'
 
-for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label app_wrong_arch postgres_wrong_arch missing_arch unsupported_host; do
+for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label wrong_postgres_label app_wrong_arch postgres_wrong_arch missing_arch unsupported_host; do
     begin_case
     SCENARIO=success
     ARTIFACT=1
@@ -654,6 +668,50 @@ assert_eq 0 "$EXIT_CODE" 'refresh usa novo artefato do mesmo commit'
 assert_no_log 'git <merge>' 'refresh não move código'
 assert_no_log '<--build>' 'refresh por artefato não reconstrói no VPS'
 end_case 'refresh semanal resolve run testado sem rebuild no servidor'
+
+for projeto in megasena conforto; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+    run_deploy "$projeto"
+    assert_eq 0 "$EXIT_CODE" 'novo aplicativo deve implantar o artefato'
+    registry=mega-sena
+    [ "$projeto" != conforto ] || registry=conforto-termico
+    assert_log "docker <pull> <ghcr.io/mspa-coder/$registry:run-900-2>" 'baixa runtime do app correto'
+    assert_log "docker <pull> <ghcr.io/mspa-coder/$registry-postgres:run-900-2>" 'banco tem referência distinta'
+    assert_no_log '<--build>' 'artefato novo não recompila'
+    end_case "$projeto implanta run validado sem rebuild"
+
+    begin_case
+    SCENARIO=health_failure
+    ARTIFACT=1
+    [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+    run_deploy "$projeto"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'reversão conserva falha do deploy original'
+    for role in postgres db-provision; do
+        grep -Fq "  $role:" "$CALL_LOG.rollback" || fail "rollback exige $role"
+    done
+    if [ "$projeto" = conforto ]; then roles='ict coletor schema'; else roles='app migrate'; fi
+    for role in $roles; do
+        grep -Fq "  $role:" "$CALL_LOG.rollback" || fail "rollback exige $role"
+    done
+    assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'código volta ao SHA anterior'
+    assert_no_log '<--build>' 'reversão não recompila'
+    end_case "$projeto restaura todos os papéis por ID local"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+CI_FIXTURE=conforto-verde
+RUN_VARIANT=missing_collector
+run_deploy conforto
+[ "$EXIT_CODE" -ne 0 ] || fail 'snapshot sem coletor deve recusar'
+assert_no_log 'git <merge>' 'sem coletor não altera código'
+assert_no_log '<up>' 'sem coletor não altera serviços'
+assert_output 'Snapshot de rollback exige coletor em execução' 'recusa explica papel ausente'
+end_case 'Conforto exige snapshot de ICT e coletor antes de tocar na produção'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

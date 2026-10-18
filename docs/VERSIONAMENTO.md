@@ -119,7 +119,8 @@ Repositório: [MSPA-Coder/ControleRendaVariavel](https://github.com/MSPA-Coder/C
 | v4.3.3 | 16/10/2026 | `b3e25d5` | Conceitos de retorno e exposição corrigidos; revisão manual de dependências. |
 | v4.4.0 | 18/10/2026 | `81f048d` | Comandos financeiros protegidos, fronteiras e entrega evoluídas. |
 | v4.4.1 | 18/10/2026 | `f631f84` | Artefatos ARM64 nativos validados e publicados para o VPS. |
-| v4.5.0 | 18/10/2026 | (release atual) | Execuções do myProfit e conferência por pregão (CRV-1) e proventos do Controle Bancário (CRV-2). |
+| v4.5.0 | 18/10/2026 | `b7e9972` | Execuções do myProfit e conferência por pregão (CRV-1) e proventos do Controle Bancário (CRV-2). |
+| v4.6.0 | 18/10/2026 | (release atual) | Conciliação mensal com o myProfit: posição e vendas conferidas, com reconhecimento de diferenças. |
 
 Tags antigas, removidas:
 

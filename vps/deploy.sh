@@ -30,7 +30,7 @@
 # estado anterior é conhecido (o commit de onde saímos) e comprovadamente
 # funcionava, então voltar é a ação de menor risco disponível.
 #
-# LIMITE DO ROLLBACK: ele volta o código e reconstrói a imagem, mas NÃO desfaz
+# LIMITE DO ROLLBACK: ele volta o código e a imagem preservada, mas NÃO desfaz
 # migração de banco. Um deploy que execute migração exige antes um backup
 # verificado e uma migração retrocompatível, ou um procedimento manual de
 # reversão do schema. Este script deliberadamente não tenta adivinhar como
@@ -73,6 +73,7 @@ PADRAO_SAUDE=$PADRAO_OK
 # aplicativos deste deploy são públicos; a API anônima basta e nenhum token do
 # GitHub precisa ficar no VPS.
 projeto_info() {
+    REGISTRY=
     CI_EXIGIDA=1
     CI_MOTIVO=
     CI_TESTE_1=
@@ -83,6 +84,7 @@ projeto_info() {
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
             DOMINIO=bancario-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/sistema-financeiro
+            REGISTRY=ghcr.io/mspa-coder/sistema-financeiro
             CI_TESTE_1=Qualidade ;;
         conforto|conforto-termico)
             DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
@@ -99,6 +101,7 @@ projeto_info() {
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
             DOMINIO=renda-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/ControleRendaVariavel
+            REGISTRY=ghcr.io/mspa-coder/controlerendavariavel
             CI_TESTE_1=Qualidade
             CI_TESTE_2='Contratos de runtime' ;;
         portal|mp-portal)
@@ -128,11 +131,93 @@ compose_files() {
         && [ -f compose.patrimonio-internal.yaml ]; then
         COMPOSE_FILES+=(-f compose.patrimonio-internal.yaml)
     fi
+    if [ -n "${DEPLOY_OVERRIDE:-}" ]; then
+        COMPOSE_FILES+=(-f "$DEPLOY_OVERRIDE")
+    fi
 }
 
 compose() {
     compose_files
-    docker compose --env-file "$ENVF" "${COMPOSE_FILES[@]}" "$@"
+    APP_IMAGE="${APP_IMAGE:-}" POSTGRES_IMAGE="${POSTGRES_IMAGE:-}" \
+        docker compose --env-file "$ENVF" "${COMPOSE_FILES[@]}" "$@"
+}
+
+# O run inteiro precisa ter terminado bem em main, no SHA exato. A tag inclui
+# tentativa: um rebuild semanal/retry não substitui a identidade de outro run.
+# Não usa latest nem a imagem de PR, e não requer token no VPS para repo público.
+preparar_artefato() {
+    local sha=$1 resposta corpo codigo metadados run tentativa revision branch status conclusion evento
+    resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
+        -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/$REPO_GITHUB/actions/workflows/ci.yml/runs?branch=main&head_sha=$sha&status=success&per_page=1&exclude_pull_requests=true" \
+        2>/dev/null) || return 1
+    codigo=$(printf '%s' "$resposta" | tail -1)
+    [ "$codigo" = 200 ] || { echo "Registry: API de runs respondeu HTTP $codigo." >&2; return 1; }
+    corpo=$(printf '%s' "$resposta" | sed '$d')
+    # Extrai somente o primeiro objeto workflow_runs, respeitando strings e
+    # objetos aninhados. Nunca confundir o id do ator/repositório com o run.
+    metadados=$(printf '%s\n' "$corpo" | awk '
+        function campo(s, k, v) {
+            if (!match(s, "\"" k "\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[0-9]+)")) return ""
+            v = substr(s, RSTART, RLENGTH)
+            sub(/^[^:]*:[[:space:]]*/, "", v); gsub(/^"|"$/, "", v)
+            return v
+        }
+        { json = json $0 "\n" }
+        END {
+            p = index(json, "\"workflow_runs\"")
+            if (!p) exit
+            p += index(substr(json, p), "[")
+            for (i = p; i <= length(json); i++) {
+                c = substr(json, i, 1)
+                if (quoted) {
+                    if (depth == 1) obj = obj c
+                    if (escaped) escaped = 0
+                    else if (c == "\\") escaped = 1
+                    else if (c == "\"") quoted = 0
+                } else if (c == "\"") { quoted = 1; if (depth == 1) obj = obj c }
+                else if (c == "{") { depth++; if (depth == 1) obj = obj c }
+                else if (c == "}") {
+                    if (depth == 1) obj = obj c
+                    if (--depth == 0) {
+                        printf "%s %s %s %s %s %s %s\n", campo(obj, "id"), campo(obj, "run_attempt"),
+                            campo(obj, "head_sha"), campo(obj, "head_branch"), campo(obj, "status"),
+                            campo(obj, "conclusion"), campo(obj, "event")
+                        exit
+                    }
+                } else if (depth == 1) obj = obj c
+                else if (c == "]") exit
+            }
+        }')
+    read -r run tentativa revision branch status conclusion evento <<<"$metadados"
+    if ! [[ "$run" =~ ^[0-9]+$ && "$tentativa" =~ ^[0-9]+$ ]] ||
+       [ "$revision" != "$sha" ] || [ "$branch" != main ] ||
+       [ "$status" != completed ] || [ "$conclusion" != success ] ||
+       ! [[ "$evento" =~ ^(push|schedule|workflow_dispatch)$ ]]; then
+        echo "Nenhum run CI publicado e bem-sucedido de main para ${sha:0:7}." >&2
+        return 1
+    fi
+    ARTIFACT_RUN="$run-$tentativa"
+    APP_IMAGE=$(baixar_digest "$REGISTRY" "$ARTIFACT_RUN") || return 1
+    POSTGRES_IMAGE=$(baixar_digest "$REGISTRY-postgres" "$ARTIFACT_RUN") || return 1
+    local labels
+    labels=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "br.com.mspa.ci-run"}}' "$APP_IMAGE") || return 1
+    [ "$labels" = "$sha $ARTIFACT_RUN" ] || {
+        echo "Imagem não corresponde ao commit/run validado." >&2
+        return 1
+    }
+    echo "Artefatos validados: $APP_IMAGE / $POSTGRES_IMAGE (run $ARTIFACT_RUN)."
+}
+
+baixar_digest() {
+    local repo=$1 run=$2 referencia
+    # Resolver a tag uma vez, antes de alterar código/contêineres. Daqui em
+    # diante só o digest é usado; uma tag movida não muda este deploy.
+    docker pull "$repo:run-$run" >&2 || return 1
+    referencia=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$repo:run-$run" \
+        | grep -E "^$repo@sha256:[a-f0-9]{64}$") || return 1
+    [[ "$referencia" == "$repo@"* && "$referencia" =~ ^[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || return 1
+    printf '%s\n' "$referencia"
 }
 
 # Nunca deixa a notificação derrubar o deploy: um alerta que não sai não pode
@@ -418,6 +503,12 @@ registrar_implantacao_saudavel() {
         rm -f -- "$temporario"
         return 1
     fi
+    if [ "$USA_ARTEFATO" = 1 ]; then
+        temporario=$(mktemp "$ESTADO_DIR/.${DIR}.images.XXXXXX") || return 1
+        chmod 600 "$temporario" || return 1
+        printf 'app=%s\npostgres=%s\n' "$APP_IMAGE" "$POSTGRES_IMAGE" >"$temporario" || return 1
+        mv -f -- "$temporario" "$ESTADO_DIR/$DIR.images" || return 1
+    fi
 }
 
 # Guarda as imagens exatas que estão servindo antes de reconstruir. As tags de
@@ -425,8 +516,11 @@ registrar_implantacao_saudavel() {
 # baixar a mesma base que causou a falha. O rollback retagueia os IDs antigos e
 # sobe sem build, preservando a imagem que já estava saudável.
 IMAGENS_ANTERIORES=
+ROLLBACK_OVERRIDE=
+USA_ARTEFATO=0
+trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"' EXIT
 capturar_imagens_anteriores() {
-    local containers container imagem
+    local containers container imagem servico id
     containers=$(compose ps -q) || {
         echo "Não foi possível listar os contêineres atuais para rollback." >&2
         return 1
@@ -438,6 +532,11 @@ capturar_imagens_anteriores() {
     install -d -m 700 "$ESTADO_DIR" || return 1
     IMAGENS_ANTERIORES=$(mktemp "$ESTADO_DIR/.${DIR}.imagens.XXXXXX") || return 1
     chmod 600 "$IMAGENS_ANTERIORES" || return 1
+    if [ "$USA_ARTEFATO" = 1 ]; then
+        ROLLBACK_OVERRIDE=$(mktemp "$ESTADO_DIR/.${DIR}.rollback.XXXXXX") || return 1
+        chmod 600 "$ROLLBACK_OVERRIDE" || return 1
+        printf 'services:\n' >"$ROLLBACK_OVERRIDE" || return 1
+    fi
     while IFS= read -r container; do
         [ -n "$container" ] || continue
         if ! imagem=$(docker inspect --format '{{.Image}} {{.Config.Image}}' "$container") ||
@@ -446,7 +545,29 @@ capturar_imagens_anteriores() {
             return 1
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
+        if [ "$USA_ARTEFATO" = 1 ]; then
+            servico=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container") || return 1
+            [[ "$servico" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
+            id=${imagem%% *}
+            printf '  %s:\n    image: %s\n    pull_policy: never\n' "$servico" "$id" >>"$ROLLBACK_OVERRIDE" || return 1
+            case "$servico" in
+                web)
+                    APP_IMAGE_ANTERIOR=$id
+                    printf '  migrate:\n    image: %s\n    pull_policy: never\n' "$id" >>"$ROLLBACK_OVERRIDE" || return 1 ;;
+                db|postgres)
+                    POSTGRES_IMAGE_ANTERIOR=$id
+                    # O checkout anterior pode preceder a adoção do rótulo.
+                    # O ID restaurado não tem o prefixo legado da imagem.
+                    printf '    labels:\n      mspa.backup.postgres: "true"\n' >>"$ROLLBACK_OVERRIDE" || return 1
+                    printf '  db-provision:\n    image: %s\n    pull_policy: never\n' "$id" >>"$ROLLBACK_OVERRIDE" || return 1 ;;
+            esac
+        fi
     done <<<"$containers"
+    if [ "$USA_ARTEFATO" = 1 ] &&
+       { [ -z "${APP_IMAGE_ANTERIOR:-}" ] || [ -z "${POSTGRES_IMAGE_ANTERIOR:-}" ]; }; then
+        echo "Snapshot de rollback exige web e PostgreSQL em execução." >&2
+        return 1
+    fi
     [ -s "$IMAGENS_ANTERIORES" ]
 }
 
@@ -458,7 +579,9 @@ retaggear_imagens_anteriores() {
     }
     while read -r id referencia; do
         [ -n "$id" ] && [ -n "$referencia" ] || return 1
-        docker image tag "$id" "$referencia" || return 1
+        if [[ "$referencia" != *@sha256:* ]]; then
+            docker image tag "$id" "$referencia" || return 1
+        fi
     done <"$IMAGENS_ANTERIORES"
 }
 
@@ -472,12 +595,17 @@ rollback_deploy() {
     echo "FALHOU após atualizar para ${quebrado:0:7}: $motivo" >&2
     echo "-- revertendo código/imagem para ${atual:0:7} --" >&2
     echo "AVISO: migrações de banco não são revertidas automaticamente." >&2
+    if [ "$USA_ARTEFATO" = 1 ]; then
+        DEPLOY_OVERRIDE=$ROLLBACK_OVERRIDE
+        APP_IMAGE=${APP_IMAGE_ANTERIOR:-}
+        POSTGRES_IMAGE=${POSTGRES_IMAGE_ANTERIOR:-}
+    fi
 
     if ! git reset --hard "$atual"; then
         detalhe_rollback="git reset --hard não conseguiu restaurar ${atual:0:7}"
     elif ! retaggear_imagens_anteriores; then
         detalhe_rollback="não foi possível restaurar as imagens que estavam saudáveis"
-    elif ! compose up -d --no-build; then
+    elif ! compose up -d --no-build --pull never; then
         detalhe_rollback="Compose não conseguiu subir as imagens anteriores de ${atual:0:7}"
     elif ! esperar_compose; then
         detalhe_rollback="a espera do Compose falhou ao restaurar ${atual:0:7}"
@@ -500,7 +628,7 @@ O commit ruim CONTINUA no main do GitHub. O próximo deploy deste projeto
 vai tentar aplicá-lo outra vez. Conferir antes:
 
   cd /home/ubuntu/apps/$DIR && git log --oneline ${atual:0:7}..origin/main"
-        rm -f -- "$IMAGENS_ANTERIORES"
+        rm -f -- "$IMAGENS_ANTERIORES" "${ROLLBACK_OVERRIDE:-}"
         return 1
     else
         detalhe_rollback="/health não confirmou saúde após restaurar ${atual:0:7} (HTTP $VERIF_CODE)"
@@ -524,7 +652,7 @@ Diagnóstico inicial:
   docker compose --env-file $ENVF ${COMPOSE_FILES[*]} ps
   docker compose --env-file $ENVF ${COMPOSE_FILES[*]} logs --tail 50
   df -h /"
-    rm -f -- "$IMAGENS_ANTERIORES"
+    rm -f -- "$IMAGENS_ANTERIORES" "${ROLLBACK_OVERRIDE:-}"
     return 1
 }
 
@@ -613,7 +741,7 @@ if [ "$atual" != "$novo" ]; then
     echo "Arquivos:"
     git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
 elif [ "$REFRESH" = 1 ]; then
-    echo "SHA inalterado; reconstruindo as tags-base móveis após CI verde."
+    echo "SHA inalterado; atualizando bases após CI verde (artefato publicado onde disponível)."
 fi
 
 echo "CI do commit ${novo:0:7}:"
@@ -647,6 +775,17 @@ CI no momento do deploy: $CI_RESUMO
 Conferir a CI no GitHub e, se ela reprovar, corrigir o main e implantar de novo."
 fi
 
+# A seleção acontece antes de qualquer alteração de código/contêiner. O gate
+# é o arquivo do commit candidato, não o checkout antigo: permite instalar
+# a infra primeiro sem mudar o caminho dos outros apps.
+if [ -n "$REGISTRY" ] && git cat-file -e "$novo:compose.release.yaml" 2>/dev/null; then
+    USA_ARTEFATO=1
+    if ! preparar_artefato "$novo"; then
+        echo "ABORTADO: artefato publicado não pôde ser conferido; produção não foi alterada." >&2
+        exit 1
+    fi
+fi
+
 # A partir daqui produção é tocada. `atual` é a rede: o commit que estava no ar
 # e comprovadamente respondia.
 echo
@@ -663,9 +802,15 @@ if [ "$atual" != "$novo" ] && ! git merge --ff-only origin/main; then
 fi
 quebrado=$novo
 
-echo "-- reconstruindo e subindo --"
-if ! compose up -d --build; then
-    rollback_deploy "compose up -d --build falhou" "$quebrado"
+echo "-- subindo versão validada --"
+if [ "$USA_ARTEFATO" = 1 ]; then
+    DEPLOY_OVERRIDE=compose.release.yaml
+    SUBIDA=(up -d --no-build --pull never)
+else
+    SUBIDA=(up -d --build)
+fi
+if ! compose "${SUBIDA[@]}"; then
+    rollback_deploy "compose ${SUBIDA[*]} falhou" "$quebrado"
     exit 1
 fi
 

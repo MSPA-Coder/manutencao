@@ -137,6 +137,18 @@ if [ "${1:-}" = inspect ]; then
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = tag ]; then exit 0; fi
 case " $* " in
+    *' up -d --no-build '*)
+        # Preserva a override temporária para conferir o contrato do rollback.
+        previous=
+        for argument in "$@"; do
+            if [ "$previous" = -f ] && [[ "$argument" == *".rollback."* ]]; then
+                cp -- "$argument" "$CALL_LOG.rollback"
+            fi
+            previous=$argument
+        done
+        ;;
+esac
+case " $* " in
     *' ps -q '*)
         if [ "$ARTIFACT" = 1 ]; then printf 'fake-web\nfake-db\n'
         else printf 'fake-container\n'
@@ -587,6 +599,9 @@ assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" '
 assert_eq "app=sha256:$(printf '%064d' 0)
 postgres=sha256:$(printf '%064d' 0)" "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'rollback registra IDs exatos anteriores'
 assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'reversão saudável alerta'
+grep -Fq 'mspa.backup.postgres: "true"' "$CALL_LOG.rollback" || fail 'rollback mantém descoberta de backup por rótulo'
+grep -Fq '  migrate:' "$CALL_LOG.rollback" || fail 'rollback também fixa migrate'
+grep -Fq '  db-provision:' "$CALL_LOG.rollback" || fail 'rollback também fixa provisionamento'
 end_case 'rollback de artefato restaura IDs locais, inclusive migrations e provisionamento'
 
 begin_case

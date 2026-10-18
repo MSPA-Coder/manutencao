@@ -556,6 +556,9 @@ capturar_imagens_anteriores() {
                     printf '  migrate:\n    image: %s\n    pull_policy: never\n' "$id" >>"$ROLLBACK_OVERRIDE" || return 1 ;;
                 db|postgres)
                     POSTGRES_IMAGE_ANTERIOR=$id
+                    # O checkout anterior pode preceder a adoção do rótulo.
+                    # O ID restaurado não tem o prefixo legado da imagem.
+                    printf '    labels:\n      mspa.backup.postgres: "true"\n' >>"$ROLLBACK_OVERRIDE" || return 1
                     printf '  db-provision:\n    image: %s\n    pull_policy: never\n' "$id" >>"$ROLLBACK_OVERRIDE" || return 1 ;;
             esac
         fi

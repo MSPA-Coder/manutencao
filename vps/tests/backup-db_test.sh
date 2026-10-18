@@ -91,9 +91,9 @@ end_case() {
 }
 
 # Declara um contêiner para o `docker` falso: nome, imagem, projeto do Compose
-# e, opcional, o valor do rótulo `mspa.backup.volume`.
+# e, opcionais, os rótulos `mspa.backup.volume` e `mspa.backup.postgres`.
 contêiner() {
-    printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "${4:-}" >>"$CASE_TMP/containers"
+    printf '%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "${4:-}" "${5:-}" >>"$CASE_TMP/containers"
 }
 
 # Um arquivo dentro do volume que o `docker cp` falso entrega:
@@ -125,6 +125,7 @@ case "$1" in
             *Config.Image*)   printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f2)" ;;
             *compose.project*) printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f3)" ;;
             *mspa.backup.volume*) printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f4)" ;;
+            *mspa.backup.postgres*) printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f5)" ;;
             *State.Running*)  printf 'true\n' ;;
             *) printf '\n' ;;
         esac
@@ -221,6 +222,26 @@ roda
 assert_eq 0 "$EXIT_CODE" 'imagem Postgres compartilhada é aceita'
 assert_eq 1 "$(grep -c '== controle_renda_variavel' "$SAIDA")" 'o banco é salvo uma vez'
 end_case 'descobre bancos da imagem compartilhada mspa-postgres'
+
+for imagem in "ghcr.io/mspa-coder/app-postgres@sha256:$(printf '%064d' 0)" "sha256:$(printf '%064d' 1)"; do
+    begin_case
+    contêiner app-db-1 "$imagem" app "" true
+    contêiner app-web-1 ghcr.io/mspa-coder/app:run-1-1 app
+    contêiner app-provision-1 "$imagem" app
+    roda
+    assert_eq 0 "$EXIT_CODE" 'banco rotulado continua coberto'
+    assert_eq 1 "$(grep -c '== app' "$SAIDA")" 'só o servidor, não web/provision, vira dump'
+    end_case "descobre banco rotulado por digest/ID: $imagem"
+done
+
+for rotulo in "" false True postgres; do
+    begin_case
+    contêiner app-web-1 ghcr.io/mspa-coder/app:run-1-1 app "" "$rotulo"
+    roda
+    [ "$EXIT_CODE" -ne 0 ] || fail 'sem opt-in exato não pode inferir banco'
+    assert_saida 'nenhum contêiner postgres rodando' 'imagem desconhecida sem true é recusada'
+    end_case "não inventa servidor a partir do rótulo: '$rotulo'"
+done
 
 begin_case
 # O caso real do VPS: os aplicativos trazem o cliente do Postgres, então um

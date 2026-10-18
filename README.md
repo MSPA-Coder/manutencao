@@ -43,7 +43,8 @@ cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 
 Nenhum script guarda a lista de quais aplicações existem. Cada um pergunta à
 máquina em que está rodando: o backup descobre os bancos com imagens
-`postgres:*` ou `mspa-postgres:*` e os volumes que levam o rótulo
+`postgres:*` ou `mspa-postgres:*`, ou com o rótulo
+`mspa.backup.postgres=true`, e os volumes que levam o rótulo
 `mspa.backup.volume`; o vigia
 e o monitor externo leem os `server_name` dos vhosts habilitados, o agente de
 backup olha as pastas de `~/backups`, e o instalador do nginx instala os vhosts
@@ -129,6 +130,12 @@ O rollback captura os IDs locais de web e banco e gera uma override temporária
 também para migrate/provisionamento; não tenta retaguear referências
 `@sha256`, buscar outra tag ou reconstruir. O arquivo temporário é removido
 ao final. Migrações/dados continuam sem reversão automática.
+
+Só o servidor de banco declara `mspa.backup.postgres=true`; o backup o
+descobre mesmo quando Config.Image é um digest do GHCR ou ID local de
+rollback, sem depender de nomes de projetos. O fallback de imagem legado
+permanece. A override de rollback mantém o rótulo inclusive ao restaurar um
+checkout anterior à adoção dele; web/migrate/db-provision não o recebem.
 
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
 automático devolve o checkout ao SHA anterior, restaura as imagens anteriores e

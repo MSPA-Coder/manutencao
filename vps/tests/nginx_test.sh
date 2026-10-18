@@ -23,14 +23,14 @@
 # de `/patrimonio/`, que o próprio nginx responde sem precisar da aplicação: o
 # andaime sobe e a prova é feita com pedidos de verdade (seção no fim).
 #
-# A IMAGEM É `public.ecr.aws/nginx/nginx:1.28` E ISSO NÃO É DETALHE: é a versão
-# oficial do NGINX no ECR público e corresponde à versão que o Ubuntu 26.04
+# A IMAGEM É `nginx:1.28` E ISSO NÃO É DETALHE: é a imagem oficial do
+# Docker Hub, na mesma série que o Ubuntu 26.04
 # dos VPS entrega, e os vhosts usam `http2 on;`, que só existe a partir do
 # 1.25.1. Numa imagem diferente o teste testaria outro servidor. Quando os VPS
 # subirem de versão, esta linha sobe junto, deliberadamente.
 #
 # Uso:
-#   docker run --rm -v "${PWD}:/repo:ro" public.ecr.aws/nginx/nginx:1.28 sh /repo/vps/tests/nginx_test.sh
+#   docker compose -f .github/docker-compose.yml run --rm --no-deps nginx-test
 
 set -eu
 

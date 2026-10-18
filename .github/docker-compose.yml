@@ -14,7 +14,9 @@ services:
         read_only: true
 
   nginx-test:
-    image: public.ecr.aws/nginx/nginx:1.28
+    # O mirror ECR recusou dois jobs de main por limite de tráfego.
+    # Mesma série oficial, sem mudar a configuração/teste ou o VPS.
+    image: nginx:1.28
     pull_policy: always
     entrypoint: ["sh", "/repo/vps/tests/nginx_test.sh"]
     network_mode: none

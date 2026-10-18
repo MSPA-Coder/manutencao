@@ -18,6 +18,10 @@ rodada.
 contrato `patrimonio/v4` entre o CB, o CRV e o Wealthfolio, com a lista das
 cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 
+[`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md) fixa a regra de versão de cada
+aplicativo (SemVer por projeto, desde a primeira versão) e guarda a tabela de
+releases e a correspondência com as tags antigas.
+
 ## Operação atual
 
 | Componente | Fonte | Contrato operacional |

@@ -74,6 +74,8 @@ PADRAO_SAUDE=$PADRAO_OK
 # GitHub precisa ficar no VPS.
 projeto_info() {
     REGISTRY=
+    APP_SERVICES=(web)
+    MIGRATION_SERVICE=migrate
     CI_EXIGIDA=1
     CI_MOTIVO=
     CI_TESTE_1=
@@ -90,12 +92,18 @@ projeto_info() {
             DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
             DOMINIO=conforto-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico
+            REGISTRY=ghcr.io/mspa-coder/conforto-termico
+            APP_SERVICES=(ict coletor)
+            MIGRATION_SERVICE=schema
             CI_TESTE_1=Qualidade
-            CI_TESTE_2='Runtime contracts' ;;
+            # Smoke/contratos, browser e scanners agora integram Qualidade.
+            CI_TESTE_2= ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101
             DOMINIO=megasena-mspa.duckdns.org
             REPO_GITHUB=MSPA-Coder/mega-sena
+            REGISTRY=ghcr.io/mspa-coder/mega-sena
+            APP_SERVICES=(app)
             CI_TESTE_1=Qualidade ;;
         renda|controle-renda-variavel)
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
@@ -200,12 +208,14 @@ preparar_artefato() {
     ARTIFACT_RUN="$run-$tentativa"
     APP_IMAGE=$(baixar_digest "$REGISTRY" "$ARTIFACT_RUN") || return 1
     POSTGRES_IMAGE=$(baixar_digest "$REGISTRY-postgres" "$ARTIFACT_RUN") || return 1
-    local labels
-    labels=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "br.com.mspa.ci-run"}}' "$APP_IMAGE") || return 1
-    [ "$labels" = "$sha $ARTIFACT_RUN" ] || {
-        echo "Imagem não corresponde ao commit/run validado." >&2
-        return 1
-    }
+    local labels image
+    for image in "$APP_IMAGE" "$POSTGRES_IMAGE"; do
+        labels=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "br.com.mspa.ci-run"}}' "$image") || return 1
+        [ "$labels" = "$sha $ARTIFACT_RUN" ] || {
+            echo "Imagem não corresponde ao commit/run validado." >&2
+            return 1
+        }
+    done
     # A CI verde não torna AMD64 executável em um daemon ARM64. Conferir
     # ambas as imagens antes de substituir qualquer contêiner saudável.
     local plataforma_host plataforma_app plataforma_postgres
@@ -537,6 +547,7 @@ USA_ARTEFATO=0
 trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"' EXIT
 capturar_imagens_anteriores() {
     local containers container imagem servico id
+    local -A servicos_anteriores=()
     containers=$(compose ps -q) || {
         echo "Não foi possível listar os contêineres atuais para rollback." >&2
         return 1
@@ -572,11 +583,9 @@ capturar_imagens_anteriores() {
             servico=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container") || return 1
             [[ "$servico" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
             id=${imagem%% *}
+            servicos_anteriores[$servico]=$id
             printf '  %s:\n    image: %s\n    pull_policy: never\n' "$servico" "$id" >>"$ROLLBACK_OVERRIDE" || return 1
             case "$servico" in
-                web)
-                    APP_IMAGE_ANTERIOR=$id
-                    printf '  migrate:\n    image: %s\n    pull_policy: never\n' "$id" >>"$ROLLBACK_OVERRIDE" || return 1 ;;
                 db|postgres)
                     POSTGRES_IMAGE_ANTERIOR=$id
                     # O checkout anterior pode preceder a adoção do rótulo.
@@ -586,9 +595,23 @@ capturar_imagens_anteriores() {
             esac
         fi
     done <<<"$containers"
+    if [ "$USA_ARTEFATO" = 1 ]; then
+        for servico in "${APP_SERVICES[@]}"; do
+            if [ -z "${servicos_anteriores[$servico]:-}" ]; then
+                echo "Snapshot de rollback exige $servico em execução." >&2
+                return 1
+            fi
+        done
+        APP_IMAGE_ANTERIOR=${servicos_anteriores[${APP_SERVICES[0]}]}
+        # ICT e coletor podem ter IDs anteriores diferentes; os dois ficam
+        # fixados acima. Schema/migrate usa o primário sem chave YAML repetida.
+        if [ -z "${servicos_anteriores[$MIGRATION_SERVICE]:-}" ]; then
+            printf '  %s:\n    image: %s\n    pull_policy: never\n' "$MIGRATION_SERVICE" "$APP_IMAGE_ANTERIOR" >>"$ROLLBACK_OVERRIDE" || return 1
+        fi
+    fi
     if [ "$USA_ARTEFATO" = 1 ] &&
        { [ -z "${APP_IMAGE_ANTERIOR:-}" ] || [ -z "${POSTGRES_IMAGE_ANTERIOR:-}" ]; }; then
-        echo "Snapshot de rollback exige web e PostgreSQL em execução." >&2
+        echo "Snapshot de rollback exige aplicação e PostgreSQL em execução." >&2
         return 1
     fi
     [ -s "$IMAGENS_ANTERIORES" ]

@@ -161,6 +161,38 @@ só registra o estado depois que o endpoint público confirma saúde. Mesmo
 quando a reversão recupera o site, o deploy original termina com erro e o
 commit defeituoso permanece em `main` até ser corrigido.
 
+#### Manutenção: PostgreSQL legado sem imagem recuperável
+
+Se o image store perdeu a imagem de um banco ainda em execução, o deploy normal
+recusa sem tocar no serviço. Não retagueie uma imagem diferente como se fosse a
+antiga, não faça `docker commit` (pode incorporar estado/segredos) e não desative
+essa guarda nos timers. Uma recuperação exige autorização específica para a
+janela de manutenção e um **novo** ponto de retorno, não a alegação de que o ID
+perdido foi recuperado.
+
+Somente Mega-Sena/Conforto oferecem a opção explícita abaixo. Antes de usá-la:
+
+1. Confirme a mesma versão principal PostgreSQL e ausência de alteração de
+   schema/migrações; preserve os volumes e os segredos existentes.
+2. Confira o backup e restaure uma cópia em banco descartável isolado, conforme
+   `BackupRestore/RESTAURAR.md`, usando a candidata PostgreSQL publicada pela CI.
+   Confira tabelas/linhas e a compatibilidade do código anterior com esse banco.
+   Nunca restaure sobre o banco operacional durante esse ensaio.
+3. Registre o digest/ID exato testado e a evidência da restauração. O argumento
+   abaixo é a declaração deliberada do operador de que concluiu esses passos.
+4. Execute `~/deploy.sh megasena --postgres-baseline=sha256:<ID-completo>` (ou
+   `conforto`). O script exige CI, identidade/run/arquitetura da candidata,
+   correspondência do ID informado e nenhuma diferença em `migrations` ou
+   `alembic.ini`. Só substitui o ponto de retorno do serviço `postgres` cuja
+   imagem esteja ausente; runtime/ICT/coletor ainda precisam de seus IDs antigos.
+
+O rollback desta manutenção conserva código/runtime antigos e usa o PostgreSQL
+**novo, validado no ensaio**, inclusive no provisionamento. Não desfaz dados ou
+schema. A saída identifica explicitamente a substituição. ID incorreto, imagem
+antiga ainda disponível, migrações alteradas, `--sem-ci` ou outro aplicativo
+recusam antes do fast-forward. Se um run mais novo mudar a candidata, é preciso
+revalidar o novo ID, não trocar o argumento por conveniência.
+
 Teste hermético do fluxo, sem rede ou acesso ao VPS:
 
 ```powershell

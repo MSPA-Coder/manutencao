@@ -83,7 +83,9 @@ case "${1:-}" in
         if [ "${2:-}" = "-1" ]; then printf '%s\n' "${IMAGE_SHA:-}"
         else printf '2222222 mudança de teste\n'
         fi ;;
-    diff) printf ' arquivo | 1 +\n' ;;
+    diff)
+        if [ "${2:-}" = --quiet ]; then [ "$RUN_VARIANT" != schema_changed ]; exit $?; fi
+        printf ' arquivo | 1 +\n' ;;
     merge)
         [ "$SCENARIO" = ff_failure ] && exit 1
         if [ "$SCENARIO" = override_merge_rollback ]; then
@@ -133,7 +135,9 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
         esac
     elif [[ "$*" == *'{{.Id}}'* ]]; then
         if [ "$RUN_VARIANT" = missing_previous ]; then exit 1; fi
-        printf 'sha256:%s\n' "$FAKE_IMAGE_ID"
+        if [[ "${!#}" == "sha256:$(printf '%064d' 1)" ]]; then exit 1; fi
+        if [[ "${!#}" == sha256:* ]]; then printf '%s\n' "${!#}"
+        else printf 'sha256:%s\n' "$FAKE_IMAGE_ID"; fi
     elif [[ "$*" == *RepoDigests* ]]; then
         repo=${!#}; repo=${repo%:run-*}
         if [ "$RUN_VARIANT" = malformed_digest ]; then printf '%s@sha256:bad\n' "$repo"
@@ -155,6 +159,10 @@ if [ "${1:-}" = inspect ]; then
             fake-web) printf 'web\n' ;;
             *) printf 'postgres\n' ;;
         esac
+    elif [ "$RUN_VARIANT" = missing_postgres ] && [ "${!#}" = fake-db ]; then
+        printf 'sha256:%064d mspa-postgres:17-alpine\n' 1
+    elif [ "$RUN_VARIANT" = missing_runtime ] && [ "${!#}" = fake-app ]; then
+        printf 'sha256:%064d app:local\n' 1
     elif [ "$RUN_VARIANT" = previous_digest ]; then
         printf 'sha256:%s ghcr.io/mspa-coder/sistema-financeiro@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
     else printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
@@ -563,7 +571,7 @@ SCENARIO=success
 run_deploy bancario --check
 [ "$EXIT_CODE" -ne 0 ] || fail '--check removido deve ser recusado'
 assert_no_log 'git <fetch>' '--check removido deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --check (use --sem-ci ou --refresh)' '--check removido deve apontar o comando suportado'
+assert_output 'Opção desconhecida: --check' '--check removido deve apontar a opção recusada'
 end_case '--check removido é recusado antes de tocar no servidor'
 
 begin_case
@@ -571,7 +579,7 @@ SCENARIO=success
 run_deploy bancario --forcar
 [ "$EXIT_CODE" -ne 0 ] || fail 'opção desconhecida deve sair não zero'
 assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --forcar (use --sem-ci ou --refresh)' 'a saída deve nomear a opção recusada'
+assert_output 'Opção desconhecida: --forcar' 'a saída deve nomear a opção recusada'
 end_case 'opção desconhecida para antes de qualquer coisa'
 
 begin_case
@@ -712,6 +720,78 @@ assert_no_log 'git <merge>' 'sem coletor não altera código'
 assert_no_log '<up>' 'sem coletor não altera serviços'
 assert_output 'Snapshot de rollback exige coletor em execução' 'recusa explica papel ausente'
 end_case 'Conforto exige snapshot de ICT e coletor antes de tocar na produção'
+
+BASELINE="sha256:$(printf '%064d' 0)"
+for projeto in megasena conforto; do
+    for cenario in success health_failure; do
+        begin_case
+        SCENARIO=$cenario
+        ARTIFACT=1
+        RUN_VARIANT=missing_postgres
+        [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+        run_deploy "$projeto" "--postgres-baseline=$BASELINE"
+        assert_output 'MANUTENÇÃO: PostgreSQL anterior' 'troca deliberada de baseline deve ficar explícita'
+        assert_no_log '<--build>' 'recuperação não constrói no VPS'
+        assert_no_log "docker <image> <tag> <sha256:$(printf '%064d' 1)>" 'não finge recuperar imagem ausente'
+        if [ "$cenario" = success ]; then
+            assert_eq 0 "$EXIT_CODE" 'manutenção com baseline validado deve concluir'
+        else
+            [ "$EXIT_CODE" -ne 0 ] || fail 'rollback conserva erro do deploy'
+            assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'rollback devolve código antigo'
+            # Arquivo produzido pelo script real, não uma cópia da política.
+            postgres_id=$(sed -n '/^  postgres:/{n;s/.*image: //;p;}' "$CALL_LOG.rollback")
+            assert_eq "$BASELINE" "$postgres_id" 'rollback usa novo ponto de retorno deliberado'
+            grep -Fq 'mspa.backup.postgres: "true"' "$CALL_LOG.rollback" || fail 'baseline conserva rótulo de backup'
+        fi
+        end_case "$projeto: baseline explícito conserva deploy/rollback ($cenario)"
+    done
+done
+
+for variante in missing_runtime schema_changed valid; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=$variante
+    run_deploy megasena "--postgres-baseline=$BASELINE"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'baseline não admite app ausente, migrations ou uso desnecessário'
+    assert_no_log 'git <merge>' 'recusa de baseline antecede alteração de código'
+    assert_no_log '<up>' 'recusa de baseline não muda contêineres'
+    end_case "baseline recusa condição não autorizada: $variante"
+done
+
+for argumento in '--postgres-baseline=sha256:bad' "--postgres-baseline=sha256:$(printf '%064d' 2)"; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=missing_postgres
+    run_deploy megasena "$argumento"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'identidade de baseline incorreta deve recusar'
+    assert_no_log 'git <merge>' 'ID incorreto não move código'
+    assert_no_log '<up>' 'ID incorreto não muda serviços'
+    end_case "baseline exige ID completo da candidata: $argumento"
+done
+
+for projeto in bancario megasena; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    argumentos=("--postgres-baseline=$BASELINE")
+    [ "$projeto" != megasena ] || argumentos+=(--sem-ci)
+    run_deploy "$projeto" "${argumentos[@]}"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'baseline deve recusar outro app ou bypass CI'
+    assert_no_log 'git <fetch>' 'opção incompatível recusa antes de operar'
+    end_case "baseline não amplia escopo nem ignora CI: $projeto"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+RUN_VARIANT=missing_postgres
+run_deploy megasena
+[ "$EXIT_CODE" -ne 0 ] || fail 'execução normal continua recusando PostgreSQL ausente'
+assert_no_log 'git <merge>' 'timer não pode selecionar baseline implicitamente'
+assert_no_log '<up>' 'timer mantém produção intacta'
+end_case 'baseline nunca é implícito, inclusive com candidata válida disponível'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

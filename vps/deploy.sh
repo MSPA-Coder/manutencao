@@ -543,6 +543,8 @@ registrar_implantacao_saudavel() {
 IMAGENS_ANTERIORES=
 ROLLBACK_OVERRIDE=
 USA_ARTEFATO=0
+POSTGRES_BASELINE=
+RECUPEROU_POSTGRES=0
 trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"' EXIT
 capturar_imagens_anteriores() {
     local containers container imagem servico id
@@ -570,17 +572,27 @@ capturar_imagens_anteriores() {
             echo "Não foi possível registrar a imagem atual do contêiner $container." >&2
             return 1
         fi
+        servico=
+        if [ "$USA_ARTEFATO" = 1 ]; then
+            servico=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container") || return 1
+            [[ "$servico" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
+        fi
         # Contêineres legados podem apontar para um ID já indisponível no
         # image store. Descobrir isso só durante rollback deixa o site fora.
         id=${imagem%% *}
         if [ "$(docker image inspect --format '{{.Id}}' "$id")" != "$id" ]; then
-            echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
-            return 1
+            if [ -n "$POSTGRES_BASELINE" ] && [ "$servico" = postgres ]; then
+                echo "MANUTENÇÃO: PostgreSQL anterior $id indisponível; novo ponto de retorno $POSTGRES_BASELINE." >&2
+                id=$POSTGRES_BASELINE
+                imagem="$id $POSTGRES_IMAGE"
+                RECUPEROU_POSTGRES=1
+            else
+                echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
+                return 1
+            fi
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
         if [ "$USA_ARTEFATO" = 1 ]; then
-            servico=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container") || return 1
-            [[ "$servico" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
             id=${imagem%% *}
             servicos_anteriores[$servico]=$id
             printf '  %s:\n    image: %s\n    pull_policy: never\n' "$servico" "$id" >>"$ROLLBACK_OVERRIDE" || return 1
@@ -733,9 +745,20 @@ for opcao in "${@:2}"; do
     case "$opcao" in
         --sem-ci) SEM_CI=1 ;;
         --refresh) REFRESH=1 ;;
-        *) echo "Opção desconhecida: $opcao (use --sem-ci ou --refresh)" >&2; exit 1 ;;
+        --postgres-baseline=*)
+            POSTGRES_BASELINE=${opcao#*=}
+            if ! [[ "$POSTGRES_BASELINE" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "Baseline PostgreSQL exige ID sha256 completo." >&2; exit 1
+            fi ;;
+        *) echo "Opção desconhecida: $opcao (use --sem-ci, --refresh ou --postgres-baseline=sha256:ID)" >&2; exit 1 ;;
     esac
 done
+if [ -n "$POSTGRES_BASELINE" ]; then
+    if [ "$SEM_CI" = 1 ] || { [ "$DIR" != mega-sena ] && [ "$DIR" != conforto-termico ]; }; then
+        echo "Baseline PostgreSQL só aceita Mega-Sena/Conforto com CI obrigatória." >&2
+        exit 1
+    fi
+fi
 if [ "$SEM_CI" = 1 ] && [ "$REFRESH" = 1 ]; then
     echo "Opções incompatíveis: --sem-ci e --refresh não podem ser combinadas." >&2
     exit 1
@@ -831,12 +854,36 @@ if [ -n "$REGISTRY" ] && git cat-file -e "$novo:compose.release.yaml" 2>/dev/nul
     fi
 fi
 
+# Recuperação deliberada, nunca acionada por timers. O ID é uma declaração do
+# operador: backup restaurado isoladamente e compatibilidade com código antigo
+# já conferida. Vinculá-lo à candidata impede usar outra imagem após um novo run.
+# Não permite migração simultânea nem substituir runtime/coletor ausente.
+if [ -n "$POSTGRES_BASELINE" ]; then
+    if [ "$USA_ARTEFATO" != 1 ] ||
+       [ "$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE")" != "$POSTGRES_BASELINE" ]; then
+        echo "ABORTADO: baseline não corresponde ao PostgreSQL publicado e validado neste run." >&2
+        exit 1
+    fi
+    if ! git diff --quiet "$atual" "$novo" -- migrations alembic.ini; then
+        echo "ABORTADO: baseline não pode acompanhar mudança de migrações." >&2
+        exit 1
+    fi
+    if ! verificar_saude 1; then
+        echo "ABORTADO: o estado anterior não está saudável para a manutenção." >&2
+        exit 1
+    fi
+fi
+
 # A partir daqui produção é tocada. `atual` é a rede: o commit que estava no ar
 # e comprovadamente respondia.
 echo
 echo "-- atualizando código (voltando para ${atual:0:7} se der errado) --"
 if ! capturar_imagens_anteriores; then
     echo "ABORTADO: não foi possível preservar as imagens atuais; nada foi alterado." >&2
+    exit 1
+fi
+if [ -n "$POSTGRES_BASELINE" ] && [ "$RECUPEROU_POSTGRES" != 1 ]; then
+    echo "ABORTADO: PostgreSQL anterior disponível; use o deploy normal, sem baseline." >&2
     exit 1
 fi
 if [ "$atual" != "$novo" ] && ! git merge --ff-only origin/main; then

@@ -109,7 +109,10 @@ não são reconstruídos no VPS. O deploy consulta o run completo `CI`
 bem-sucedido de `main`, no SHA exato, e baixa as tags
 `run-<run_id>-<tentativa>` do GHCR (aplicação e PostgreSQL). Confere os
 labels de revisão/run da aplicação e resolve os dois digests antes de tocar
-código ou contêineres. A subida usa `--no-build --pull never`; registra
+código ou contêineres. Confere também SO/arquitetura das duas imagens contra
+o daemon Docker e a disponibilidade dos IDs locais do snapshot de rollback;
+qualquer incompatibilidade/ID ausente recusa antes do fast-forward e da subida.
+A subida usa `--no-build --pull never`; registra
 `<app>.images` junto do SHA saudável.
 
 A CI semanal fornece a nova base testada; `--refresh` a baixa mesmo sem

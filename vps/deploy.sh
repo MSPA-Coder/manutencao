@@ -206,6 +206,22 @@ preparar_artefato() {
         echo "Imagem não corresponde ao commit/run validado." >&2
         return 1
     }
+    # A CI verde não torna AMD64 executável em um daemon ARM64. Conferir
+    # ambas as imagens antes de substituir qualquer contêiner saudável.
+    local plataforma_host plataforma_app plataforma_postgres
+    plataforma_host=$(docker info --format '{{.OSType}}/{{.Architecture}}') || return 1
+    case "$plataforma_host" in
+        linux/aarch64) plataforma_host=linux/arm64 ;;
+        linux/x86_64) plataforma_host=linux/amd64 ;;
+        linux/arm64|linux/amd64) ;;
+        *) echo "Plataforma Docker não suportada: $plataforma_host." >&2; return 1 ;;
+    esac
+    plataforma_app=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$APP_IMAGE") || return 1
+    plataforma_postgres=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$POSTGRES_IMAGE") || return 1
+    if [ "$plataforma_app" != "$plataforma_host" ] || [ "$plataforma_postgres" != "$plataforma_host" ]; then
+        echo "Arquitetura incompatível: daemon=$plataforma_host app=$plataforma_app postgres=$plataforma_postgres." >&2
+        return 1
+    fi
     echo "Artefatos validados: $APP_IMAGE / $POSTGRES_IMAGE (run $ARTIFACT_RUN)."
 }
 
@@ -542,6 +558,13 @@ capturar_imagens_anteriores() {
         if ! imagem=$(docker inspect --format '{{.Image}} {{.Config.Image}}' "$container") ||
            ! [[ "$imagem" =~ ^sha256:[a-f0-9]{64}[[:space:]]+[^[:space:]]+$ ]]; then
             echo "Não foi possível registrar a imagem atual do contêiner $container." >&2
+            return 1
+        fi
+        # Contêineres legados podem apontar para um ID já indisponível no
+        # image store. Descobrir isso só durante rollback deixa o site fora.
+        id=${imagem%% *}
+        if [ "$(docker image inspect --format '{{.Id}}' "$id")" != "$id" ]; then
+            echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
             return 1
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1

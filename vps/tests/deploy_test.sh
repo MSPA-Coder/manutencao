@@ -110,11 +110,30 @@ EOF
 #!/usr/bin/env bash
 printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 if [ "${1:-}" = builder ]; then exit 0; fi
+if [ "${1:-}" = info ]; then
+    case "$RUN_VARIANT" in
+        unsupported_host) printf 'linux/riscv64\n' ;;
+        amd64_host) printf 'linux/x86_64\n' ;;
+        *) printf 'linux/aarch64\n' ;;
+    esac
+    exit 0
+fi
 if [ "${1:-}" = pull ]; then
     [ "$RUN_VARIANT" != missing_image ]; exit $?
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
-    if [[ "$*" == *RepoDigests* ]]; then
+    if [[ "$*" == *'{{.Os}}/{{.Architecture}}'* ]]; then
+        case "$RUN_VARIANT:${!#}" in
+            app_wrong_arch:*sistema-financeiro@*) printf 'linux/amd64\n' ;;
+            postgres_wrong_arch:*sistema-financeiro-postgres@*) printf 'linux/amd64\n' ;;
+            missing_arch:*) exit 1 ;;
+            amd64_host:*) printf 'linux/amd64\n' ;;
+            *) printf 'linux/arm64\n' ;;
+        esac
+    elif [[ "$*" == *'{{.Id}}'* ]]; then
+        if [ "$RUN_VARIANT" = missing_previous ]; then exit 1; fi
+        printf 'sha256:%s\n' "$FAKE_IMAGE_ID"
+    elif [[ "$*" == *RepoDigests* ]]; then
         repo=${!#}; repo=${repo%:run-*}
         if [ "$RUN_VARIANT" = malformed_digest ]; then printf '%s@sha256:bad\n' "$repo"
         else printf '%s@sha256:%s\n' "$repo" "$FAKE_IMAGE_ID"
@@ -573,7 +592,7 @@ postgres=ghcr.io/mspa-coder/sistema-financeiro-postgres@sha256:$(printf '%064d' 
     "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'estado guarda os dois digests'
 end_case 'artefatos do run verde são implantados e registrados por digest'
 
-for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label; do
+for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label app_wrong_arch postgres_wrong_arch missing_arch unsupported_host; do
     begin_case
     SCENARIO=success
     ARTIFACT=1
@@ -585,6 +604,28 @@ for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure m
     assert_output 'ABORTADO: artefato publicado não pôde ser conferido' 'deve explicar recusa'
     end_case "artefato inválido recusa sem alterar app: $variante"
 done
+
+for modo in 0 1; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=$modo
+    RUN_VARIANT=missing_previous
+    run_deploy
+    [ "$EXIT_CODE" -ne 0 ] || fail 'snapshot irrecuperável deve recusar'
+    assert_no_log 'git <merge>' 'imagem anterior ausente recusa antes do fast-forward'
+    assert_no_log '<up>' 'imagem anterior ausente não substitui contêineres'
+    assert_no_log 'git <reset>' 'recusa não precisa de rollback'
+    assert_output 'Imagem anterior indisponível para rollback' 'deve explicar a falta da rede de proteção'
+    end_case "imagem anterior indisponível recusa sem tocar app: artefato=$modo"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+RUN_VARIANT=amd64_host
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'daemon x86_64 aceita imagens amd64 correspondentes'
+end_case 'normaliza arquitetura x86_64 do daemon sem limitar deploy a ARM64'
 
 begin_case
 SCENARIO=health_failure

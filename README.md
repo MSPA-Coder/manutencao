@@ -101,6 +101,35 @@ com seu snapshot, mas backup e deploy dos demais aplicativos continuam
 independentes. Se a outra operação não terminar em cinco minutos, a chamada
 termina sem tocar no app e informa a contenção.
 
+### Imagens validadas: bancário e renda
+
+Quando o commit candidato contém `compose.release.yaml`, estes dois apps
+não são reconstruídos no VPS. O deploy consulta o run completo `CI`
+bem-sucedido de `main`, no SHA exato, e baixa as tags
+`run-<run_id>-<tentativa>` do GHCR (aplicação e PostgreSQL). Confere os
+labels de revisão/run da aplicação e resolve os dois digests antes de tocar
+código ou contêineres. A subida usa `--no-build --pull never`; registra
+`<app>.images` junto do SHA saudável.
+
+A CI semanal fornece a nova base testada; `--refresh` a baixa mesmo sem
+novo commit. Os demais apps mantêm seu caminho anterior. Uma imagem
+indisponível, inclusive por falta de acesso a pacote privado, aborta sem
+alterar o app. `--sem-ci` não contorna a identidade do artefato.
+
+Rollout: instalar esta versão da infraestrutura **antes** dos commits de
+aplicativo que acrescentam `compose.release.yaml`; aguardar a CI de
+`main` publicar as duas imagens e confirmar acesso do VPS aos dois pacotes.
+O GHCR cria pacotes privados por padrão: definir explicitamente a visibilidade
+ou provisionar leitura pelo mecanismo de credenciais Docker, sem tokens nos
+scripts/Git. Não atualizar aplicações pelo comando Compose de build neste
+caminho. Repositórios/pacotes: `sistema-financeiro[-postgres]` e
+`controlerendavariavel[-postgres]`, sob `ghcr.io/mspa-coder`.
+
+O rollback captura os IDs locais de web e banco e gera uma override temporária
+também para migrate/provisionamento; não tenta retaguear referências
+`@sha256`, buscar outra tag ou reconstruir. O arquivo temporário é removido
+ao final. Migrações/dados continuam sem reversão automática.
+
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
 automático devolve o checkout ao SHA anterior, restaura as imagens anteriores e
 só registra o estado depois que o endpoint público confirma saúde. Mesmo

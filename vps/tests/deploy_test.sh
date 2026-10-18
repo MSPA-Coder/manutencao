@@ -70,6 +70,7 @@ make_fakes() {
 #!/usr/bin/env bash
 printf 'git' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case "${1:-}" in
+    cat-file) [ "$ARTIFACT" = 1 ]; exit $? ;;
     status) exit 0 ;;
     fetch) exit 0 ;;
     rev-parse)
@@ -109,13 +110,38 @@ EOF
 #!/usr/bin/env bash
 printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 if [ "${1:-}" = builder ]; then exit 0; fi
+if [ "${1:-}" = pull ]; then
+    [ "$RUN_VARIANT" != missing_image ]; exit $?
+fi
+if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
+    if [[ "$*" == *RepoDigests* ]]; then
+        repo=${!#}; repo=${repo%:run-*}
+        if [ "$RUN_VARIANT" = malformed_digest ]; then printf '%s@sha256:bad\n' "$repo"
+        else printf '%s@sha256:%s\n' "$repo" "$FAKE_IMAGE_ID"
+        fi
+    else
+        if [ "$RUN_VARIANT" = wrong_label ]; then printf 'wrong-sha 900-2\n'
+        else printf '%s 900-2\n' "$REMOTE_SHA"
+        fi
+    fi
+    exit 0
+fi
 if [ "${1:-}" = inspect ]; then
-    printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
+    if [[ "$*" == *com.docker.compose.service* ]]; then
+        if [ "${!#}" = fake-web ]; then printf 'web\n'; else printf 'postgres\n'; fi
+    elif [ "$RUN_VARIANT" = previous_digest ]; then
+        printf 'sha256:%s ghcr.io/mspa-coder/sistema-financeiro@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
+    else printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
+    fi
     exit 0
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = tag ]; then exit 0; fi
 case " $* " in
-    *' ps -q '*) printf 'fake-container\n'; exit 0 ;;
+    *' ps -q '*)
+        if [ "$ARTIFACT" = 1 ]; then printf 'fake-web\nfake-db\n'
+        else printf 'fake-container\n'
+        fi
+        exit 0 ;;
     *' up -d --build '*|*' up -d --no-build '*)
         count=0; [ ! -f "$UP_COUNT" ] || count=$(cat "$UP_COUNT")
         count=$((count + 1)); printf '%s\n' "$count" >"$UP_COUNT"
@@ -137,6 +163,19 @@ EOF
 #!/usr/bin/env bash
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case " $* " in
+    *actions/workflows/ci.yml/runs?*)
+        sha=$REMOTE_SHA; branch=main; conclusion=success; evento=push
+        case "$RUN_VARIANT" in
+            empty_run) printf '{"total_count":0,"workflow_runs":[]}\n200'; exit 0 ;;
+            wrong_sha) sha=$OLD_SHA ;;
+            wrong_branch) branch=feature ;;
+            failed_run) conclusion=failure ;;
+            pr_run) evento=pull_request ;;
+            api_failure) printf 'unavailable\n503'; exit 0 ;;
+        esac
+        printf '{"total_count":1,"workflow_runs":[{"id":900,"head_branch":"%s","head_sha":"%s","event":"%s","status":"completed","conclusion":"%s","actor":{"id":123,"login":"bot"},"run_attempt":2,"repository":{"id":456}}]}\n200' \
+            "$branch" "$sha" "$evento" "$conclusion"
+        exit 0 ;;
     *api.github.com*)
         if [ "$CI_HTTP" = 200 ]; then
             if [ -n "${IMAGE_SHA:-}" ] && [[ "$*" == *"/commits/$IMAGE_SHA/check-runs?"* ]]; then
@@ -188,6 +227,7 @@ run_deploy() {
         REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
         CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
         IMAGE_SHA="${IMAGE_SHA:-}" IMAGE_FIXTURE="$IMAGE_FIXTURE" \
+        ARTIFACT="$ARTIFACT" RUN_VARIANT="$RUN_VARIANT" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -202,6 +242,8 @@ begin_case() {
     IMAGE_SHA=3333333333333333333333333333333333333333
     IMAGE_FIXTURE=wealthfolio
     APP_LOCK_TIMEOUT_SEGUNDOS=300
+    ARTIFACT=0
+    RUN_VARIANT=valid
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -504,6 +546,59 @@ assert_eq 75 "$EXIT_CODE" 'lock ocupado deve sinalizar indisponibilidade tempor�
 assert_no_log 'git <fetch>' 'lock ocupado deve parar antes de ler ou alterar o checkout'
 assert_output 'controle-bancario está em outra operação' 'a contenção deve identificar o app'
 end_case 'deploy manual não concorre com outra operação do mesmo app'
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'artefato validado deve implantar'
+assert_log 'docker <pull> <ghcr.io/mspa-coder/sistema-financeiro:run-900-2>' 'deve baixar a tentativa exata'
+assert_log '<-f> <compose.release.yaml> <up> <-d> <--no-build> <--pull> <never>' 'deploy por digest nunca reconstrói'
+assert_no_log '<--build>' 'não pode reconstruir nenhuma imagem no caminho de artefato'
+assert_output 'run 900-2' 'saída deve identificar o run'
+assert_eq "app=ghcr.io/mspa-coder/sistema-financeiro@sha256:$(printf '%064d' 0)
+postgres=ghcr.io/mspa-coder/sistema-financeiro-postgres@sha256:$(printf '%064d' 0)" \
+    "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'estado guarda os dois digests'
+end_case 'artefatos do run verde são implantados e registrados por digest'
+
+for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=$variante
+    run_deploy
+    [ "$EXIT_CODE" -ne 0 ] || fail 'identidade incompleta/incorreta deve recusar'
+    assert_no_log 'git <merge>' 'recusa de artefato ocorre antes do fast-forward'
+    assert_no_log 'docker <compose>' 'recusa de artefato não altera contêineres'
+    assert_output 'ABORTADO: artefato publicado não pôde ser conferido' 'deve explicar recusa'
+    end_case "artefato inválido recusa sem alterar app: $variante"
+done
+
+begin_case
+SCENARIO=health_failure
+ARTIFACT=1
+RUN_VARIANT=previous_digest
+run_deploy
+[ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido continua falhando'
+assert_log 'git <reset> <--hard>' 'rollback devolve código'
+assert_no_log 'docker <image> <tag>' 'referência por digest não pode ser retagueada'
+assert_log '<--no-build> <--pull> <never>' 'rollback não reconstrói nem busca outra imagem'
+assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback registra commit anterior'
+assert_eq "app=sha256:$(printf '%064d' 0)
+postgres=sha256:$(printf '%064d' 0)" "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'rollback registra IDs exatos anteriores'
+assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'reversão saudável alerta'
+end_case 'rollback de artefato restaura IDs locais, inclusive migrations e provisionamento'
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+REMOTE_SHA=$OLD_SHA
+run_deploy bancario --refresh
+assert_eq 0 "$EXIT_CODE" 'refresh usa novo artefato do mesmo commit'
+assert_no_log 'git <merge>' 'refresh não move código'
+assert_no_log '<--build>' 'refresh por artefato não reconstrói no VPS'
+end_case 'refresh semanal resolve run testado sem rebuild no servidor'
+
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

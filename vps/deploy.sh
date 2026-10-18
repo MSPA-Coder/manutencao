@@ -96,8 +96,7 @@ projeto_info() {
             APP_SERVICES=(ict coletor)
             MIGRATION_SERVICE=schema
             CI_TESTE_1=Qualidade
-            # Smoke/contratos, browser e scanners agora integram Qualidade.
-            CI_TESTE_2= ;;
+            CI_TESTE_2='Runtime contracts' ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101
             DOMINIO=megasena-mspa.duckdns.org

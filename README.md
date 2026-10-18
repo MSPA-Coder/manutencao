@@ -130,10 +130,10 @@ caminho. Repositórios/pacotes: `sistema-financeiro[-postgres]` e
 `controlerendavariavel[-postgres]`, `mega-sena[-postgres]` e
 `conforto-termico[-postgres]`, sob `ghcr.io/mspa-coder`.
 
-No Mega-Sena e no Conforto, `Qualidade` reúne os testes de domínio, tipos,
-smoke de runtime/papel restrito, Chromium e scanners sobre a mesma candidata
-nativa ARM64. Não se exige o antigo job separado `Runtime contracts` do
-Conforto: suas verificações foram incorporadas ao gate completo, não removidas.
+No Mega-Sena e no Conforto, `Qualidade` reúne domínio, tipos, Chromium e
+scanners. `Runtime contracts` recebe as mesmas candidatas nativas ARM64 como
+artefatos, sem rebuild, e testa smoke/papel restrito. Publicação depende dos
+dois jobs. O check obrigatório do Conforto permanece preservado.
 
 O rollback captura os IDs locais de aplicação e banco e gera uma override temporária
 também para migrate/provisionamento; não tenta retaguear referências

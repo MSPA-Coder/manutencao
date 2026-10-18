@@ -171,21 +171,21 @@ preparar_artefato() {
             for (i = p; i <= length(json); i++) {
                 c = substr(json, i, 1)
                 if (quoted) {
-                    if (depth) obj = obj c
+                    if (depth == 1) obj = obj c
                     if (escaped) escaped = 0
                     else if (c == "\\") escaped = 1
                     else if (c == "\"") quoted = 0
-                } else if (c == "\"") { quoted = 1; if (depth) obj = obj c }
-                else if (c == "{") { depth++; obj = obj c }
+                } else if (c == "\"") { quoted = 1; if (depth == 1) obj = obj c }
+                else if (c == "{") { depth++; if (depth == 1) obj = obj c }
                 else if (c == "}") {
-                    obj = obj c
+                    if (depth == 1) obj = obj c
                     if (--depth == 0) {
                         printf "%s %s %s %s %s %s %s\n", campo(obj, "id"), campo(obj, "run_attempt"),
                             campo(obj, "head_sha"), campo(obj, "head_branch"), campo(obj, "status"),
                             campo(obj, "conclusion"), campo(obj, "event")
                         exit
                     }
-                } else if (depth) obj = obj c
+                } else if (depth == 1) obj = obj c
                 else if (c == "]") exit
             }
         }')
@@ -216,7 +216,7 @@ baixar_digest() {
     docker pull "$repo:run-$run" >&2 || return 1
     referencia=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$repo:run-$run" \
         | grep -E "^$repo@sha256:[a-f0-9]{64}$") || return 1
-    [[ "$referencia" =~ ^[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || return 1
+    [[ "$referencia" == "$repo@"* && "$referencia" =~ ^[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || return 1
     printf '%s\n' "$referencia"
 }
 

@@ -173,7 +173,7 @@ case " $* " in
             pr_run) evento=pull_request ;;
             api_failure) printf 'unavailable\n503'; exit 0 ;;
         esac
-        printf '{"total_count":1,"workflow_runs":[{"id":900,"head_branch":"%s","head_sha":"%s","event":"%s","status":"completed","conclusion":"%s","actor":{"id":123,"login":"bot"},"run_attempt":2,"repository":{"id":456}}]}\n200' \
+        printf '{"total_count":1,"workflow_runs":[{"actor":{"id":123,"login":"bot"},"id":900,"head_branch":"%s","head_sha":"%s","event":"%s","status":"completed","conclusion":"%s","run_attempt":2,"repository":{"id":456}}]}\n200' \
             "$branch" "$sha" "$evento" "$conclusion"
         exit 0 ;;
     *api.github.com*)

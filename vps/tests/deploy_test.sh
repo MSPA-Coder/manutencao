@@ -61,6 +61,7 @@ make_fakes() {
         "$CASE_TMP/apps/controle-bancario" \
         "$CASE_TMP/apps/controle-renda-variavel" \
         "$CASE_TMP/apps/conforto-termico" \
+        "$CASE_TMP/apps/mega-sena" \
         "$CASE_TMP/apps/wealthfolio-teste" \
         "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
@@ -70,6 +71,7 @@ make_fakes() {
 #!/usr/bin/env bash
 printf 'git' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case "${1:-}" in
+    cat-file) [ "$ARTIFACT" = 1 ]; exit $? ;;
     status) exit 0 ;;
     fetch) exit 0 ;;
     rev-parse)
@@ -81,7 +83,9 @@ case "${1:-}" in
         if [ "${2:-}" = "-1" ]; then printf '%s\n' "${IMAGE_SHA:-}"
         else printf '2222222 mudança de teste\n'
         fi ;;
-    diff) printf ' arquivo | 1 +\n' ;;
+    diff)
+        if [ "${2:-}" = --quiet ]; then [ "$RUN_VARIANT" != schema_changed ]; exit $?; fi
+        printf ' arquivo | 1 +\n' ;;
     merge)
         [ "$SCENARIO" = ff_failure ] && exit 1
         if [ "$SCENARIO" = override_merge_rollback ]; then
@@ -109,13 +113,87 @@ EOF
 #!/usr/bin/env bash
 printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 if [ "${1:-}" = builder ]; then exit 0; fi
+if [ "${1:-}" = info ]; then
+    case "$RUN_VARIANT" in
+        unsupported_host) printf 'linux/riscv64\n' ;;
+        amd64_host) printf 'linux/x86_64\n' ;;
+        *) printf 'linux/aarch64\n' ;;
+    esac
+    exit 0
+fi
+if [ "${1:-}" = pull ]; then
+    [ "$RUN_VARIANT" != missing_image ]; exit $?
+fi
+if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
+    if [[ "$*" == *'{{.Os}}/{{.Architecture}}'* ]]; then
+        case "$RUN_VARIANT:${!#}" in
+            app_wrong_arch:*sistema-financeiro@*) printf 'linux/amd64\n' ;;
+            postgres_wrong_arch:*sistema-financeiro-postgres@*) printf 'linux/amd64\n' ;;
+            missing_arch:*) exit 1 ;;
+            amd64_host:*) printf 'linux/amd64\n' ;;
+            *) printf 'linux/arm64\n' ;;
+        esac
+    elif [[ "$*" == *'{{.Id}}'* ]]; then
+        if [ "$RUN_VARIANT" = missing_previous ]; then exit 1; fi
+        if [[ "${!#}" == "sha256:$(printf '%064d' 1)" ]]; then exit 1; fi
+        if [[ "${!#}" == sha256:* ]]; then printf '%s\n' "${!#}"
+        else printf 'sha256:%s\n' "$FAKE_IMAGE_ID"; fi
+    elif [[ "$*" == *RepoDigests* ]]; then
+        repo=${!#}; repo=${repo%:run-*}
+        if [ "$RUN_VARIANT" = malformed_digest ]; then printf '%s@sha256:bad\n' "$repo"
+        else printf '%s@sha256:%s\n' "$repo" "$FAKE_IMAGE_ID"
+        fi
+    else
+        if [ "$RUN_VARIANT" = wrong_label ] || { [ "$RUN_VARIANT" = wrong_postgres_label ] && [[ "${!#}" == *-postgres@* ]]; }; then printf 'wrong-sha 900-2\n'
+        else printf '%s 900-2\n' "$REMOTE_SHA"
+        fi
+    fi
+    exit 0
+fi
 if [ "${1:-}" = inspect ]; then
-    printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
+    if [[ "$*" == *com.docker.compose.service* ]]; then
+        case "${!#}" in
+            fake-ict) printf 'ict\n' ;;
+            fake-coletor) printf 'coletor\n' ;;
+            fake-app) printf 'app\n' ;;
+            fake-web) printf 'web\n' ;;
+            *) printf 'postgres\n' ;;
+        esac
+    elif [ "$RUN_VARIANT" = missing_postgres ] && [ "${!#}" = fake-db ]; then
+        printf 'sha256:%064d mspa-postgres:17-alpine\n' 1
+    elif [ "$RUN_VARIANT" = missing_runtime ] && [ "${!#}" = fake-app ]; then
+        printf 'sha256:%064d app:local\n' 1
+    elif [ "$RUN_VARIANT" = previous_digest ]; then
+        printf 'sha256:%s ghcr.io/mspa-coder/sistema-financeiro@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
+    else printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"
+    fi
     exit 0
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = tag ]; then exit 0; fi
 case " $* " in
-    *' ps -q '*) printf 'fake-container\n'; exit 0 ;;
+    *' up -d --no-build '*)
+        # Preserva a override temporária para conferir o contrato do rollback.
+        previous=
+        for argument in "$@"; do
+            if [ "$previous" = -f ] && [[ "$argument" == *".rollback."* ]]; then
+                cp -- "$argument" "$CALL_LOG.rollback"
+            fi
+            previous=$argument
+        done
+        ;;
+esac
+case " $* " in
+    *' ps -q '*)
+        if [ "$ARTIFACT" = 1 ]; then
+            case "$FAKE_PROJECT:$RUN_VARIANT" in
+                conforto:missing_collector) printf 'fake-ict\nfake-db\n' ;;
+                conforto:*) printf 'fake-ict\nfake-coletor\nfake-db\n' ;;
+                megasena:*) printf 'fake-app\nfake-db\n' ;;
+                *) printf 'fake-web\nfake-db\n' ;;
+            esac
+        else printf 'fake-container\n'
+        fi
+        exit 0 ;;
     *' up -d --build '*|*' up -d --no-build '*)
         count=0; [ ! -f "$UP_COUNT" ] || count=$(cat "$UP_COUNT")
         count=$((count + 1)); printf '%s\n' "$count" >"$UP_COUNT"
@@ -137,6 +215,19 @@ EOF
 #!/usr/bin/env bash
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case " $* " in
+    *actions/workflows/ci.yml/runs?*)
+        sha=$REMOTE_SHA; branch=main; conclusion=success; evento=push
+        case "$RUN_VARIANT" in
+            empty_run) printf '{"total_count":0,"workflow_runs":[]}\n200'; exit 0 ;;
+            wrong_sha) sha=$OLD_SHA ;;
+            wrong_branch) branch=feature ;;
+            failed_run) conclusion=failure ;;
+            pr_run) evento=pull_request ;;
+            api_failure) printf 'unavailable\n503'; exit 0 ;;
+        esac
+        printf '{"total_count":1,"workflow_runs":[{"actor":{"id":123,"login":"bot"},"id":900,"head_branch":"%s","head_sha":"%s","event":"%s","status":"completed","conclusion":"%s","run_attempt":2,"repository":{"id":456}}]}\n200' \
+            "$branch" "$sha" "$evento" "$conclusion"
+        exit 0 ;;
     *api.github.com*)
         if [ "$CI_HTTP" = 200 ]; then
             if [ -n "${IMAGE_SHA:-}" ] && [[ "$*" == *"/commits/$IMAGE_SHA/check-runs?"* ]]; then
@@ -188,6 +279,8 @@ run_deploy() {
         REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
         CHECK_RUNS_DIR="$TESTS_DIR/check-runs" CI_FIXTURE="$CI_FIXTURE" CI_HTTP="$CI_HTTP" \
         IMAGE_SHA="${IMAGE_SHA:-}" IMAGE_FIXTURE="$IMAGE_FIXTURE" \
+        ARTIFACT="$ARTIFACT" RUN_VARIANT="$RUN_VARIANT" \
+        FAKE_PROJECT="$projeto" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -202,6 +295,8 @@ begin_case() {
     IMAGE_SHA=3333333333333333333333333333333333333333
     IMAGE_FIXTURE=wealthfolio
     APP_LOCK_TIMEOUT_SEGUNDOS=300
+    ARTIFACT=0
+    RUN_VARIANT=valid
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -476,7 +571,7 @@ SCENARIO=success
 run_deploy bancario --check
 [ "$EXIT_CODE" -ne 0 ] || fail '--check removido deve ser recusado'
 assert_no_log 'git <fetch>' '--check removido deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --check (use --sem-ci ou --refresh)' '--check removido deve apontar o comando suportado'
+assert_output 'Opção desconhecida: --check' '--check removido deve apontar a opção recusada'
 end_case '--check removido é recusado antes de tocar no servidor'
 
 begin_case
@@ -484,7 +579,7 @@ SCENARIO=success
 run_deploy bancario --forcar
 [ "$EXIT_CODE" -ne 0 ] || fail 'opção desconhecida deve sair não zero'
 assert_no_log 'git <fetch>' 'opção desconhecida deve parar antes de buscar o main'
-assert_output 'Opção desconhecida: --forcar (use --sem-ci ou --refresh)' 'a saída deve nomear a opção recusada'
+assert_output 'Opção desconhecida: --forcar' 'a saída deve nomear a opção recusada'
 end_case 'opção desconhecida para antes de qualquer coisa'
 
 begin_case
@@ -504,6 +599,200 @@ assert_eq 75 "$EXIT_CODE" 'lock ocupado deve sinalizar indisponibilidade tempor�
 assert_no_log 'git <fetch>' 'lock ocupado deve parar antes de ler ou alterar o checkout'
 assert_output 'controle-bancario está em outra operação' 'a contenção deve identificar o app'
 end_case 'deploy manual não concorre com outra operação do mesmo app'
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'artefato validado deve implantar'
+assert_log 'docker <pull> <ghcr.io/mspa-coder/sistema-financeiro:run-900-2>' 'deve baixar a tentativa exata'
+assert_log '<-f> <compose.release.yaml> <up> <-d> <--no-build> <--pull> <never>' 'deploy por digest nunca reconstrói'
+assert_no_log '<--build>' 'não pode reconstruir nenhuma imagem no caminho de artefato'
+assert_output 'run 900-2' 'saída deve identificar o run'
+assert_eq "app=ghcr.io/mspa-coder/sistema-financeiro@sha256:$(printf '%064d' 0)
+postgres=ghcr.io/mspa-coder/sistema-financeiro-postgres@sha256:$(printf '%064d' 0)" \
+    "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'estado guarda os dois digests'
+end_case 'artefatos do run verde são implantados e registrados por digest'
+
+for variante in empty_run wrong_sha wrong_branch failed_run pr_run api_failure missing_image malformed_digest wrong_label wrong_postgres_label app_wrong_arch postgres_wrong_arch missing_arch unsupported_host; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=$variante
+    run_deploy
+    [ "$EXIT_CODE" -ne 0 ] || fail 'identidade incompleta/incorreta deve recusar'
+    assert_no_log 'git <merge>' 'recusa de artefato ocorre antes do fast-forward'
+    assert_no_log 'docker <compose>' 'recusa de artefato não altera contêineres'
+    assert_output 'ABORTADO: artefato publicado não pôde ser conferido' 'deve explicar recusa'
+    end_case "artefato inválido recusa sem alterar app: $variante"
+done
+
+for modo in 0 1; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=$modo
+    RUN_VARIANT=missing_previous
+    run_deploy
+    [ "$EXIT_CODE" -ne 0 ] || fail 'snapshot irrecuperável deve recusar'
+    assert_no_log 'git <merge>' 'imagem anterior ausente recusa antes do fast-forward'
+    assert_no_log '<up>' 'imagem anterior ausente não substitui contêineres'
+    assert_no_log 'git <reset>' 'recusa não precisa de rollback'
+    assert_output 'Imagem anterior indisponível para rollback' 'deve explicar a falta da rede de proteção'
+    end_case "imagem anterior indisponível recusa sem tocar app: artefato=$modo"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+RUN_VARIANT=amd64_host
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'daemon x86_64 aceita imagens amd64 correspondentes'
+end_case 'normaliza arquitetura x86_64 do daemon sem limitar deploy a ARM64'
+
+begin_case
+SCENARIO=health_failure
+ARTIFACT=1
+RUN_VARIANT=previous_digest
+run_deploy
+[ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido continua falhando'
+assert_log 'git <reset> <--hard>' 'rollback devolve código'
+assert_no_log 'docker <image> <tag>' 'referência por digest não pode ser retagueada'
+assert_log '<--no-build> <--pull> <never>' 'rollback não reconstrói nem busca outra imagem'
+assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback registra commit anterior'
+assert_eq "app=sha256:$(printf '%064d' 0)
+postgres=sha256:$(printf '%064d' 0)" "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'rollback registra IDs exatos anteriores'
+assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'reversão saudável alerta'
+grep -Fq 'mspa.backup.postgres: "true"' "$CALL_LOG.rollback" || fail 'rollback mantém descoberta de backup por rótulo'
+grep -Fq '  migrate:' "$CALL_LOG.rollback" || fail 'rollback também fixa migrate'
+grep -Fq '  db-provision:' "$CALL_LOG.rollback" || fail 'rollback também fixa provisionamento'
+end_case 'rollback de artefato restaura IDs locais, inclusive migrations e provisionamento'
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+REMOTE_SHA=$OLD_SHA
+run_deploy bancario --refresh
+assert_eq 0 "$EXIT_CODE" 'refresh usa novo artefato do mesmo commit'
+assert_no_log 'git <merge>' 'refresh não move código'
+assert_no_log '<--build>' 'refresh por artefato não reconstrói no VPS'
+end_case 'refresh semanal resolve run testado sem rebuild no servidor'
+
+for projeto in megasena conforto; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+    run_deploy "$projeto"
+    assert_eq 0 "$EXIT_CODE" 'novo aplicativo deve implantar o artefato'
+    registry=mega-sena
+    [ "$projeto" != conforto ] || registry=conforto-termico
+    assert_log "docker <pull> <ghcr.io/mspa-coder/$registry:run-900-2>" 'baixa runtime do app correto'
+    assert_log "docker <pull> <ghcr.io/mspa-coder/$registry-postgres:run-900-2>" 'banco tem referência distinta'
+    assert_no_log '<--build>' 'artefato novo não recompila'
+    end_case "$projeto implanta run validado sem rebuild"
+
+    begin_case
+    SCENARIO=health_failure
+    ARTIFACT=1
+    [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+    run_deploy "$projeto"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'reversão conserva falha do deploy original'
+    for role in postgres db-provision; do
+        grep -Fq "  $role:" "$CALL_LOG.rollback" || fail "rollback exige $role"
+    done
+    if [ "$projeto" = conforto ]; then roles='ict coletor schema'; else roles='app migrate'; fi
+    for role in $roles; do
+        grep -Fq "  $role:" "$CALL_LOG.rollback" || fail "rollback exige $role"
+    done
+    assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'código volta ao SHA anterior'
+    assert_no_log '<--build>' 'reversão não recompila'
+    end_case "$projeto restaura todos os papéis por ID local"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+CI_FIXTURE=conforto-verde
+RUN_VARIANT=missing_collector
+run_deploy conforto
+[ "$EXIT_CODE" -ne 0 ] || fail 'snapshot sem coletor deve recusar'
+assert_no_log 'git <merge>' 'sem coletor não altera código'
+assert_no_log '<up>' 'sem coletor não altera serviços'
+assert_output 'Snapshot de rollback exige coletor em execução' 'recusa explica papel ausente'
+end_case 'Conforto exige snapshot de ICT e coletor antes de tocar na produção'
+
+BASELINE="sha256:$(printf '%064d' 0)"
+for projeto in megasena conforto; do
+    for cenario in success health_failure; do
+        begin_case
+        SCENARIO=$cenario
+        ARTIFACT=1
+        RUN_VARIANT=missing_postgres
+        [ "$projeto" != conforto ] || CI_FIXTURE=conforto-verde
+        run_deploy "$projeto" "--postgres-baseline=$BASELINE"
+        assert_output 'MANUTENÇÃO: PostgreSQL anterior' 'troca deliberada de baseline deve ficar explícita'
+        assert_no_log '<--build>' 'recuperação não constrói no VPS'
+        assert_no_log "docker <image> <tag> <sha256:$(printf '%064d' 1)>" 'não finge recuperar imagem ausente'
+        if [ "$cenario" = success ]; then
+            assert_eq 0 "$EXIT_CODE" 'manutenção com baseline validado deve concluir'
+        else
+            [ "$EXIT_CODE" -ne 0 ] || fail 'rollback conserva erro do deploy'
+            assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'rollback devolve código antigo'
+            # Arquivo produzido pelo script real, não uma cópia da política.
+            postgres_id=$(sed -n '/^  postgres:/{n;s/.*image: //;p;}' "$CALL_LOG.rollback")
+            assert_eq "$BASELINE" "$postgres_id" 'rollback usa novo ponto de retorno deliberado'
+            grep -Fq 'mspa.backup.postgres: "true"' "$CALL_LOG.rollback" || fail 'baseline conserva rótulo de backup'
+        fi
+        end_case "$projeto: baseline explícito conserva deploy/rollback ($cenario)"
+    done
+done
+
+for variante in missing_runtime schema_changed valid; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=$variante
+    run_deploy megasena "--postgres-baseline=$BASELINE"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'baseline não admite app ausente, migrations ou uso desnecessário'
+    assert_no_log 'git <merge>' 'recusa de baseline antecede alteração de código'
+    assert_no_log '<up>' 'recusa de baseline não muda contêineres'
+    end_case "baseline recusa condição não autorizada: $variante"
+done
+
+for argumento in '--postgres-baseline=sha256:bad' "--postgres-baseline=sha256:$(printf '%064d' 2)"; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    RUN_VARIANT=missing_postgres
+    run_deploy megasena "$argumento"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'identidade de baseline incorreta deve recusar'
+    assert_no_log 'git <merge>' 'ID incorreto não move código'
+    assert_no_log '<up>' 'ID incorreto não muda serviços'
+    end_case "baseline exige ID completo da candidata: $argumento"
+done
+
+for projeto in bancario megasena; do
+    begin_case
+    SCENARIO=success
+    ARTIFACT=1
+    argumentos=("--postgres-baseline=$BASELINE")
+    [ "$projeto" != megasena ] || argumentos+=(--sem-ci)
+    run_deploy "$projeto" "${argumentos[@]}"
+    [ "$EXIT_CODE" -ne 0 ] || fail 'baseline deve recusar outro app ou bypass CI'
+    assert_no_log 'git <fetch>' 'opção incompatível recusa antes de operar'
+    end_case "baseline não amplia escopo nem ignora CI: $projeto"
+done
+
+begin_case
+SCENARIO=success
+ARTIFACT=1
+RUN_VARIANT=missing_postgres
+run_deploy megasena
+[ "$EXIT_CODE" -ne 0 ] || fail 'execução normal continua recusando PostgreSQL ausente'
+assert_no_log 'git <merge>' 'timer não pode selecionar baseline implicitamente'
+assert_no_log '<up>' 'timer mantém produção intacta'
+end_case 'baseline nunca é implícito, inclusive com candidata válida disponível'
+
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

@@ -18,6 +18,10 @@ rodada.
 contrato `patrimonio/v4` entre o CB, o CRV e o Wealthfolio, com a lista das
 cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 
+[`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md) fixa a regra de versão de cada
+aplicativo (SemVer por projeto, desde a primeira versão) e guarda a tabela de
+releases e a correspondência com as tags antigas.
+
 ## Operação atual
 
 | Componente | Fonte | Contrato operacional |
@@ -43,7 +47,8 @@ cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 
 Nenhum script guarda a lista de quais aplicações existem. Cada um pergunta à
 máquina em que está rodando: o backup descobre os bancos com imagens
-`postgres:*` ou `mspa-postgres:*` e os volumes que levam o rótulo
+`postgres:*` ou `mspa-postgres:*`, ou com o rótulo
+`mspa.backup.postgres=true`, e os volumes que levam o rótulo
 `mspa.backup.volume`; o vigia
 e o monitor externo leem os `server_name` dos vhosts habilitados, o agente de
 backup olha as pastas de `~/backups`, e o instalador do nginx instala os vhosts
@@ -101,11 +106,92 @@ com seu snapshot, mas backup e deploy dos demais aplicativos continuam
 independentes. Se a outra operação não terminar em cinco minutos, a chamada
 termina sem tocar no app e informa a contenção.
 
+### Imagens validadas: bancário, renda, Mega-Sena e Conforto
+
+Quando o commit candidato contém `compose.release.yaml`, estes quatro apps
+não são reconstruídos no VPS. O deploy consulta o run completo `CI`
+bem-sucedido de `main`, no SHA exato, e baixa as tags
+`run-<run_id>-<tentativa>` do GHCR (aplicação e PostgreSQL). Confere os
+labels de revisão/run da aplicação **e do PostgreSQL** e resolve os dois digests antes de tocar
+código ou contêineres. Confere também SO/arquitetura das duas imagens contra
+o daemon Docker e a disponibilidade dos IDs locais do snapshot de rollback;
+qualquer incompatibilidade/ID ausente recusa antes do fast-forward e da subida.
+A subida usa `--no-build --pull never`; registra
+`<app>.images` junto do SHA saudável.
+
+A CI semanal fornece a nova base testada; `--refresh` a baixa mesmo sem
+novo commit. Os demais apps mantêm seu caminho anterior. Uma imagem
+indisponível, inclusive por falta de acesso a pacote privado, aborta sem
+alterar o app. `--sem-ci` não contorna a identidade do artefato.
+
+Rollout: instalar esta versão da infraestrutura **antes** dos commits de
+aplicativo que acrescentam `compose.release.yaml`; aguardar a CI de
+`main` publicar as duas imagens e confirmar acesso do VPS aos dois pacotes.
+O GHCR cria pacotes privados por padrão: definir explicitamente a visibilidade
+ou provisionar leitura pelo mecanismo de credenciais Docker, sem tokens nos
+scripts/Git. Não atualizar aplicações pelo comando Compose de build neste
+caminho. Repositórios/pacotes: `sistema-financeiro[-postgres]` e
+`controlerendavariavel[-postgres]`, `mega-sena[-postgres]` e
+`conforto-termico[-postgres]`, sob `ghcr.io/mspa-coder`.
+
+No Mega-Sena e no Conforto, `Qualidade` reúne domínio, tipos, Chromium e
+scanners. `Runtime contracts` recebe as mesmas candidatas nativas ARM64 como
+artefatos, sem rebuild, e testa smoke/papel restrito. Publicação depende dos
+dois jobs. O check obrigatório do Conforto permanece preservado.
+
+O rollback captura os IDs locais de aplicação e banco e gera uma override temporária
+também para migrate/provisionamento; não tenta retaguear referências
+`@sha256`, buscar outra tag ou reconstruir. O arquivo temporário é removido
+ao final. Migrações/dados continuam sem reversão automática.
+
+Os papéis são explícitos: `web/migrate` para CB/CRV, `app/migrate` para Mega
+e `ict/coletor/schema` para Conforto. Antes do fast-forward, este último exige
+snapshot recuperável tanto do ICT quanto do coletor. Cada papel restaurado
+conserva seu ID anterior; `schema` usa a imagem anterior do ICT.
+
+Só o servidor de banco declara `mspa.backup.postgres=true`; o backup o
+descobre mesmo quando Config.Image é um digest do GHCR ou ID local de
+rollback, sem depender de nomes de projetos. O fallback de imagem legado
+permanece. A override de rollback mantém o rótulo inclusive ao restaurar um
+checkout anterior à adoção dele; web/migrate/db-provision não o recebem.
+
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
 automático devolve o checkout ao SHA anterior, restaura as imagens anteriores e
 só registra o estado depois que o endpoint público confirma saúde. Mesmo
 quando a reversão recupera o site, o deploy original termina com erro e o
 commit defeituoso permanece em `main` até ser corrigido.
+
+#### Manutenção: PostgreSQL legado sem imagem recuperável
+
+Se o image store perdeu a imagem de um banco ainda em execução, o deploy normal
+recusa sem tocar no serviço. Não retagueie uma imagem diferente como se fosse a
+antiga, não faça `docker commit` (pode incorporar estado/segredos) e não desative
+essa guarda nos timers. Uma recuperação exige autorização específica para a
+janela de manutenção e um **novo** ponto de retorno, não a alegação de que o ID
+perdido foi recuperado.
+
+Somente Mega-Sena/Conforto oferecem a opção explícita abaixo. Antes de usá-la:
+
+1. Confirme a mesma versão principal PostgreSQL e ausência de alteração de
+   schema/migrações; preserve os volumes e os segredos existentes.
+2. Confira o backup e restaure uma cópia em banco descartável isolado, conforme
+   `BackupRestore/RESTAURAR.md`, usando a candidata PostgreSQL publicada pela CI.
+   Confira tabelas/linhas e a compatibilidade do código anterior com esse banco.
+   Nunca restaure sobre o banco operacional durante esse ensaio.
+3. Registre o digest/ID exato testado e a evidência da restauração. O argumento
+   abaixo é a declaração deliberada do operador de que concluiu esses passos.
+4. Execute `~/deploy.sh megasena --postgres-baseline=sha256:<ID-completo>` (ou
+   `conforto`). O script exige CI, identidade/run/arquitetura da candidata,
+   correspondência do ID informado e nenhuma diferença em `migrations` ou
+   `alembic.ini`. Só substitui o ponto de retorno do serviço `postgres` cuja
+   imagem esteja ausente; runtime/ICT/coletor ainda precisam de seus IDs antigos.
+
+O rollback desta manutenção conserva código/runtime antigos e usa o PostgreSQL
+**novo, validado no ensaio**, inclusive no provisionamento. Não desfaz dados ou
+schema. A saída identifica explicitamente a substituição. ID incorreto, imagem
+antiga ainda disponível, migrações alteradas, `--sem-ci` ou outro aplicativo
+recusam antes do fast-forward. Se um run mais novo mudar a candidata, é preciso
+revalidar o novo ID, não trocar o argumento por conveniência.
 
 Teste hermético do fluxo, sem rede ou acesso ao VPS:
 

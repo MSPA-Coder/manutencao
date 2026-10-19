@@ -34,7 +34,8 @@ Para o publicador, o schema funciona assim: **exige** os campos que ele emite
 hoje, com o tipo e o formato de hoje (valor monetário e quantidade como texto
 decimal, data e instante ISO 8601, moeda ISO 4217, ids prefixados pela fonte),
 e **permite propriedades a mais**. Acréscimo opcional não muda a versão do
-contrato (assim entraram `purpose`, `group` e `effective_status`), e quem não o
+contrato (assim entraram `purpose`, `group`, `effective_status` e
+`statement_covered_until`), e quem não o
 conhece o ignora. Para tornar um campo novo obrigatório, acrescente-o a
 `required`. Remover ou renomear um campo, ou trocar o tipo dele, reprova a suíte
 de quem fez a mudança — que é o ponto.

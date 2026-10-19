@@ -12,7 +12,10 @@
 #     silêncio;
 #   - importação que reprova dentro do contêiner, e Docker indisponível: falha;
 #   - desde 10/10/2026, o expurgo do outbox v4 roda depois da importação, no
-#     mesmo contêiner, só onde o comando existe; se reprova, é falha.
+#     mesmo contêiner, só onde o comando existe; se reprova, é falha;
+#   - desde 19/10/2026, os proventos do CB (`importar-proventos-cb --rotina`)
+#     rodam por último, só onde o comando aceita `--rotina`; se pedem atenção
+#     (fila de revisão, CB fora), é falha.
 #
 # `docker` e `logger` são scripts falsos no PATH, e o script exercitado é o
 # mesmo arquivo que roda no servidor.
@@ -57,6 +60,7 @@ begin_case() {
     : >"$CHAMADAS"
     EXEC_SAIDA=0
     EXPURGO_SAIDA=0
+    PROVENTOS_SAIDA=0
     DOCKER_PS_FALHA=0
 }
 
@@ -77,7 +81,7 @@ checkout() {
     local nome=$1 tipo=${2:-}
     mkdir -p "$CASE_TMP/apps/$nome"
     case "$tipo" in
-        crv|crv-com-expurgo|crv-antigo)
+        crv|crv-com-expurgo|crv-com-proventos|crv-antigo)
             mkdir -p "$CASE_TMP/apps/$nome/app/quotes"
             : >"$CASE_TMP/apps/$nome/app/quotes/history_import.py"
             if [ "$tipo" = crv ]; then
@@ -85,6 +89,9 @@ checkout() {
                     >"$CASE_TMP/apps/$nome/app/cli.py"
             elif [ "$tipo" = crv-com-expurgo ]; then
                 printf '@click.option(\n    "--estrito",\n)\n@click.command("expurgar-outbox-v4")\n' \
+                    >"$CASE_TMP/apps/$nome/app/cli.py"
+            elif [ "$tipo" = crv-com-proventos ]; then
+                printf '@click.option(\n    "--estrito",\n)\n@click.command("expurgar-outbox-v4")\n@click.option(\n    "--rotina",\n)\n' \
                     >"$CASE_TMP/apps/$nome/app/cli.py"
             else
                 printf '@click.command("import-position-history")\n' \
@@ -126,6 +133,15 @@ case "$1" in
                 printf '7 linha(s) do outbox v4 com mais de 30 dia(s) removida(s).\n'
                 exit "$EXPURGO_SAIDA"
                 ;;
+            *importar-proventos-cb*)
+                printf 'Corte 01/01/2026. Créditos válidos: 74.\n'
+                if [ "$PROVENTOS_SAIDA" != 0 ]; then
+                    printf 'Error: 1 crédito(s) na fila de revisão\n' >&2
+                else
+                    printf 'Gravado: 1 criada(s), 0 atualizada(s).\n'
+                fi
+                exit "$PROVENTOS_SAIDA"
+                ;;
         esac
         printf '1234 daily quotes imported for 9 tickers.\n'
         if [ "$EXEC_SAIDA" != 0 ]; then
@@ -143,7 +159,7 @@ EOF
 roda() {
     instalar_falsos
     CONTAINERS_FILE="$CASE_TMP/containers" CHAMADAS="$CHAMADAS" EXEC_SAIDA="$EXEC_SAIDA" \
-        EXPURGO_SAIDA="$EXPURGO_SAIDA" DOCKER_PS_FALHA="$DOCKER_PS_FALHA" \
+        EXPURGO_SAIDA="$EXPURGO_SAIDA" PROVENTOS_SAIDA="$PROVENTOS_SAIDA" DOCKER_PS_FALHA="$DOCKER_PS_FALHA" \
         DIR_APPS="$CASE_TMP/apps" PATH="$CASE_TMP/bin:$PATH" \
         bash "$COTACOES" >"$SAIDA" 2>&1
     CODIGO=$?
@@ -246,6 +262,27 @@ roda
 assert_eq 1 "$CODIGO" 'expurgo que reprova é falha'
 assert_saida 'o expurgo do outbox v4 falhou' 'a falha do expurgo é registrada'
 end_case 'expurgo que reprova dentro do contêiner: falha'
+
+begin_case
+checkout controle-renda-variavel crv-com-proventos
+em_execucao controle-renda-variavel-web-1 controle-renda-variavel web
+roda
+assert_eq 0 "$CODIGO" 'importação, expurgo e proventos sem erro saem com sucesso'
+grep -Fq 'exec controle-renda-variavel-web-1 flask --app app:create_app importar-proventos-cb --rotina' "$CHAMADAS" \
+    || fail 'os proventos rodam no contêiner web do CRV, com --rotina'
+assert_eq 3 "$(execs)" 'importação, expurgo e proventos, uma vez cada'
+assert_saida 'proventos do CB: Gravado: 1 criada(s)' 'a última linha da saída dos proventos é registrada'
+end_case 'CRV com --rotina: os proventos do CB rodam por último'
+
+begin_case
+checkout controle-renda-variavel crv-com-proventos
+em_execucao controle-renda-variavel-web-1 controle-renda-variavel web
+PROVENTOS_SAIDA=1
+roda
+assert_eq 1 "$CODIGO" 'proventos que pedem atenção são falha, para o alerta'
+assert_saida 'proventos do CB pede atenção' 'a falha dos proventos é registrada'
+assert_saida 'fila de revisão' 'a saída do comando entra no registro'
+end_case 'proventos com fila de revisão: falha que alerta'
 
 printf '\n%d caso(s), %d falha(s)\n' "$TOTAL" "$FAILED"
 [ "$FAILED" -eq 0 ]

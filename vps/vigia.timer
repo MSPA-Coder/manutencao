@@ -14,7 +14,7 @@ RandomizedDelaySec=5min
 # passa a valer "1h depois do boot", que já passou. Depois do reinício de 25/09/2026 o timer
 # ficou `elapsed`, sem próxima execução, e o vigia cinco dias sem rodar, com o
 # `systemctl is-active` dizendo "ativo". O VPS1 (systemd 255) não sofreu, com o mesmo arquivo.
-# Os outros timers monotônicos (sentinela, autocura, aviso-contatos) nunca tiveram a opção,
+# Os outros timers monotônicos (sentinela, autocura) nunca tiveram a opção,
 # nem o stamp, e disparam normalmente. `vps/tests/timers_test.sh` impede a volta da opção.
 #
 # ATENÇÃO: tirar a opção NÃO basta num servidor que já tem o stamp. Reinstalar reiniciou o

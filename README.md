@@ -35,8 +35,6 @@ releases e a correspondência com as tags antigas.
 | Recarga após renovar o certificado | [`vps/certbot-recarregar-nginx.sh`](vps/certbot-recarregar-nginx.sh) | Hook de `deploy` do certbot: valida com `nginx -t` e recarrega o nginx depois de uma renovação. Sem ele o certificado renova em disco e o nginx segue apresentando o antigo — sem nada falhar, porque renovar deu certo. |
 | Vigia | [`vps/vigia.sh`](vps/vigia.sh), [`vps/vigia.service`](vps/vigia.service), [`vps/vigia.timer`](vps/vigia.timer) | Verifica disco, `/health` público, certificados, frescor dos backups e se a cópia fora do servidor os buscou nas últimas 72 h; alerta condições persistentes. Também o **frescor dos dados**, que o `/health` não vê: a idade da série diária e da cotação ao vivo do CRV (lidas pelo esquema `leitura` do banco dele) e, nos logs do Wealthfolio, o batimento da sincronização de cotações e as falhas em série da importação do CB/CRV. Fica fora do `/health` de propósito, porque a autocura reinicia contêiner `unhealthy` e uma cotação velha reiniciaria o CRV sem motivo. Os domínios saem dos vhosts habilitados nesta máquina, então cada servidor vigia o que ele mesmo serve — e um vigia sem nenhum domínio alerta a própria cegueira. |
 | Sentinela de erro de aplicação | [`vps/sentinela.sh`](vps/sentinela.sh), [`vps/sentinela.service`](vps/sentinela.service), [`vps/sentinela.timer`](vps/sentinela.timer) | Lê a cada cinco minutos o log que o nginx escreve **só** com respostas 5xx, agrupa por host e alerta. Cobre a quebra que o `/health` não vê: rota que devolve 500 com o banco saudável, worker morto (502) e requisição estourada (504). Lê de forma incremental por inode, tamanho e assinatura do prefixo; se não conseguir ler o log, alerta a própria cegueira em vez de calar. |
-| Retenção de contatos | [`vps/expurgo-contatos.sh`](vps/expurgo-contatos.sh), [`vps/expurgo-contatos.service`](vps/expurgo-contatos.service), [`vps/expurgo-contatos.timer`](vps/expurgo-contatos.timer) | Roda uma vez por dia `manage.py expurgar_contatos` no contêiner `web` de cada checkout em `~/apps` que traz o comando, cumprindo o prazo de retenção que o aviso de privacidade do portal publica. Máquina sem o portal sai com sucesso; portal presente sem contêiner para rodar o expurgo é falha, e alerta. |
-| Aviso de chegada | [`vps/aviso-contatos.sh`](vps/aviso-contatos.sh), [`vps/aviso-contatos.service`](vps/aviso-contatos.service), [`vps/aviso-contatos.timer`](vps/aviso-contatos.timer) | A cada 15 minutos roda `manage.py contatos_novos` no contêiner `web` de cada checkout em `~/apps` que traz o comando e alerta quando chegou solicitação nova pelo formulário do portal. A mensagem leva só a contagem, nunca dado pessoal. Guarda o último instante avisado em `~/.local/state/mspa-aviso-contatos/`; a primeira execução só inicializa, e falha não anda o estado. |
 | Cotações diárias do CRV | [`vps/cotacoes-diarias.sh`](vps/cotacoes-diarias.sh), [`vps/cotacoes-diarias.service`](vps/cotacoes-diarias.service), [`vps/cotacoes-diarias.timer`](vps/cotacoes-diarias.timer) | De terça a sábado, às 06:40, roda `flask import-position-history --estrito` no contêiner `web` de cada checkout em `~/apps` que traz o importador do Yahoo. Preenche os fechamentos que o agente RTD não gravou, por exemplo com o PC Windows desligado, sem sobrescrever a leitura dele. Depois, no mesmo contêiner, `flask expurgar-outbox-v4` mantém o outbox do contrato patrimônio v4 em 30 dias (só onde o comando existe). Máquina sem o CRV sai com sucesso. CRV sem contêiner, sem `--estrito` ou com ticker detido sem série é falha, e alerta. |
 | Autocura | [`vps/autocura.sh`](vps/autocura.sh), [`vps/autocura.service`](vps/autocura.service), [`vps/autocura.timer`](vps/autocura.timer) | Reinicia contêineres `unhealthy` com teto de tentativas e alerta quando a recuperação automática não resolve. Poupa o contêiner pausado e o que não teve nenhuma sonda reprovada, que é como o Docker mostra, por segundos, o contêiner que o backup pausou para copiar o volume. |
 | Limpeza do Docker | [`vps/docker-prune.sh`](vps/docker-prune.sh), [`vps/docker-prune.service`](vps/docker-prune.service), [`vps/docker-prune.timer`](vps/docker-prune.timer) | Poda semanalmente o cache de build acumulado pelos deploys; nunca toca imagem em uso por contêiner ativo. |
@@ -71,7 +69,7 @@ verifica.
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda|portal|wealthfolio>
+~/deploy.sh <bancario|conforto|megasena|renda|wealthfolio>
 ~/deploy.sh <projeto> --sem-ci   # emergência: implanta sem CI verde e alerta
 ~/deploy.sh --status
 ```
@@ -87,8 +85,8 @@ o próprio workflow da imagem. Assim, um commit posterior só do add-on não
 precisa repetir meia hora de testes do upstream; o gate ainda valida ambos os
 componentes e recusa se qualquer execução relevante estiver ausente, pendente,
 vermelha ou se a API não responder. O Wealthfolio agora é público e usa o
-mesmo gate; o portal segue fora da automação porque a hospedagem dele é a
-Hostinger, fora deste VPS. `--sem-ci` existe para quando a API estiver fora
+mesmo gate. O portal saiu da frota em 19/10/2026 (virou site estático, entregue
+a um cliente). `--sem-ci` existe para quando a API estiver fora
 justo na hora de um conserto, e avisa pelo alerta.
 
 O `atualizar-stacks.timer` verifica commits diariamente às 12:00 UTC. Quando

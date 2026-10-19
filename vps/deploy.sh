@@ -63,10 +63,9 @@ PADRAO_SAUDE=$PADRAO_OK
 # saúde bate na URL pública, não em 127.0.0.1, de propósito. Ela fica aqui
 # porque este `case` é o único lugar do repositório onde a numeração da frota
 # (51/52/53/54/56/57) aparece ao lado do projeto correspondente, e essa
-# correspondência já precisou ser consultada mais de uma vez. O portal pulou
-# para 56xx: o 55xx era do site estático, que ele substituiu, e reaproveitar a
-# faixa enquanto os dois coexistiam na virada teria colidido as portas. O
-# NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
+# correspondência já precisou ser consultada mais de uma vez. O portal (56xx)
+# saiu da frota em 19/10/2026: virou site estático, entregue a um cliente; a
+# faixa 56xx fica sem dono. O NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
 #
 # `REPO_GITHUB` é onde a CI do commit é conferida. Todos os repositórios de
@@ -111,11 +110,6 @@ projeto_info() {
             REGISTRY=ghcr.io/mspa-coder/controlerendavariavel
             CI_TESTE_1=Qualidade
             CI_TESTE_2='Contratos de runtime' ;;
-        portal|mp-portal)
-            DIR=mp-portal;              ENVF=.env.vps;    PORTA=5601
-            DOMINIO=mp-solucoes.duckdns.org
-            REPO_GITHUB=MSPA-Coder/mp-portal
-            CI_EXIGIDA=0; CI_MOTIVO="repositório privado; a API anônima não o alcança" ;;
         wealthfolio)
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=wealthfolio-mspa.duckdns.org
@@ -125,7 +119,7 @@ projeto_info() {
             CI_IMAGEM_TESTE_1='Build, testes dos patches e partida'
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda | portal | wealthfolio" >&2
+            echo "Use: bancario | conforto | megasena | renda | wealthfolio" >&2
             return 1 ;;
     esac
 }
@@ -715,7 +709,7 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda portal wealthfolio; do
+    for p in bancario conforto megasena renda wealthfolio; do
         projeto_info "$p"
         # Um projeto ainda não clonado no servidor não deve derrubar o --status
         # dos demais.
@@ -733,7 +727,7 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|portal|wealthfolio> [--sem-ci] [--refresh]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|wealthfolio> [--sem-ci] [--refresh]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi

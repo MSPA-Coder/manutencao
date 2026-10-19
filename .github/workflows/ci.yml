@@ -112,26 +112,12 @@ jobs:
       - name: Testar a descoberta do backup
         run: bash vps/tests/backup-db_test.sh
 
-      # O expurgo de contatos cumpre o prazo que o aviso de privacidade do
-      # portal publica. A suíte substitui o `docker` por um script falso e
-      # exercita os dois sentidos do vazio: máquina sem o portal (sucesso) e
-      # portal sem contêiner para rodar o expurgo (falha, que alerta).
-      - name: Testar o expurgo de contatos
-        run: bash vps/tests/expurgo-contatos_test.sh
-
       # A série diária de cotações do CRV não pode depender do PC Windows. A
       # suíte substitui o `docker` por um script falso e cobre os vazios: máquina
       # sem o CRV (sucesso), CRV sem `--estrito` ou sem contêiner (falha, que
       # alerta) e a importação que reprova dentro do contêiner.
       - name: Testar a importação diária de cotações
         run: bash vps/tests/cotacoes-diarias_test.sh
-
-      # O aviso de chegada do portal guarda o último instante avisado e manda
-      # alerta com `ALERTA_JANELA=0`. A suíte cobre a primeira execução (só
-      # inicializa), o estado que não anda quando algo falha e a leitura
-      # exclusiva da saída padrão do comando.
-      - name: Testar o aviso de chegada do portal
-        run: bash vps/tests/aviso-contatos_test.sh
 
       # A cópia dos dumps para fora do servidor começa por `listar`, que grava
       # o marcador `.ultima_busca`. A suíte prova que só `listar` grava e que a

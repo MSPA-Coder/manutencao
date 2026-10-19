@@ -67,7 +67,8 @@ Repositório: [MSPA-Coder/sistema-financeiro](https://github.com/MSPA-Coder/sist
 | v3.5.0 | 14/10/2026 | `791bf6b` | Filtros padrão, matriz de transferências, arrastar para rolar e correções de tela. |
 | v3.6.0 | 17/10/2026 | `5da9423` | PDF protegido por senha, confiança nas sugestões de categoria e rótulos de transferência acompanhando renomeações. |
 | v3.6.1 | 18/10/2026 | `3b5d78d` | Reaproveitamento de parsing, menos consultas e artefatos ARM64 nativos para o VPS. |
-| v3.7.0 | 18/10/2026 | (release atual) | Ativo, tipo de renda e liquidação de pregão no lançamento (CB-1) e imagem do PostgreSQL rotulada. |
+| v3.7.0 | 18/10/2026 | `408dc05` | Ativo, tipo de renda e liquidação de pregão no lançamento (CB-1) e imagem do PostgreSQL rotulada. |
+| v3.8.0 | 19/10/2026 | (release atual) | A conta publica no contrato v4 até quando o extrato foi importado (`statement_covered_until`). |
 
 Tags antigas, removidas:
 
@@ -121,7 +122,8 @@ Repositório: [MSPA-Coder/ControleRendaVariavel](https://github.com/MSPA-Coder/C
 | v4.4.1 | 18/10/2026 | `f631f84` | Artefatos ARM64 nativos validados e publicados para o VPS. |
 | v4.5.0 | 18/10/2026 | `b7e9972` | Execuções do myProfit e conferência por pregão (CRV-1) e proventos do Controle Bancário (CRV-2). |
 | v4.6.0 | 18/10/2026 | `51dfbfc` | Conciliação mensal com o myProfit: posição e vendas conferidas, com reconhecimento de diferenças. |
-| v4.6.1 | 19/10/2026 | (release atual) | Conciliação compara a posição do CRV na mesma data do myProfit; posição com data futura é recusada. |
+| v4.6.1 | 19/10/2026 | `acf8b38` | Conciliação compara a posição do CRV na mesma data do myProfit; posição com data futura é recusada. |
+| v4.7.0 | 19/10/2026 | (release atual) | Execuções do myProfit aplicadas às posições, custo médio explicado pelas taxas, proventos do CB em rotina diária e conferência "aguardando extrato". |
 
 Tags antigas, removidas:
 

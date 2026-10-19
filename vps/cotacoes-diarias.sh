@@ -32,6 +32,14 @@
 # `flask expurgar-outbox-v4`, que mantém o outbox do contrato patrimônio v4 em
 # 30 dias (ver `app/patrimonio/outbox.py` no CRV). Checkout sem o comando pula
 # essa parte sem falhar.
+#
+# POR ÚLTIMO, desde 19/10/2026, `flask importar-proventos-cb --rotina` traz para o
+# CRV os proventos que o Controle Bancário já tem (o CB é o dono do dinheiro): o
+# extrato importado no CB num dia vira provento no CRV na manhã seguinte, sem
+# comando à mão. O comando é idempotente e só toca linhas de origem CB; sai com
+# código 1 quando sobra crédito na fila de revisão (ativo sem cadastro) ou o CB
+# está fora, e essa falha aciona o alerta da unidade. Checkout sem `--rotina`
+# pula a etapa sem falhar.
 
 set -euo pipefail
 
@@ -89,6 +97,17 @@ for importador in "$DIR_APPS"/*/"$IMPORTADOR_REL"; do
             registrar "$projeto: $saida"
         else
             registrar "ERRO: $projeto: o expurgo do outbox v4 falhou: $saida"
+            falhas=$((falhas + 1))
+        fi
+    fi
+
+    # Proventos do CB no CRV. Só onde o comando já tem `--rotina`, pelo mesmo
+    # motivo do expurgo: o CRV anterior a 19/10/2026 não o tem.
+    if grep -q -- '"--rotina"' "$checkout/app/cli.py" 2>/dev/null; then
+        if saida=$(docker exec "$container" flask --app app:create_app importar-proventos-cb --rotina 2>&1); then
+            registrar "$projeto: proventos do CB: $(printf '%s\n' "$saida" | tail -n 1)"
+        else
+            registrar "ERRO: $projeto: a importação dos proventos do CB pede atenção: $saida"
             falhas=$((falhas + 1))
         fi
     fi

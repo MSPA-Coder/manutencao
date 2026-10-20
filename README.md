@@ -10,6 +10,10 @@ servidor a partir do clone local, entrega os artefatos declarados no inventário
 e confere o resultado.
 
 [`docs/TESTES.md`](docs/TESTES.md) é o texto-base das diretrizes de teste.
+[`validacao/README.md`](validacao/README.md) descreve a medição reproduzível de
+cobertura dos projetos locais pelos seus serviços Docker de qualidade.
+[`higiene/README.md`](higiene/README.md) descreve a limpeza local de caches,
+a conferência de ignores e a preservação de migrações e dados.
 Repositórios que carregam uma cópia devem mantê-la alinhada; nem todos têm uma.
 Para mudar uma regra, atualize o texto-base e as cópias existentes na mesma
 rodada.

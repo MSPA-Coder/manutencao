@@ -263,9 +263,12 @@ capturar_imagens_anteriores() {
         # Contêineres legados podem apontar para um ID já indisponível no
         # image store. Descobrir isso só durante rollback deixa o site fora.
         id=${imagem%% *}
-        if [ "$(docker image inspect --format '{{.Id}}' "$id")" != "$id" ]; then
-            echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
-            return 1
+        if [ "$(docker image inspect --format '{{.Id}}' "$id" 2>/dev/null)" != "$id" ]; then
+            if ! id=$(id_pelo_manifesto "$container" "${imagem#* }"); then
+                echo "Imagem anterior indisponível para rollback: ${imagem%% *} ($container)." >&2
+                return 1
+            fi
+            imagem="$id ${imagem#* }"
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
         if [ "$IMAGEM_POR_ID" = 1 ]; then
@@ -302,6 +305,23 @@ capturar_imagens_anteriores() {
         return 1
     fi
     [ -s "$IMAGENS_ANTERIORES" ]
+}
+
+# No image store do containerd, um contêiner subido por tag (o Wealthfolio)
+# guarda em `.Image` o digest da configuração, que `docker image inspect` não
+# resolve; o que resolve é o ID do índice da imagem. Foi isso que deixou o
+# Wealthfolio sem deploy desde 18/10/2026: a imagem estava lá, mas a guarda a
+# dava por perdida. A tag do contêiner só vale como ponto de retorno se o
+# manifesto dela, na plataforma do contêiner, for exatamente o que ele roda.
+id_pelo_manifesto() {
+    local container=$1 referencia=$2 descritor manifesto plataforma id
+    descritor=$(docker inspect --format '{{.ImageManifestDescriptor.Digest}} {{.ImageManifestDescriptor.Platform.OS}}/{{.ImageManifestDescriptor.Platform.Architecture}}' "$container" 2>/dev/null) || return 1
+    read -r manifesto plataforma <<<"$descritor"
+    [[ "$manifesto" =~ ^sha256:[a-f0-9]{64}$ && "$plataforma" =~ ^[a-z0-9]+/[a-z0-9]+$ ]] || return 1
+    [ "$(docker image inspect --platform "$plataforma" --format '{{.Descriptor.Digest}}' "$referencia" 2>/dev/null)" = "$manifesto" ] || return 1
+    id=$(docker image inspect --format '{{.Id}}' "$referencia" 2>/dev/null) || return 1
+    [[ "$id" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+    printf '%s\n' "$id"
 }
 
 retaggear_imagens_anteriores() {

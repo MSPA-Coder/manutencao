@@ -115,13 +115,28 @@ printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>
 if [ "${1:-}" = builder ]; then exit 0; fi
 if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
     if [ "$RUN_VARIANT" = missing_previous ]; then exit 1; fi
+    if [[ "$*" == *'--platform linux/arm64'* ]]; then
+        # Manifesto da tag na plataforma do contêiner.
+        if [ "$RUN_VARIANT" = config_digest_mismatch ]; then printf 'sha256:%064d
+' 9
+        else printf 'sha256:%064d
+' 8; fi
+        exit 0
+    fi
     if [[ "${!#}" == "sha256:$(printf '%064d' 1)" ]]; then exit 1; fi
     if [[ "${!#}" == sha256:* ]]; then printf '%s\n' "${!#}"
     else printf 'sha256:%s\n' "$FAKE_IMAGE_ID"; fi
     exit 0
 fi
 if [ "${1:-}" = inspect ]; then
-    if [[ "$*" == *com.docker.compose.service* ]]; then
+    if [[ "$*" == *ImageManifestDescriptor* ]]; then
+        printf 'sha256:%064d linux/arm64
+' 8
+    elif [[ "$RUN_VARIANT" == config_digest* ]]; then
+        # containerd: `.Image` é o digest da configuração, que não se resolve.
+        printf 'sha256:%064d %s
+' 1 "$FAKE_IMAGE_NAME"
+    elif [[ "$*" == *com.docker.compose.service* ]]; then
         case "${!#}" in
             fake-ict) printf 'ict\n' ;;
             fake-coletor) printf 'coletor\n' ;;
@@ -436,6 +451,38 @@ assert_eq 75 "$EXIT_CODE" 'lock ocupado deve sinalizar indisponibilidade tempor�
 assert_no_log 'git <fetch>' 'lock ocupado deve parar antes de ler ou alterar o checkout'
 assert_output 'controle-bancario está em outra operação' 'a contenção deve identificar o app'
 end_case 'deploy manual não concorre com outra operação do mesmo app'
+
+# No image store do containerd, o contêiner subido por tag aponta para o digest
+# da configuração, que não se resolve. A tag vale como retorno se o manifesto
+# dela for o que o contêiner roda; foi o que travou o Wealthfolio em 18/10/2026.
+begin_case
+SCENARIO=compose_failure
+RUN_VARIANT=config_digest
+run_deploy
+[ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido continua falhando'
+assert_log "git <merge>" 'manifesto conferido não bloqueia o deploy'
+assert_log 'docker <image> <inspect> <--platform> <linux/arm64> <--format> <{{.Descriptor.Digest}}> <app:local>' 'deve conferir o manifesto da tag'
+assert_log 'docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <app:local>' 'rollback volta para o ID resolvido pela tag'
+assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'reversão saudável alerta'
+end_case 'imagem por digest de configuração volta pelo ID da tag cujo manifesto confere'
+
+begin_case
+SCENARIO=success
+RUN_VARIANT=config_digest_mismatch
+run_deploy
+[ "$EXIT_CODE" -ne 0 ] || fail 'manifesto divergente deve recusar'
+assert_no_log 'git <merge>' 'manifesto divergente recusa antes do fast-forward'
+assert_no_log '<up>' 'manifesto divergente não troca contêiner'
+assert_output 'Imagem anterior indisponível para rollback' 'deve explicar a recusa'
+end_case 'tag com outro manifesto não serve de retorno'
+
+begin_case
+SCENARIO=wealthfolio_success
+RUN_VARIANT=config_digest
+run_deploy wealthfolio
+assert_eq 0 "$EXIT_CODE" 'Wealthfolio com digest de configuração deve implantar'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'registra o SHA novo'
+end_case 'Wealthfolio implanta quando o contêiner aponta para o digest de configuração'
 
 # ---------------------------------------------------------------------------
 # Apps com `compose.release.yaml`: as imagens são montadas aqui e sobem por ID.

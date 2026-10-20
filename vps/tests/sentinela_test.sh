@@ -70,6 +70,7 @@ roda() {
     ALERTA="$CASE_TMP/bin/alerta.sh" \
     LOG_5XX="$LOG" \
     ESTADO_DIR="$CASE_TMP/estado" \
+    APP_LOCK_DIR="$CASE_TMP/locks" \
         bash "$SENTINELA" "$@" >"$CASE_TMP/saida.txt" 2>&1
     EXIT_CODE=$?
 }
@@ -179,6 +180,33 @@ else
 fi
 chmod 644 "$LOG" 2>/dev/null
 end_case 'monitor que não consegue ler alerta em vez de calar'
+
+begin_case
+mkdir -p "$CASE_TMP/locks"
+exec 8>"$CASE_TMP/locks/bancario.lock"
+flock -n 8 || fail 'o teste não conseguiu segurar o lock'
+linha bancario.example 502 /health >"$LOG"
+roda
+assert_sem_alerta 'deploy em andamento: o 502 da troca de contêiner não pode alertar'
+: >"$ALERTAS"
+flock -u 8
+exec 8>&-
+linha bancario.example 500 /depois >>"$LOG"
+roda
+assert_eq 1 "$(conta_alertas)" 'terminada a operação, o erro novo volta a alertar'
+assert_alerta '/depois' 'o alerta traz só o que veio depois da operação'
+if grep -Fq '/health' "$ALERTAS"; then
+    fail 'o 502 da janela de deploy foi descartado e não pode reaparecer'
+fi
+end_case 'durante a operação de um app o 5xx é descartado; depois dela, volta a alertar'
+
+begin_case
+mkdir -p "$CASE_TMP/locks"
+: >"$CASE_TMP/locks/bancario.lock"
+linha bancario.example 500 /a >"$LOG"
+roda
+assert_eq 1 "$(conta_alertas)" 'lock existente mas livre não é operação em curso'
+end_case 'arquivo de lock sem ninguém segurando não silencia o sentinela'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

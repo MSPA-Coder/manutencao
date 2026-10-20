@@ -30,6 +30,9 @@ set -uo pipefail
 ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
 LOG=${LOG_5XX:-/var/log/nginx/erro5xx.log}
 ESTADO_DIR=${ESTADO_DIR:-/home/ubuntu/.local/state/mspa-sentinela}
+# Onde o `app-lock.sh` guarda um lock por aplicação. Segurado = deploy, rebuild
+# ou backup em andamento naquele app.
+APP_LOCK_DIR=${APP_LOCK_DIR:-/home/ubuntu/.local/state/mspa-app-locks}
 MARCA="$ESTADO_DIR/posicao"
 
 # Quantas linhas do incidente vão na mensagem. O `alerta.sh` corta em 3900
@@ -169,6 +172,34 @@ fi
 # rota dentro -- que é a informação que orienta.
 # --------------------------------------------------------------------------
 hosts=$(printf '%s\n' "$novas" | grep -o 'host=[^ ]*' | cut -d= -f2 | sort -u)
+
+# --------------------------------------------------------------------------
+# Janela de operação
+#
+# Trocar o contêiner de um app devolve 502 por alguns segundos, e isso é o
+# esperado. Alertar "5xx em <host>" no meio de um deploy treina o operador a
+# ignorar o sentinela. Se algum app está com o lock da operação segurado, os
+# 5xx lidos agora são registrados no journal e descartados: a marca avança
+# como se tivessem sido tratados, porque o que importa é o erro que continua
+# DEPOIS do deploy, e esse chega em outra leitura. Deploy que quebra de
+# verdade já tem alerta próprio no `deploy.sh` ("DEPLOY REVERTIDO", "DEPLOY
+# QUEBRADO"). Sem o lock (nada em andamento), o comportamento é o de sempre.
+# --------------------------------------------------------------------------
+em_operacao=""
+if [ -d "$APP_LOCK_DIR" ]; then
+    for arquivo in "$APP_LOCK_DIR"/*.lock; do
+        [ -e "$arquivo" ] || continue
+        if ! ( flock -n 9 ) 9<"$arquivo" 2>/dev/null; then
+            em_operacao="${em_operacao:+$em_operacao }$(basename "$arquivo" .lock)"
+        fi
+    done
+fi
+if [ -n "$em_operacao" ]; then
+    descartadas=$(printf '%s\n' "$novas" | grep -c .)
+    registrar "$descartadas linha(s) de 5xx descartadas: operação em curso em $em_operacao"
+    [ "$MODO" = "--estado" ] && printf 'operação em curso em %s: %s linha(s) de 5xx seriam descartadas\n' "$em_operacao" "$descartadas"
+    hosts=""
+fi
 
 for host in $hosts; do
     linhas=$(printf '%s\n' "$novas" | grep -F "host=$host ")

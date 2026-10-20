@@ -146,6 +146,7 @@ roda() {
     PATH="$CASE_TMP/bin:$PATH" \
     BACKUPS="$BACKUPS_TMP" \
     NGINX_HABILITADOS="$CASE_TMP/vhosts" \
+    APP_LOCK_DIR="$CASE_TMP/locks" \
         bash "$VIGIA" "$@" >"$SAIDA" 2>&1
     EXIT_CODE=$?
 }
@@ -522,6 +523,19 @@ dominio_com_health wf.exemplo.test 'ok, mas com banco fora'
 roda
 assert_alerta 'TITULO=FORA DO AR: wf.exemplo.test' 'só o corpo inteiro igual a ok vale; prefixo não'
 end_case '/health que apenas começa com "ok" ainda alerta'
+
+begin_case
+dominio_com_health app.exemplo.test '{"status":"degradado"}'
+mkdir -p "$CASE_TMP/locks"
+exec 8>"$CASE_TMP/locks/bancario.lock"
+flock -n 8 || fail 'o teste não conseguiu segurar o lock'
+roda
+assert_sem_alerta 'FORA DO AR' 'deploy em andamento: o /health fora do ar é esperado'
+flock -u 8
+exec 8>&-
+roda
+assert_alerta 'TITULO=FORA DO AR: app.exemplo.test' 'terminada a operação, o app que não voltou alerta'
+end_case 'durante a operação de um app o /health fora do ar não alerta; depois dela, alerta'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

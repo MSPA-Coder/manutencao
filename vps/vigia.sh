@@ -31,6 +31,7 @@ set -uo pipefail
 ALERTA=${ALERTA:-/home/ubuntu/alerta.sh}
 BACKUPS=${BACKUPS:-/home/ubuntu/backups}
 NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
+APP_LOCK_DIR=${APP_LOCK_DIR:-/home/ubuntu/.local/state/mspa-app-locks}
 DOCKER=${DOCKER:-docker}
 DISCO_TETO=80          # % de uso a partir do qual alerta
 BACKUP_MAX_HORAS=36    # ciclo é diário; 36h já é atraso, não variação
@@ -138,6 +139,22 @@ lugar. Enquanto isto durar, nenhuma aplicação está sendo verificada aqui.
   nginx -T | grep server_name"
 fi
 
+# Um app com o lock da operação segurado (deploy, rebuild, backup do volume) está
+# sendo trocado: o /health fora do ar nesse intervalo é o esperado, não uma
+# queda, e alertar treina quem lê a ignorar o vigia. Não há como ligar o domínio
+# ao app sem repetir a tabela do `deploy.sh`, então qualquer lock segurado
+# suspende só o "FORA DO AR" desta rodada; a próxima, sem operação, alerta se o
+# app não voltou. Deploy que quebra de verdade tem alerta próprio no `deploy.sh`.
+em_operacao=""
+if [ -d "$APP_LOCK_DIR" ]; then
+    for arquivo in "$APP_LOCK_DIR"/*.lock; do
+        [ -e "$arquivo" ] || continue
+        if ! ( flock -n 9 ) 9<"$arquivo" 2>/dev/null; then
+            em_operacao="${em_operacao:+$em_operacao }$(basename "$arquivo" .lock)"
+        fi
+    done
+fi
+
 for dominio in "${DOMINIOS[@]}"; do
     corpo=$(curl -sSL --max-time 15 "https://$dominio/health" 2>&1)
     codigo=$(curl -sSL --max-time 15 -o /dev/null -w '%{http_code}' "https://$dominio/health" 2>/dev/null || echo 000)
@@ -155,6 +172,11 @@ for dominio in "${DOMINIOS[@]}"; do
     # JSON; o `deploy.sh` o aceita pelo mesmo critério (`PADRAO_SAUDE='^ok$'`).
     # Sem isto o vigia alertava "FORA DO AR" para um serviço no ar desde 29/09.
     if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<<"$corpo" \
+        && [ "$(printf '%s' "$corpo" | tr -d '[:space:]')" != ok ] \
+        && [ -n "$em_operacao" ]; then
+        registrar "FORA DO AR de $dominio ignorado: operação em curso em $em_operacao"
+        [ "$MODO" = "--estado" ] && echo "  (ignorado: operação em curso em $em_operacao)"
+    elif ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<<"$corpo" \
         && [ "$(printf '%s' "$corpo" | tr -d '[:space:]')" != ok ]; then
         alertar "FORA DO AR: $dominio" \
 "GET https://$dominio/health devolveu HTTP $codigo.

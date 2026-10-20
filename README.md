@@ -26,8 +26,8 @@ releases e a correspondência com as tags antigas.
 
 | Componente | Fonte | Contrato operacional |
 |---|---|---|
-| Instalação da infraestrutura | [`vps/instalar.sh`](vps/instalar.sh) | Entrega no servidor os 33 artefatos do inventário a partir do clone de `main`, por rename atômico e com modo explícito. Recusa checkout sujo e fonte com CR, recarrega o systemd e reinicia apenas os timers cujas unidades mudaram, e relê tudo ao final — só sai com sucesso quando o servidor espelha o checkout. `--check` responde "em dia ou à deriva" sem escrever, saindo diferente de zero quando há diferença. |
-| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Atualiza somente por fast-forward de `main` e só depois de todos os check-runs de produto/segurança terminarem verdes no GitHub (nos repositórios públicos), com os grupos de teste esperados presentes. No Wealthfolio, a CI do add-on é exigida no commit candidato; a suíte de imagem é exigida no último commit que mudou Dockerfile/patches, pois o workflow tem filtro de caminhos. Checks auxiliares do Dependabot não testam o app e são excluídos. Recusa checkout sujo, reconstrói com Compose e confirma `/health` público. Falha após atualizar aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. Um lock por aplicação serializa deploy manual/timer e o snapshot do volume rotulado, sem bloquear apps diferentes. |
+| Instalação da infraestrutura | [`vps/instalar.sh`](vps/instalar.sh) | Entrega no servidor todos os artefatos do inventário a partir do clone de `main`, por rename atômico e com modo explícito. Recusa checkout sujo e fonte com CR, recarrega o systemd e reinicia apenas os timers cujas unidades mudaram, e relê tudo ao final — só sai com sucesso quando o servidor espelha o checkout. `--check` responde "em dia ou à deriva" sem escrever, saindo diferente de zero quando há diferença. |
+| Deploy | [`vps/deploy.sh`](vps/deploy.sh) | Só quando o usuário manda. Atualiza somente por fast-forward de `main`, monta as imagens no servidor a partir do código (sem `--pull` num deploy comum) e confirma `/health` público; não consulta a CI do GitHub, porque a validação é feita na máquina antes do commit. `--refresh` remonta a versão no ar com bases novas e nunca aplica commits. Recusa checkout sujo. Montagem que falha devolve o código sem trocar contêineres; falha depois de subir aciona rollback automático de código e imagem. O último SHA saudável é gravado atomicamente em `/home/ubuntu/.local/state/mspa-deploy/`. Um lock por aplicação serializa deploy e o snapshot do volume rotulado, sem bloquear apps diferentes. |
 | Limite do rollback | [`vps/deploy.sh`](vps/deploy.sh) | Migrações e dados não são revertidos automaticamente. Deploy com mudança de schema exige backup verificado, compatibilidade retroativa ou procedimento manual de reversão. |
 | Backup dos bancos e volumes | [`vps/backup-db.sh`](vps/backup-db.sh), [`vps/backup-db.service`](vps/backup-db.service), [`vps/backup-db.timer`](vps/backup-db.timer) | Descobre os bancos pelos contêineres `postgres:*` e `mspa-postgres:*` rodando nesta máquina (a segunda é a imagem compartilhada da frota), produz dumps PostgreSQL em formato custom, relê com `pg_restore --list`, publica por troca atômica, grava SHA-256 e aplica retenção sem remover o dump mais recente. Contêiner com o rótulo `mspa.backup.volume=<caminho>` (hoje, o Wealthfolio e o SQLite dele) tem o diretório copiado em `.tar.gz` com o contêiner pausado por segundos, relido com `gzip -t` e `tar`, e só gravado quando difere da última cópia. Descoberta vazia de bancos é erro, e banco ou volume com histórico em disco que não está mais de pé é acusado. Só conta como backup o nome que o script produz (`<slug>_banco_<carimbo>.dump` e `<slug>_volume_<carimbo>.tar.gz`). **Dump manual mora em `~/backups-arquivados/`**, nunca em `~/backups`: lá ele não vira histórico nem entra na retenção, e o vigia acusa a pasta sem marcador. O timer agenda o ciclo diário. |
 | Acesso ao backup | [`vps/backup-agent.sh`](vps/backup-agent.sh) | Agente SSH preso por `command=` a quatro verbos: listar, enviar, apagar e consultar estado. Não oferece shell, restringe caminhos aos projetos que têm pasta em `~/backups` e nunca permite apagar o dump (ou a cópia de volume) mais recente. `listar` mostra só os dumps, que é o que o BackupRestore até a versão sem volumes entende; `listar tudo` inclui as cópias de volume. Os dois só anunciam os nomes que o `backup-db.sh` produz, os mesmos que `enviar` aceita: em 10/10/2026 um dump manual na listagem fez o BackupRestore recusar a sincronização de todos os projetos. Cada listagem grava `~/backups/.ultima_busca`: é o batimento da cópia fora do servidor, que o vigia confere. |
@@ -70,80 +70,49 @@ No VPS, a interface é:
 
 ```bash
 ~/deploy.sh <bancario|conforto|megasena|renda|wealthfolio>
-~/deploy.sh <projeto> --sem-ci   # emergência: implanta sem CI verde e alerta
+~/deploy.sh <projeto> --refresh   # remonta a versão no ar com imagens-base novas
 ~/deploy.sh --status
 ```
 
-Antes do fast-forward, o deploy pergunta à API do GitHub se os check-runs de
-produto e segurança do commit novo terminaram verdes (`neutral` e `skipped`
-contam como verdes) e se os grupos de teste do aplicativo estão presentes.
-Checks auxiliares do Dependabot são ignorados porque não
-validam o código que será implantado. No Wealthfolio, o teste do add-on precisa
-estar verde no commit candidato e a suíte lenta da imagem precisa estar verde
-no commit mais recente que alterou Dockerfile, `.dockerignore`, `patches/` ou
-o próprio workflow da imagem. Assim, um commit posterior só do add-on não
-precisa repetir meia hora de testes do upstream; o gate ainda valida ambos os
-componentes e recusa se qualquer execução relevante estiver ausente, pendente,
-vermelha ou se a API não responder. O Wealthfolio agora é público e usa o
-mesmo gate. O portal saiu da frota em 19/10/2026 (virou site estático, entregue
-a um cliente). `--sem-ci` existe para quando a API estiver fora
-justo na hora de um conserto, e avisa pelo alerta.
+Desde 20/10/2026 o fluxo é o do usuário: ele valida tudo na máquina, grava
+direto no `main` do GitHub e, quando quer, manda implantar. Por isso o deploy
+**não consulta a CI do GitHub** (ela ficou como aviso) e **nada muda em
+produção sozinho**: não há timer que implante ou remonte apps. O
+`atualizar-stacks.service` continua disponível para implantar de uma vez todos
+os apps cujo `main` avançou, com um backup verificado antes (`sudo systemctl
+start atualizar-stacks.service`), mas só roda quando chamado.
 
-Deploy de commits novos é só à mão, com autorização do usuário: o timer diário
-que fazia isso saiu em 20/10/2026. O `atualizar-stacks.service` continua
-disponível para implantar de uma vez todos os `main` aprovados (`sudo systemctl
-start atualizar-stacks.service`): valida o backup completo com `backup-db.sh
---forcar` e chama o `deploy.sh` em série para cada app; cada deploy exige CI
-verde e confirma `/health` público. O `reconstruir-bases.timer` roda o mesmo
-script com `--refresh` a cada quarta-feira, para reconstruir as tags móveis das
-imagens-base mesmo sem mudança de código; se algum `main` tiver avançado, esse
-deploy também aplica os commits novos. Se uma imagem nova falhar, o deploy restaura os IDs exatos
-que estavam no ar, sem rebuild durante o rollback. Migrações de banco não são
-revertidas automaticamente; por isso o backup validado é obrigatório antes de
-qualquer reconstrução automática. Cada chamada de `deploy.sh` toma um lock do
-respectivo aplicativo; `backup-db.sh` toma o mesmo lock apenas enquanto pausa e
-copia um volume rotulado. Assim um deploy do Wealthfolio não disputa o SQLite
-com seu snapshot, mas backup e deploy dos demais aplicativos continuam
-independentes. Se a outra operação não terminar em cinco minutos, a chamada
-termina sem tocar no app e informa a contenção.
+O deploy atualiza o checkout por fast-forward de `main`, monta as imagens ali
+mesmo no servidor a partir do código (~45 s no bancário) e sobe. Um deploy
+comum monta **sem** `--pull`: as imagens-base continuam as que já estavam no
+servidor, e só o código muda. `--refresh` remonta a versão que já está no ar
+buscando bases novas (correções de segurança do Debian/Python) e **nunca**
+aplica commits novos; se o `main` estiver à frente, ele só os lista.
 
-### Imagens validadas: bancário, renda, Mega-Sena e Conforto
+Se a montagem falhar, o código volta para o commit anterior e nenhum contêiner
+é trocado. Se a versão nova não responder em `/health`, o deploy volta código e
+imagens para o que estava no ar, sem remontar nada. Migrações de banco não são
+revertidas automaticamente; deploy com mudança de schema exige backup
+verificado, compatibilidade retroativa ou procedimento manual de reversão.
+Cada chamada de `deploy.sh` toma um lock do respectivo aplicativo;
+`backup-db.sh` toma o mesmo lock apenas enquanto pausa e copia um volume
+rotulado. Assim um deploy do Wealthfolio não disputa o SQLite com seu snapshot,
+mas backup e deploy dos demais aplicativos continuam independentes. Se a outra
+operação não terminar em cinco minutos, a chamada termina sem tocar no app e
+informa a contenção.
 
-Quando o commit candidato contém `compose.release.yaml`, estes quatro apps
-não são reconstruídos no VPS. O deploy consulta o run completo `CI`
-bem-sucedido de `main`, no SHA exato, e baixa as tags
-`run-<run_id>-<tentativa>` do GHCR (aplicação e PostgreSQL). Confere os
-labels de revisão/run da aplicação **e do PostgreSQL** e resolve os dois digests antes de tocar
-código ou contêineres. Confere também SO/arquitetura das duas imagens contra
-o daemon Docker e a disponibilidade dos IDs locais do snapshot de rollback;
-qualquer incompatibilidade/ID ausente recusa antes do fast-forward e da subida.
-A subida usa `--no-build --pull never`; registra
-`<app>.images` junto do SHA saudável.
+### Imagens por ID: bancário, renda, Mega-Sena e Conforto
 
-A CI semanal fornece a nova base testada; `--refresh` a baixa mesmo sem
-novo commit. Os demais apps mantêm seu caminho anterior. Uma imagem
-indisponível, inclusive por falta de acesso a pacote privado, aborta sem
-alterar o app. `--sem-ci` não contorna a identidade do artefato.
+Quando o commit candidato contém `compose.release.yaml`, o deploy monta as
+imagens com `docker compose build`, resolve o ID da imagem do app e o do
+PostgreSQL (`config --images` do serviço do app, menos a do banco) e sobe por
+ID com `--no-build --pull never`. Registra `<app>.images` junto do SHA
+saudável. O Wealthfolio, sem esse arquivo, sobe por `up -d --build`.
 
-Rollout: instalar esta versão da infraestrutura **antes** dos commits de
-aplicativo que acrescentam `compose.release.yaml`; aguardar a CI de
-`main` publicar as duas imagens e confirmar acesso do VPS aos dois pacotes.
-O GHCR cria pacotes privados por padrão: definir explicitamente a visibilidade
-ou provisionar leitura pelo mecanismo de credenciais Docker, sem tokens nos
-scripts/Git. Não atualizar aplicações pelo comando Compose de build neste
-caminho. Repositórios/pacotes: `sistema-financeiro[-postgres]` e
-`controlerendavariavel[-postgres]`, `mega-sena[-postgres]` e
-`conforto-termico[-postgres]`, sob `ghcr.io/mspa-coder`.
-
-No Mega-Sena e no Conforto, `Qualidade` reúne domínio, tipos, Chromium e
-scanners. `Runtime contracts` recebe as mesmas candidatas nativas ARM64 como
-artefatos, sem rebuild, e testa smoke/papel restrito. Publicação depende dos
-dois jobs. O check obrigatório do Conforto permanece preservado.
-
-O rollback captura os IDs locais de aplicação e banco e gera uma override temporária
-também para migrate/provisionamento; não tenta retaguear referências
-`@sha256`, buscar outra tag ou reconstruir. O arquivo temporário é removido
-ao final. Migrações/dados continuam sem reversão automática.
+O rollback captura os IDs locais de aplicação e banco antes de tocar em nada e
+gera uma override temporária também para migrate/provisionamento; não tenta
+retaguear referências por digest ou por ID, nem reconstruir. O arquivo
+temporário é removido ao final.
 
 Os papéis são explícitos: `web/migrate` para CB/CRV, `app/migrate` para Mega
 e `ict/coletor/schema` para Conforto. Antes do fast-forward, este último exige
@@ -151,9 +120,8 @@ snapshot recuperável tanto do ICT quanto do coletor. Cada papel restaurado
 conserva seu ID anterior; `schema` usa a imagem anterior do ICT.
 
 Só o servidor de banco declara `mspa.backup.postgres=true`; o backup o
-descobre mesmo quando Config.Image é um digest do GHCR ou ID local de
-rollback, sem depender de nomes de projetos. O fallback de imagem legado
-permanece. A override de rollback mantém o rótulo inclusive ao restaurar um
+descobre mesmo quando Config.Image é um ID local, sem depender de nomes de
+projetos. A override de rollback mantém o rótulo inclusive ao restaurar um
 checkout anterior à adoção dele; web/migrate/db-provision não o recebem.
 
 O servidor é espelho de `main`: não edite nem faça commit nele. O rollback
@@ -162,37 +130,10 @@ só registra o estado depois que o endpoint público confirma saúde. Mesmo
 quando a reversão recupera o site, o deploy original termina com erro e o
 commit defeituoso permanece em `main` até ser corrigido.
 
-#### Manutenção: PostgreSQL legado sem imagem recuperável
-
-Se o image store perdeu a imagem de um banco ainda em execução, o deploy normal
+Se o image store perdeu a imagem de um banco ainda em execução, o deploy
 recusa sem tocar no serviço. Não retagueie uma imagem diferente como se fosse a
-antiga, não faça `docker commit` (pode incorporar estado/segredos) e não desative
-essa guarda nos timers. Uma recuperação exige autorização específica para a
-janela de manutenção e um **novo** ponto de retorno, não a alegação de que o ID
-perdido foi recuperado.
-
-Somente Mega-Sena/Conforto oferecem a opção explícita abaixo. Antes de usá-la:
-
-1. Confirme a mesma versão principal PostgreSQL e ausência de alteração de
-   schema/migrações; preserve os volumes e os segredos existentes.
-2. Confira o backup e restaure uma cópia em banco descartável isolado, conforme
-   `BackupRestore/RESTAURAR.md`, usando a candidata PostgreSQL publicada pela CI.
-   Confira tabelas/linhas e a compatibilidade do código anterior com esse banco.
-   Nunca restaure sobre o banco operacional durante esse ensaio.
-3. Registre o digest/ID exato testado e a evidência da restauração. O argumento
-   abaixo é a declaração deliberada do operador de que concluiu esses passos.
-4. Execute `~/deploy.sh megasena --postgres-baseline=sha256:<ID-completo>` (ou
-   `conforto`). O script exige CI, identidade/run/arquitetura da candidata,
-   correspondência do ID informado e nenhuma diferença em `migrations` ou
-   `alembic.ini`. Só substitui o ponto de retorno do serviço `postgres` cuja
-   imagem esteja ausente; runtime/ICT/coletor ainda precisam de seus IDs antigos.
-
-O rollback desta manutenção conserva código/runtime antigos e usa o PostgreSQL
-**novo, validado no ensaio**, inclusive no provisionamento. Não desfaz dados ou
-schema. A saída identifica explicitamente a substituição. ID incorreto, imagem
-antiga ainda disponível, migrações alteradas, `--sem-ci` ou outro aplicativo
-recusam antes do fast-forward. Se um run mais novo mudar a candidata, é preciso
-revalidar o novo ID, não trocar o argumento por conveniência.
+antiga nem faça `docker commit` (pode incorporar estado/segredos): a
+recuperação é manual, com backup restaurado e conferido antes.
 
 Teste hermético do fluxo, sem rede ou acesso ao VPS:
 

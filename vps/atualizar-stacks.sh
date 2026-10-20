@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Deploy de commits aprovados (só à mão: `sudo systemctl start
-# atualizar-stacks.service`) e reconstrução semanal das tags-base móveis.
+# Implanta de uma vez todos os apps cujo main avançou, com um backup verificado
+# antes; `--refresh` remonta os cinco com imagens-base novas, sem aplicar
+# commits. Só à mão, quando o usuário manda: não há timer que o chame.
 
 set -euo pipefail
 
@@ -58,7 +59,7 @@ for i in "${!PROJETOS[@]}"; do
 done
 
 if [ "$MODO" = "--refresh" ]; then
-    echo "Reconstrução semanal solicitada; os cinco apps serão verificados pela CI."
+    echo "Remontagem solicitada: os cinco apps recebem imagens-base novas, sem commits novos."
 elif [ "${#ATUALIZACOES[@]}" -eq 0 ]; then
     echo "Nenhum main avançou; sem deploy e sem backup forçado."
     exit 0
@@ -90,4 +91,4 @@ if [ "${#FALHAS[@]}" -gt 0 ]; then
         "deploy.sh recusou ou reverteu: $lista. Consulte journalctl -u atualizar-stacks.service."
 fi
 
-echo "OK: deploys concluídos; cada app passou pela CI e pela sonda pública /health."
+echo "OK: deploys concluídos; cada app passou pela sonda pública /health."

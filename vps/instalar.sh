@@ -94,8 +94,6 @@ INVENTARIO=(
     "sentinela.timer|$DESTINO_SYSTEMD/sentinela.timer|644|$DONO_SYSTEMD"
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
     "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644|$DONO_SYSTEMD"
-    "reconstruir-bases.service|$DESTINO_SYSTEMD/reconstruir-bases.service|644|$DONO_SYSTEMD"
-    "reconstruir-bases.timer|$DESTINO_SYSTEMD/reconstruir-bases.timer|644|$DONO_SYSTEMD"
     "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644|$DONO_SYSTEMD"
     # 755 e dono root: o certbot só executa o que for executável, e roda como
     # root. Renomeado no destino para o nome que o hook tem lá, pelo mesmo
@@ -109,7 +107,8 @@ INVENTARIO=(
 #: template, instanciado sob demanda por quem alerta, e o drop-in do certbot
 #: vale na próxima execução dele -- nenhum dos dois tem timer a reiniciar aqui.
 #: `atualizar-stacks.service` também não tem: desde 20/10/2026 o deploy de
-#: commits novos é só à mão, com autorização do usuário, e o timer diário saiu.
+#: commits novos é só à mão, com autorização do usuário, e o timer diário saiu;
+#: a reconstrução semanal (`reconstruir-bases`) saiu pelo mesmo motivo.
 declare -A TIMER_DE=(
     [autocura.service]=autocura.timer
     [autocura.timer]=autocura.timer
@@ -123,8 +122,6 @@ declare -A TIMER_DE=(
     [sentinela.timer]=sentinela.timer
     [vigia.service]=vigia.timer
     [vigia.timer]=vigia.timer
-    [reconstruir-bases.service]=reconstruir-bases.timer
-    [reconstruir-bases.timer]=reconstruir-bases.timer
 )
 
 modo_check=0

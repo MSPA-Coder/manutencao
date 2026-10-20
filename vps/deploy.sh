@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # Implanta um projeto no VPS a partir do main do GitHub.
 #
-#   ./deploy.sh <projeto>           implanta
-#   ./deploy.sh <projeto> --sem-ci  implanta mesmo sem CI verde (emergência)
-#   ./deploy.sh --status            estado de todos os projetos
+#   ./deploy.sh <projeto>            implanta o main
+#   ./deploy.sh <projeto> --refresh  remonta a versão que já está no ar com
+#                                    imagens-base novas, sem aplicar commits
+#   ./deploy.sh --status             estado de todos os projetos
 #
 # Recusa implantar se houver alteração não commitada no servidor: o código do
 # servidor é sempre um espelho do main, nunca a origem de uma mudança. O
 # rollback usa `git reset --hard`, portanto só pode operar sobre checkout
 # limpo.
 #
-# POR QUE CONFERIR A CI ANTES: o servidor espelha o `main`, e nada impedia de
-# publicar um `main` vermelho -- o do NetWorth ficou assim em 28/09/2026. Agora
-# o commit só é aplicado se todos os check-runs de produto/segurança terminaram
-# verdes no GitHub e os checks de teste daquele app estão presentes. No
-# Wealthfolio, a CI do app pertence ao commit candidato, mas a suíte lenta da
-# imagem só roda quando mudam Dockerfile/patches; nesse caso, conferimos o
-# último commit que alterou essas entradas, que pode ser ancestral do candidato.
-# Os checks auxiliares não testam o artefato e não substituem a CI. Ver
-# `validar_ci_deploy`.
+# POR QUE NÃO CONSULTA A CI: desde 20/10/2026 a validação completa é feita na
+# máquina do usuário antes do commit, e o deploy só roda quando ele manda. A
+# CI do GitHub ficou como aviso. As imagens são montadas aqui, a partir do
+# código do main, sem esperar nem baixar nada do GitHub (`montar_imagens`).
+#
+# POR QUE NADA MUDA SOZINHO: não há timer que implante ou remonte apps. Um
+# deploy comum monta sem `--pull`, então as imagens-base continuam as que já
+# estavam no servidor; bases novas só entram por `--refresh`.
 #
 # POR QUE A SONDA É `/health` E NÃO `/login`: a tela de login responde 200 com
 # o banco inteiramente fora do ar. Os seis projetos expõem `/health`, que
@@ -67,56 +67,28 @@ PADRAO_SAUDE=$PADRAO_OK
 # saiu da frota em 19/10/2026: virou site estático, entregue a um cliente; a
 # faixa 56xx fica sem dono. O NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
-#
-# `REPO_GITHUB` é onde a CI do commit é conferida. Todos os repositórios de
-# aplicativos deste deploy são públicos; a API anônima basta e nenhum token do
-# GitHub precisa ficar no VPS.
 projeto_info() {
-    REGISTRY=
     APP_SERVICES=(web)
     MIGRATION_SERVICE=migrate
-    CI_EXIGIDA=1
-    CI_MOTIVO=
-    CI_TESTE_1=
-    CI_TESTE_2=
-    CI_IMAGEM_TESTE_1=
     case "$1" in
         bancario|controle-bancario)
             DIR=controle-bancario;      ENVF=.env.vps;    PORTA=5201
-            DOMINIO=bancario-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/sistema-financeiro
-            REGISTRY=ghcr.io/mspa-coder/sistema-financeiro
-            CI_TESTE_1=Qualidade ;;
+            DOMINIO=bancario-mspa.duckdns.org ;;
         conforto|conforto-termico)
             DIR=conforto-termico;       ENVF=.env.vps;    PORTA=5401
             DOMINIO=conforto-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/Sistema-de-Controle-de-Indice-de-Conforto-Termico
-            REGISTRY=ghcr.io/mspa-coder/conforto-termico
             APP_SERVICES=(ict coletor)
-            MIGRATION_SERVICE=schema
-            CI_TESTE_1=Qualidade
-            CI_TESTE_2='Runtime contracts' ;;
+            MIGRATION_SERVICE=schema ;;
         megasena|mega-sena)
             DIR=mega-sena;              ENVF=.env.vps;    PORTA=5101
             DOMINIO=megasena-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/mega-sena
-            REGISTRY=ghcr.io/mspa-coder/mega-sena
-            APP_SERVICES=(app)
-            CI_TESTE_1=Qualidade ;;
+            APP_SERVICES=(app) ;;
         renda|controle-renda-variavel)
             DIR=controle-renda-variavel; ENVF=.env.vps;   PORTA=5301
-            DOMINIO=renda-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/ControleRendaVariavel
-            REGISTRY=ghcr.io/mspa-coder/controlerendavariavel
-            CI_TESTE_1=Qualidade
-            CI_TESTE_2='Contratos de runtime' ;;
+            DOMINIO=renda-mspa.duckdns.org ;;
         wealthfolio)
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=wealthfolio-mspa.duckdns.org
-            REPO_GITHUB=MSPA-Coder/WealthfolioTeste
-            CI_EXIGIDA=1
-            CI_TESTE_1='Patches, add-on e Compose'
-            CI_IMAGEM_TESTE_1='Build, testes dos patches e partida'
             PADRAO_SAUDE='^ok$' ;;
         *)  echo "Projeto desconhecido: $1" >&2
             echo "Use: bancario | conforto | megasena | renda | wealthfolio" >&2
@@ -143,100 +115,30 @@ compose() {
         docker compose --env-file "$ENVF" "${COMPOSE_FILES[@]}" "$@"
 }
 
-# O run inteiro precisa ter terminado bem em main, no SHA exato. A tag inclui
-# tentativa: um rebuild semanal/retry não substitui a identidade de outro run.
-# Não usa latest nem a imagem de PR, e não requer token no VPS para repo público.
-preparar_artefato() {
-    local sha=$1 resposta corpo codigo metadados run tentativa revision branch status conclusion evento
-    resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
-        -H 'Accept: application/vnd.github+json' \
-        "https://api.github.com/repos/$REPO_GITHUB/actions/workflows/ci.yml/runs?branch=main&head_sha=$sha&status=success&per_page=1&exclude_pull_requests=true" \
-        2>/dev/null) || return 1
-    codigo=$(printf '%s' "$resposta" | tail -1)
-    [ "$codigo" = 200 ] || { echo "Registry: API de runs respondeu HTTP $codigo." >&2; return 1; }
-    corpo=$(printf '%s' "$resposta" | sed '$d')
-    # Extrai somente o primeiro objeto workflow_runs, respeitando strings e
-    # objetos aninhados. Nunca confundir o id do ator/repositório com o run.
-    metadados=$(printf '%s\n' "$corpo" | awk '
-        function campo(s, k, v) {
-            if (!match(s, "\"" k "\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[0-9]+)")) return ""
-            v = substr(s, RSTART, RLENGTH)
-            sub(/^[^:]*:[[:space:]]*/, "", v); gsub(/^"|"$/, "", v)
-            return v
-        }
-        { json = json $0 "\n" }
-        END {
-            p = index(json, "\"workflow_runs\"")
-            if (!p) exit
-            p += index(substr(json, p), "[")
-            for (i = p; i <= length(json); i++) {
-                c = substr(json, i, 1)
-                if (quoted) {
-                    if (depth == 1) obj = obj c
-                    if (escaped) escaped = 0
-                    else if (c == "\\") escaped = 1
-                    else if (c == "\"") quoted = 0
-                } else if (c == "\"") { quoted = 1; if (depth == 1) obj = obj c }
-                else if (c == "{") { depth++; if (depth == 1) obj = obj c }
-                else if (c == "}") {
-                    if (depth == 1) obj = obj c
-                    if (--depth == 0) {
-                        printf "%s %s %s %s %s %s %s\n", campo(obj, "id"), campo(obj, "run_attempt"),
-                            campo(obj, "head_sha"), campo(obj, "head_branch"), campo(obj, "status"),
-                            campo(obj, "conclusion"), campo(obj, "event")
-                        exit
-                    }
-                } else if (depth == 1) obj = obj c
-                else if (c == "]") exit
-            }
-        }')
-    read -r run tentativa revision branch status conclusion evento <<<"$metadados"
-    if ! [[ "$run" =~ ^[0-9]+$ && "$tentativa" =~ ^[0-9]+$ ]] ||
-       [ "$revision" != "$sha" ] || [ "$branch" != main ] ||
-       [ "$status" != completed ] || [ "$conclusion" != success ] ||
-       ! [[ "$evento" =~ ^(push|schedule|workflow_dispatch)$ ]]; then
-        echo "Nenhum run CI publicado e bem-sucedido de main para ${sha:0:7}." >&2
+# Monta aqui, a partir do código do candidato, as imagens do app e do
+# PostgreSQL que o `compose.release.yaml` vai fixar por ID. A validação é feita
+# na máquina antes do commit (decisão de 20/10/2026); o servidor só monta o que
+# foi gravado no main -- ~45 s no bancário. Sem `--pull` num deploy comum: as
+# bases que já estão aqui não mudam junto com o código. `--refresh` é que pede
+# bases novas, e só quando o usuário manda.
+#
+# `config --images <serviço>` lista também as imagens das dependências; a do
+# app é a lista dele menos a do banco. Daqui em diante só o ID é usado, e o
+# rollback volta para os IDs que estavam no ar.
+montar_imagens() {
+    local opcoes=() servico_banco imagem_banco imagem_app
+    if [ "$REFRESH" = 1 ]; then opcoes=(--pull --no-cache); fi
+    compose build "${opcoes[@]}" || return 1
+    servico_banco=$(compose config --services | grep -xE 'postgres|db') || return 1
+    imagem_banco=$(compose config --images "$servico_banco" | sort -u) || return 1
+    imagem_app=$(compose config --images "${APP_SERVICES[0]}" | sort -u | grep -vxF -- "$imagem_banco") || return 1
+    if [ "$(wc -l <<<"$imagem_banco")" != 1 ] || [ "$(wc -l <<<"$imagem_app")" != 1 ]; then
+        echo "Não foi possível identificar uma única imagem de app e de banco." >&2
         return 1
     fi
-    ARTIFACT_RUN="$run-$tentativa"
-    APP_IMAGE=$(baixar_digest "$REGISTRY" "$ARTIFACT_RUN") || return 1
-    POSTGRES_IMAGE=$(baixar_digest "$REGISTRY-postgres" "$ARTIFACT_RUN") || return 1
-    local labels image
-    for image in "$APP_IMAGE" "$POSTGRES_IMAGE"; do
-        labels=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "br.com.mspa.ci-run"}}' "$image") || return 1
-        [ "$labels" = "$sha $ARTIFACT_RUN" ] || {
-            echo "Imagem não corresponde ao commit/run validado." >&2
-            return 1
-        }
-    done
-    # A CI verde não torna AMD64 executável em um daemon ARM64. Conferir
-    # ambas as imagens antes de substituir qualquer contêiner saudável.
-    local plataforma_host plataforma_app plataforma_postgres
-    plataforma_host=$(docker info --format '{{.OSType}}/{{.Architecture}}') || return 1
-    case "$plataforma_host" in
-        linux/aarch64) plataforma_host=linux/arm64 ;;
-        linux/x86_64) plataforma_host=linux/amd64 ;;
-        linux/arm64|linux/amd64) ;;
-        *) echo "Plataforma Docker não suportada: $plataforma_host." >&2; return 1 ;;
-    esac
-    plataforma_app=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$APP_IMAGE") || return 1
-    plataforma_postgres=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$POSTGRES_IMAGE") || return 1
-    if [ "$plataforma_app" != "$plataforma_host" ] || [ "$plataforma_postgres" != "$plataforma_host" ]; then
-        echo "Arquitetura incompatível: daemon=$plataforma_host app=$plataforma_app postgres=$plataforma_postgres." >&2
-        return 1
-    fi
-    echo "Artefatos validados: $APP_IMAGE / $POSTGRES_IMAGE (run $ARTIFACT_RUN)."
-}
-
-baixar_digest() {
-    local repo=$1 run=$2 referencia
-    # Resolver a tag uma vez, antes de alterar código/contêineres. Daqui em
-    # diante só o digest é usado; uma tag movida não muda este deploy.
-    docker pull "$repo:run-$run" >&2 || return 1
-    referencia=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$repo:run-$run" \
-        | grep -E "^$repo@sha256:[a-f0-9]{64}$") || return 1
-    [[ "$referencia" == "$repo@"* && "$referencia" =~ ^[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || return 1
-    printf '%s\n' "$referencia"
+    APP_IMAGE=$(docker image inspect --format '{{.Id}}' "$imagem_app") || return 1
+    POSTGRES_IMAGE=$(docker image inspect --format '{{.Id}}' "$imagem_banco") || return 1
+    echo "Imagens montadas: $imagem_app ($APP_IMAGE) / $imagem_banco ($POSTGRES_IMAGE)."
 }
 
 # Nunca deixa a notificação derrubar o deploy: um alerta que não sai não pode
@@ -270,217 +172,6 @@ verificar_saude() {
             return 0
         fi
     done
-    return 1
-}
-
-# CI DO COMMIT. Antes de tocar na produção, pergunta ao GitHub se todos os
-# check-runs de produto/segurança terminaram bem e se os testes do app estão
-# presentes. Os checks exatos são definidos em `projeto_info`. Para conferir
-# o workflow composto da imagem num SHA ancestral, `somente_nome` limita a
-# análise àquele check-run; a CI completa do candidato já foi conferida antes.
-#
-# Checks de dependabot (`Dependabot`, `update-uv-graph`, `update-pip-graph`) e
-# do auto-merge são automações auxiliares, não validam o app e às vezes falham
-# por limitações do próprio atualizador. Todos os demais continuam bloqueando
-# se falharem ou não terminarem. `neutral` e `skipped` contam como verdes. A
-# API devolve a tentativa mais recente de cada job (`filter=latest`, o padrão).
-#
-# O parser pequeno em awk preserva o vínculo entre nome, status e conclusão de
-# cada objeto JSON. As contagens também são comparadas com `total_count`; JSON
-# incompleto, sem os testes esperados ou desconhecido nunca publica. Não usa jq
-# nem Python, para a suíte seguir executável na imagem mínima `bash:5.2`.
-#
-# A API anônima basta porque os repositórios conferidos são públicos, e o
-# limite dela (60 pedidos por hora por IP) sobra para deploy feito à mão.
-CI_RESUMO=
-conferir_ci() {
-    local sha=$1 somente_nome=${2:-} resposta codigo corpo total estados conclusoes
-    local n_estados n_conclusoes analise parse_ok n_runs n_ci pendentes
-    local encontrou_1 encontrou_2 reprovados
-    resposta=$(curl -sS --max-time 20 -w '\n%{http_code}' \
-                   -H 'Accept: application/vnd.github+json' \
-                   "https://api.github.com/repos/$REPO_GITHUB/commits/$sha/check-runs?per_page=100" \
-                   2>/dev/null || true)
-    codigo=$(printf '%s' "$resposta" | tail -1)
-    corpo=$(printf '%s' "$resposta" | sed '$d')
-    if [ "$codigo" != 200 ]; then
-        CI_RESUMO="a API do GitHub respondeu HTTP ${codigo:-sem resposta}"
-        return 1
-    fi
-    total=$(printf '%s' "$corpo" \
-            | grep -oE '"total_count"[[:space:]]*:[[:space:]]*[0-9]+' \
-            | grep -oE '[0-9]+$' | head -n 1 || true)
-    estados=$(printf '%s' "$corpo" \
-              | grep -oE '"status"[[:space:]]*:[[:space:]]*"[a-z_]+"' \
-              | sed -E 's/.*"([a-z_]+)"$/\1/' || true)
-    conclusoes=$(printf '%s' "$corpo" \
-                 | grep -oE '"conclusion"[[:space:]]*:[[:space:]]*("[a-z_]+"|null)' \
-                 | sed -E 's/.*:[[:space:]]*"?([a-z_]+)"?$/\1/' || true)
-    n_estados=$(printf '%s' "$estados" | grep -c . || true)
-    n_conclusoes=$(printf '%s' "$conclusoes" | grep -c . || true)
-
-    if [ -z "$total" ] || [ "$total" -eq 0 ]; then
-        CI_RESUMO="nenhum check-run neste commit (a CI ainda não começou?)"
-        return 1
-    fi
-    if [ "$total" -gt 100 ] || [ "$n_estados" -ne "$total" ] || [ "$n_conclusoes" -ne "$total" ]; then
-        CI_RESUMO="resposta da API fora do esperado ($total check-runs, $n_estados estados, $n_conclusoes conclusões)"
-        return 1
-    fi
-
-    analise=$(printf '%s\n' "$corpo" | awk -v esperado1="$CI_TESTE_1" -v esperado2="$CI_TESTE_2" -v somente="$somente_nome" '
-        function campo(objeto, chave, padrao, valor) {
-            padrao = "\"" chave "\"[[:space:]]*:[[:space:]]*\"[^\"]*\""
-            if (!match(objeto, padrao)) return ""
-            valor = substr(objeto, RSTART, RLENGTH)
-            sub(/^[^:]*:[[:space:]]*\"/, "", valor)
-            sub(/\"$/, "", valor)
-            return valor
-        }
-        function processar(objeto, nome, estado, conclusao, padrao) {
-            nome = campo(objeto, "name")
-            estado = campo(objeto, "status")
-            conclusao = campo(objeto, "conclusion")
-            if (conclusao == "") {
-                padrao = "\"conclusion\"[[:space:]]*:[[:space:]]*null"
-                if (match(objeto, padrao)) conclusao = "null"
-            }
-            if (nome == "" || estado == "" || conclusao == "") {
-                malformados++
-                return
-            }
-            if (somente != "" && nome != somente) return
-            if (nome == "Dependabot" || nome == "update-uv-graph" ||
-                nome == "update-pip-graph" || nome == "Auto merge") return
-
-            ativos++
-            if (nome == esperado1) achou1 = 1
-            if (esperado2 != "" && nome == esperado2) achou2 = 1
-            if (estado != "completed") pendentes++
-            else if (conclusao != "success" && conclusao != "neutral" && conclusao != "skipped")
-                falhas[++n_falhas] = conclusao
-        }
-        { json = json $0 "\n" }
-        END {
-            inicio = index(json, "\"check_runs\"")
-            if (!inicio) { print "ERRO"; exit }
-            posicao = inicio + index(substr(json, inicio), "[")
-            if (posicao <= inicio) { print "ERRO"; exit }
-
-            dentro = 0
-            em_string = 0
-            escape = 0
-            for (i = posicao; i <= length(json); i++) {
-                caractere = substr(json, i, 1)
-                if (em_string) {
-                    if (dentro) objeto = objeto caractere
-                    if (escape) escape = 0
-                    else if (caractere == "\\") escape = 1
-                    else if (caractere == "\"") em_string = 0
-                    continue
-                }
-                if (caractere == "\"") {
-                    em_string = 1
-                    if (dentro) objeto = objeto caractere
-                } else if (caractere == "{") {
-                    if (dentro == 0) objeto = ""
-                    dentro++
-                    objeto = objeto caractere
-                } else if (caractere == "}") {
-                    objeto = objeto caractere
-                    dentro--
-                    if (dentro == 0) {
-                        n_runs++
-                        processar(objeto)
-                    }
-                } else if (dentro > 0) objeto = objeto caractere
-                else if (caractere == "]") break
-            }
-
-            if (malformados > 0) { print "ERRO"; exit }
-            printf "OK\t%d\t%d\t%d\t%d\t%d\n", n_runs, ativos, pendentes, achou1, achou2
-            for (i = 1; i <= n_falhas; i++) print falhas[i]
-        }
-    ')
-    parse_ok=$(printf '%s\n' "$analise" | sed -n '1p')
-    if [[ "$parse_ok" != OK$'\t'* ]]; then
-        CI_RESUMO="não foi possível interpretar os check-runs da API"
-        return 1
-    fi
-    IFS=$'\t' read -r parse_ok n_runs n_ci pendentes encontrou_1 encontrou_2 \
-        <<<"$(printf '%s\n' "$analise" | sed -n '1p')"
-    if [ "$n_runs" -ne "$total" ]; then
-        CI_RESUMO="resposta da API fora do esperado ($total check-runs, $n_runs objetos)"
-        return 1
-    fi
-    if [ "$n_ci" -eq 0 ]; then
-        CI_RESUMO="nenhum check-run de CI/teste para validar (só automações auxiliares)"
-        return 1
-    fi
-    if [ "$encontrou_1" -ne 1 ] || { [ -n "$CI_TESTE_2" ] && [ "$encontrou_2" -ne 1 ]; }; then
-        CI_RESUMO="check-run obrigatório ausente: ${CI_TESTE_1}${CI_TESTE_2:+ e $CI_TESTE_2}"
-        return 1
-    fi
-    if [ "$pendentes" -gt 0 ]; then
-        CI_RESUMO="$pendentes de $n_ci check-runs de CI/teste ainda não terminaram"
-        return 1
-    fi
-    reprovados=$(printf '%s\n' "$analise" | sed '1d' | grep -Ev '^(success|neutral|skipped)$' \
-                 | sort | uniq -c | awk '{printf "%s%s %s", sep, $1, $2; sep=", "}' || true)
-    if [ -n "$reprovados" ]; then
-        CI_RESUMO="check-runs de CI/teste reprovados: $reprovados"
-        return 1
-    fi
-    if [ "$n_ci" -eq 1 ]; then
-        CI_RESUMO="1 check-run verde"
-    else
-        CI_RESUMO="$n_ci check-runs verdes"
-    fi
-    return 0
-}
-
-# O workflow de imagem do Wealthfolio tem filtro de caminhos: commits do
-# add-on executam e exigem a CI do app, enquanto Dockerfile/patches também
-# exigem a suíte lenta da imagem. Quando os dois tipos de commit chegam juntos
-# antes do deploy diário, a imagem foi testada no commit ancestral que mudou
-# essas entradas, não necessariamente no SHA mais novo. A busca é pelo último
-# commit da árvore que altera qualquer entrada coberta pelo workflow; a API
-# ainda precisa confirmar verde o check-run composto que inclui testes, partida
-# e análise Trivy.
-validar_ci_deploy() {
-    local sha=$1 resumo_app resumo_imagem imagem_sha
-    local teste_1_app=$CI_TESTE_1 teste_2_app=$CI_TESTE_2
-
-    if ! conferir_ci "$sha"; then
-        return 1
-    fi
-    resumo_app=$CI_RESUMO
-
-    if [ -z "$CI_IMAGEM_TESTE_1" ]; then
-        CI_RESUMO=$resumo_app
-        return 0
-    fi
-
-    if ! imagem_sha=$(git log -1 --format=%H "$sha" -- \
-            Dockerfile .dockerignore patches .github/workflows/imagem.yml) ||
-       ! [[ "$imagem_sha" =~ ^[0-9a-f]{40}$ ]]; then
-        CI_RESUMO="não foi possível localizar o último commit que alterou as entradas da imagem"
-        return 1
-    fi
-    CI_TESTE_1=$CI_IMAGEM_TESTE_1
-    CI_TESTE_2=
-    if conferir_ci "$imagem_sha" "$CI_IMAGEM_TESTE_1"; then
-        resumo_imagem=$CI_RESUMO
-        CI_TESTE_1=$teste_1_app
-        CI_TESTE_2=$teste_2_app
-        CI_RESUMO="app ${sha:0:7}: $resumo_app; imagem ${imagem_sha:0:7}: $resumo_imagem"
-        return 0
-    fi
-
-    resumo_imagem=$CI_RESUMO
-    CI_TESTE_1=$teste_1_app
-    CI_TESTE_2=$teste_2_app
-    CI_RESUMO="CI do app verde ($resumo_app), mas a imagem em ${imagem_sha:0:7} não está verde ($resumo_imagem)"
     return 1
 }
 
@@ -522,7 +213,7 @@ registrar_implantacao_saudavel() {
         rm -f -- "$temporario"
         return 1
     fi
-    if [ "$USA_ARTEFATO" = 1 ]; then
+    if [ "$IMAGEM_POR_ID" = 1 ]; then
         temporario=$(mktemp "$ESTADO_DIR/.${DIR}.images.XXXXXX") || return 1
         chmod 600 "$temporario" || return 1
         printf 'app=%s\npostgres=%s\n' "$APP_IMAGE" "$POSTGRES_IMAGE" >"$temporario" || return 1
@@ -536,9 +227,7 @@ registrar_implantacao_saudavel() {
 # sobe sem build, preservando a imagem que já estava saudável.
 IMAGENS_ANTERIORES=
 ROLLBACK_OVERRIDE=
-USA_ARTEFATO=0
-POSTGRES_BASELINE=
-RECUPEROU_POSTGRES=0
+IMAGEM_POR_ID=0
 trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"' EXIT
 capturar_imagens_anteriores() {
     local containers container imagem servico id
@@ -554,7 +243,7 @@ capturar_imagens_anteriores() {
     install -d -m 700 "$ESTADO_DIR" || return 1
     IMAGENS_ANTERIORES=$(mktemp "$ESTADO_DIR/.${DIR}.imagens.XXXXXX") || return 1
     chmod 600 "$IMAGENS_ANTERIORES" || return 1
-    if [ "$USA_ARTEFATO" = 1 ]; then
+    if [ "$IMAGEM_POR_ID" = 1 ]; then
         ROLLBACK_OVERRIDE=$(mktemp "$ESTADO_DIR/.${DIR}.rollback.XXXXXX") || return 1
         chmod 600 "$ROLLBACK_OVERRIDE" || return 1
         printf 'services:\n' >"$ROLLBACK_OVERRIDE" || return 1
@@ -567,7 +256,7 @@ capturar_imagens_anteriores() {
             return 1
         fi
         servico=
-        if [ "$USA_ARTEFATO" = 1 ]; then
+        if [ "$IMAGEM_POR_ID" = 1 ]; then
             servico=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container") || return 1
             [[ "$servico" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
         fi
@@ -575,18 +264,11 @@ capturar_imagens_anteriores() {
         # image store. Descobrir isso só durante rollback deixa o site fora.
         id=${imagem%% *}
         if [ "$(docker image inspect --format '{{.Id}}' "$id")" != "$id" ]; then
-            if [ -n "$POSTGRES_BASELINE" ] && [ "$servico" = postgres ]; then
-                echo "MANUTENÇÃO: PostgreSQL anterior $id indisponível; novo ponto de retorno $POSTGRES_BASELINE." >&2
-                id=$POSTGRES_BASELINE
-                imagem="$id $POSTGRES_IMAGE"
-                RECUPEROU_POSTGRES=1
-            else
-                echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
-                return 1
-            fi
+            echo "Imagem anterior indisponível para rollback: $id ($container)." >&2
+            return 1
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
-        if [ "$USA_ARTEFATO" = 1 ]; then
+        if [ "$IMAGEM_POR_ID" = 1 ]; then
             id=${imagem%% *}
             servicos_anteriores[$servico]=$id
             printf '  %s:\n    image: %s\n    pull_policy: never\n' "$servico" "$id" >>"$ROLLBACK_OVERRIDE" || return 1
@@ -600,7 +282,7 @@ capturar_imagens_anteriores() {
             esac
         fi
     done <<<"$containers"
-    if [ "$USA_ARTEFATO" = 1 ]; then
+    if [ "$IMAGEM_POR_ID" = 1 ]; then
         for servico in "${APP_SERVICES[@]}"; do
             if [ -z "${servicos_anteriores[$servico]:-}" ]; then
                 echo "Snapshot de rollback exige $servico em execução." >&2
@@ -614,7 +296,7 @@ capturar_imagens_anteriores() {
             printf '  %s:\n    image: %s\n    pull_policy: never\n' "$MIGRATION_SERVICE" "$APP_IMAGE_ANTERIOR" >>"$ROLLBACK_OVERRIDE" || return 1
         fi
     fi
-    if [ "$USA_ARTEFATO" = 1 ] &&
+    if [ "$IMAGEM_POR_ID" = 1 ] &&
        { [ -z "${APP_IMAGE_ANTERIOR:-}" ] || [ -z "${POSTGRES_IMAGE_ANTERIOR:-}" ]; }; then
         echo "Snapshot de rollback exige aplicação e PostgreSQL em execução." >&2
         return 1
@@ -630,7 +312,7 @@ retaggear_imagens_anteriores() {
     }
     while read -r id referencia; do
         [ -n "$id" ] && [ -n "$referencia" ] || return 1
-        if [[ "$referencia" != *@sha256:* ]]; then
+        if [[ "$referencia" != *@sha256:* && "$referencia" != sha256:* ]]; then
             docker image tag "$id" "$referencia" || return 1
         fi
     done <"$IMAGENS_ANTERIORES"
@@ -646,7 +328,7 @@ rollback_deploy() {
     echo "FALHOU após atualizar para ${quebrado:0:7}: $motivo" >&2
     echo "-- revertendo código/imagem para ${atual:0:7} --" >&2
     echo "AVISO: migrações de banco não são revertidas automaticamente." >&2
-    if [ "$USA_ARTEFATO" = 1 ]; then
+    if [ "$IMAGEM_POR_ID" = 1 ]; then
         DEPLOY_OVERRIDE=$ROLLBACK_OVERRIDE
         APP_IMAGE=${APP_IMAGE_ANTERIOR:-}
         POSTGRES_IMAGE=${POSTGRES_IMAGE_ANTERIOR:-}
@@ -727,36 +409,19 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|wealthfolio> [--sem-ci] [--refresh]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|wealthfolio> [--refresh]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi
 
 projeto_info "$1"
-SEM_CI=0
 REFRESH=0
 for opcao in "${@:2}"; do
     case "$opcao" in
-        --sem-ci) SEM_CI=1 ;;
         --refresh) REFRESH=1 ;;
-        --postgres-baseline=*)
-            POSTGRES_BASELINE=${opcao#*=}
-            if ! [[ "$POSTGRES_BASELINE" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-                echo "Baseline PostgreSQL exige ID sha256 completo." >&2; exit 1
-            fi ;;
-        *) echo "Opção desconhecida: $opcao (use --sem-ci, --refresh ou --postgres-baseline=sha256:ID)" >&2; exit 1 ;;
+        *) echo "Opção desconhecida: $opcao (use --refresh)" >&2; exit 1 ;;
     esac
 done
-if [ -n "$POSTGRES_BASELINE" ]; then
-    if [ "$SEM_CI" = 1 ] || { [ "$DIR" != mega-sena ] && [ "$DIR" != conforto-termico ]; }; then
-        echo "Baseline PostgreSQL só aceita Mega-Sena/Conforto com CI obrigatória." >&2
-        exit 1
-    fi
-fi
-if [ "$SEM_CI" = 1 ] && [ "$REFRESH" = 1 ]; then
-    echo "Opções incompatíveis: --sem-ci e --refresh não podem ser combinadas." >&2
-    exit 1
-fi
 
 # O mesmo lock é tomado pelo backup quando ele copia o volume rotulado. Sem
 # isto, `docker pause` poderia congelar o contêiner entre o `compose up` e a
@@ -792,80 +457,29 @@ if ! atual=$(git rev-parse HEAD) || ! novo=$(git rev-parse origin/main); then
     exit 1
 fi
 
-if [ "$atual" = "$novo" ] && [ "$REFRESH" = 0 ]; then
+# `--refresh` remonta o que já está no ar com bases novas e NUNCA aplica commit
+# novo: código que o usuário ainda não mandou implantar não entra por aqui.
+if [ "$REFRESH" = 1 ]; then
+    if [ "$atual" != "$novo" ]; then
+        echo "O main tem commits ainda não implantados; --refresh não os aplica:"
+        git log --oneline "$atual..$novo" | sed 's/^/  /'
+    fi
+    novo=$atual
+    echo "Remontando ${atual:0:7} com imagens-base novas."
+elif [ "$atual" = "$novo" ]; then
     echo "Já está na versão do main ($(git rev-parse --short HEAD)). Nada a fazer."
     exit 0
-fi
-
-if [ "$atual" != "$novo" ]; then
+else
     echo "Mudanças a aplicar:"
     git log --oneline "$atual..$novo" | sed 's/^/  /'
     echo "Arquivos:"
     git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
-elif [ "$REFRESH" = 1 ]; then
-    echo "SHA inalterado; atualizando bases após CI verde (artefato publicado onde disponível)."
 fi
 
-echo "CI do commit ${novo:0:7}:"
-if [ "$CI_EXIGIDA" = 0 ]; then
-    ci_verde=1
-    echo "  não conferida: $CI_MOTIVO"
-elif validar_ci_deploy "$novo"; then
-    ci_verde=1
-    echo "  $CI_RESUMO"
-else
-    ci_verde=0
-    echo "  NÃO VERDE: $CI_RESUMO"
-fi
-
-# Recusar aqui não exige rollback: nada mudou no servidor ainda. A saída de
-# emergência existe porque a API do GitHub pode estar fora justo quando um
-# conserto precisa subir, e ela grita: alerta e aviso no terminal.
-if [ "$ci_verde" != 1 ]; then
-    if [ "$SEM_CI" != 1 ]; then
-        echo "ABORTADO: a CI de ${novo:0:7} não está verde ($CI_RESUMO)." >&2
-        echo "O deploy não começou e o HEAD permanece em ${atual:0:7}." >&2
-        echo "Espere a CI terminar ou corrija o main. Em emergência: $0 $1 --sem-ci" >&2
-        exit 1
-    fi
-    echo "AVISO: implantando ${novo:0:7} sem CI verde, por --sem-ci ($CI_RESUMO)." >&2
-    alertar "DEPLOY SEM CI VERDE: $DIR" \
-"O commit ${novo:0:7} foi implantado com --sem-ci.
-
-CI no momento do deploy: $CI_RESUMO
-
-Conferir a CI no GitHub e, se ela reprovar, corrigir o main e implantar de novo."
-fi
-
-# A seleção acontece antes de qualquer alteração de código/contêiner. O gate
-# é o arquivo do commit candidato, não o checkout antigo: permite instalar
-# a infra primeiro sem mudar o caminho dos outros apps.
-if [ -n "$REGISTRY" ] && git cat-file -e "$novo:compose.release.yaml" 2>/dev/null; then
-    USA_ARTEFATO=1
-    if ! preparar_artefato "$novo"; then
-        echo "ABORTADO: artefato publicado não pôde ser conferido; produção não foi alterada." >&2
-        exit 1
-    fi
-fi
-
-# Recuperação deliberada, nunca acionada por timers. O ID é uma declaração do
-# operador: backup restaurado isoladamente e compatibilidade com código antigo
-# já conferida. Vinculá-lo à candidata impede usar outra imagem após um novo run.
-# Não permite migração simultânea nem substituir runtime/coletor ausente.
-if [ -n "$POSTGRES_BASELINE" ]; then
-    if [ "$USA_ARTEFATO" != 1 ] ||
-       [ "$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE")" != "$POSTGRES_BASELINE" ]; then
-        echo "ABORTADO: baseline não corresponde ao PostgreSQL publicado e validado neste run." >&2
-        exit 1
-    fi
-    if ! git diff --quiet "$atual" "$novo" -- migrations alembic.ini; then
-        echo "ABORTADO: baseline não pode acompanhar mudança de migrações." >&2
-        exit 1
-    fi
-    if ! verificar_saude 1; then
-        echo "ABORTADO: o estado anterior não está saudável para a manutenção." >&2
-        exit 1
-    fi
+# O gate é o arquivo do commit candidato, não o checkout antigo: os apps com
+# `compose.release.yaml` sobem por ID fixo; os demais, pelo `up --build`.
+if git cat-file -e "$novo:compose.release.yaml" 2>/dev/null; then
+    IMAGEM_POR_ID=1
 fi
 
 # A partir daqui produção é tocada. `atual` é a rede: o commit que estava no ar
@@ -876,10 +490,6 @@ if ! capturar_imagens_anteriores; then
     echo "ABORTADO: não foi possível preservar as imagens atuais; nada foi alterado." >&2
     exit 1
 fi
-if [ -n "$POSTGRES_BASELINE" ] && [ "$RECUPEROU_POSTGRES" != 1 ]; then
-    echo "ABORTADO: PostgreSQL anterior disponível; use o deploy normal, sem baseline." >&2
-    exit 1
-fi
 if [ "$atual" != "$novo" ] && ! git merge --ff-only origin/main; then
     rm -f -- "$IMAGENS_ANTERIORES"
     echo "ABORTADO: origin/main não pôde ser aplicado por fast-forward." >&2
@@ -888,8 +498,30 @@ if [ "$atual" != "$novo" ] && ! git merge --ff-only origin/main; then
 fi
 quebrado=$novo
 
-echo "-- subindo versão validada --"
-if [ "$USA_ARTEFATO" = 1 ]; then
+# Montar não troca contêiner nenhum: se falhar, basta devolver o código.
+echo "-- montando as imagens no servidor --"
+montou=1
+if [ "$IMAGEM_POR_ID" = 1 ]; then
+    montar_imagens || montou=0
+elif [ "$REFRESH" = 1 ]; then
+    compose build --pull --no-cache || montou=0
+fi
+if [ "$montou" != 1 ]; then
+    echo "ABORTADO: a montagem das imagens falhou; nenhum contêiner foi trocado." >&2
+    if ! git reset --hard "$atual" || ! retaggear_imagens_anteriores; then
+        echo "GRAVE: não foi possível devolver o checkout e as tags para ${atual:0:7}." >&2
+        alertar "DEPLOY: MONTAGEM FALHOU E O CHECKOUT NÃO VOLTOU: $DIR" \
+"A montagem de ${novo:0:7} falhou antes de trocar contêineres, mas o checkout
+ou as tags não voltaram para ${atual:0:7}. Os contêineres continuam no ar.
+
+  cd /home/ubuntu/apps/$DIR && git status && git log --oneline -1"
+    fi
+    rm -f -- "$IMAGENS_ANTERIORES"
+    exit 1
+fi
+
+echo "-- subindo a versão nova --"
+if [ "$IMAGEM_POR_ID" = 1 ]; then
     DEPLOY_OVERRIDE=compose.release.yaml
     SUBIDA=(up -d --no-build --pull never)
 else

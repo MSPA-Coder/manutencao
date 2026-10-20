@@ -1,9 +1,0 @@
-{
-  "total_count": 4,
-  "check_runs": [
-    {"id": 1, "name": "update-uv-graph", "status": "completed", "conclusion": "failure"},
-    {"id": 2, "name": "Dependabot", "status": "completed", "conclusion": "failure"},
-    {"id": 3, "name": "Analyze (python)", "status": "completed", "conclusion": "success"},
-    {"id": 4, "name": "Qualidade", "status": "completed", "conclusion": "failure"}
-  ]
-}

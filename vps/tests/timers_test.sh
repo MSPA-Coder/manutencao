@@ -60,14 +60,12 @@ TOTAL=$((TOTAL + 1))
 declara_persistent "$VPS_DIR/backup-db.timer" || fail "backup-db.timer perdeu Persistent=true (é OnCalendar; precisa recuperar a execução perdida)"
 
 # Deploy de commits novos é só à mão, com autorização do usuário (20/10/2026):
-# o timer diário saiu e não pode voltar por engano. Fica a reconstrução semanal
-# das tags-base.
+# nada muda em produção sem ele mandar. O timer diário de deploy e o semanal de
+# reconstrução das bases saíram e não podem voltar por engano.
 TOTAL=$((TOTAL + 1))
 [ ! -e "$VPS_DIR/atualizar-stacks.timer" ] || fail "atualizar-stacks.timer voltou: deploy de commits novos é só com autorização"
 TOTAL=$((TOTAL + 1))
-calendario_contem "$VPS_DIR/reconstruir-bases.timer" 'Wed *-*-* 12:00:00 UTC' || fail "reconstruir-bases.timer perdeu a reconstrução semanal de quarta-feira"
-TOTAL=$((TOTAL + 1))
-declara_persistent "$VPS_DIR/reconstruir-bases.timer" || fail "reconstruir-bases.timer precisa recuperar uma execução perdida"
+[ ! -e "$VPS_DIR/reconstruir-bases.timer" ] || fail "reconstruir-bases.timer voltou: bases novas só entram por deploy.sh --refresh, quando o usuário manda"
 
 if [ "$FAILED" -ne 0 ]; then
     printf '%s de %s verificações falharam\n' "$FAILED" "$TOTAL" >&2

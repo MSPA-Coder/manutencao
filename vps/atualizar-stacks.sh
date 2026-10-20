@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploy diário de commits aprovados e reconstrução semanal das tags-base móveis.
+# Deploy de commits aprovados (só à mão: `sudo systemctl start
+# atualizar-stacks.service`) e reconstrução semanal das tags-base móveis.
 
 set -euo pipefail
 

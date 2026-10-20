@@ -29,18 +29,12 @@ em `vps/tests/`; nunca teste contra o VPS durante desenvolvimento.
 | Instalação ou inventário | Testes de `instalar.sh` e `--check` no ambiente de teste. |
 | Mudança que altera dados/volumes | Teste de backup e restauração no sandbox; não use o VPS como laboratório. |
 
-O conjunto completo (todas as suítes de `vps/tests/`, ShellCheck e Nginx) não
-roda mais na máquina antes do PR: o job `Qualidade` da CI do PR executa
-exatamente esses passos. Localmente, rode só a suíte do que mudou, e o conjunto
-completo apenas para reproduzir uma falha da CI.
-
-O `main` é protegido: toda mudança entra por PR com squash merge, histórico
-linear e os checks `Qualidade` e `CodeQL` verdes. A branch não precisa estar
-atualizada em relação ao `main`; não faça merge do `main` nela só para o PR
-entrar. O auto-merge está ligado: depois de `gh pr create`, rode
-`gh pr merge <n> --auto --squash`, e o PR entra sozinho quando os checks
-passarem. Nunca `--admin`, nunca push forçado, nunca rebase em branch
-publicada.
+Essa validação roda completa na máquina antes do commit: é ela que vale. O
+commit vai direto ao `main`, com `git push`, sem PR e sem esperar nada; a
+regra do `main` continua impedindo apagá-lo ou reescrever o histórico (nada de
+push forçado nem de rebase do `main`). A CI roda depois de cada push só como
+aviso e não bloqueia nada; se falhar, investigue. O Dependabot continua por PR,
+com os checks obrigatórios e auto-merge.
 
 Não adicione retries, locks, backups ou serviços sem descrever a falha concreta
 que eles evitam e como a suíte a reproduz.

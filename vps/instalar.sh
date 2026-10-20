@@ -84,7 +84,6 @@ INVENTARIO=(
     "autocura.service|$DESTINO_SYSTEMD/autocura.service|644|$DONO_SYSTEMD"
     "autocura.timer|$DESTINO_SYSTEMD/autocura.timer|644|$DONO_SYSTEMD"
     "atualizar-stacks.service|$DESTINO_SYSTEMD/atualizar-stacks.service|644|$DONO_SYSTEMD"
-    "atualizar-stacks.timer|$DESTINO_SYSTEMD/atualizar-stacks.timer|644|$DONO_SYSTEMD"
     "backup-db.service|$DESTINO_SYSTEMD/backup-db.service|644|$DONO_SYSTEMD"
     "backup-db.timer|$DESTINO_SYSTEMD/backup-db.timer|644|$DONO_SYSTEMD"
     "cotacoes-diarias.service|$DESTINO_SYSTEMD/cotacoes-diarias.service|644|$DONO_SYSTEMD"
@@ -109,11 +108,11 @@ INVENTARIO=(
 #: Timers a reiniciar quando a unidade correspondente mudar. `alerta@.service` é
 #: template, instanciado sob demanda por quem alerta, e o drop-in do certbot
 #: vale na próxima execução dele -- nenhum dos dois tem timer a reiniciar aqui.
+#: `atualizar-stacks.service` também não tem: desde 20/10/2026 o deploy de
+#: commits novos é só à mão, com autorização do usuário, e o timer diário saiu.
 declare -A TIMER_DE=(
     [autocura.service]=autocura.timer
     [autocura.timer]=autocura.timer
-    [atualizar-stacks.service]=atualizar-stacks.timer
-    [atualizar-stacks.timer]=atualizar-stacks.timer
     [backup-db.service]=backup-db.timer
     [backup-db.timer]=backup-db.timer
     [cotacoes-diarias.service]=cotacoes-diarias.timer

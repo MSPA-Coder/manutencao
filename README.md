@@ -89,12 +89,15 @@ mesmo gate. O portal saiu da frota em 19/10/2026 (virou site estático, entregue
 a um cliente). `--sem-ci` existe para quando a API estiver fora
 justo na hora de um conserto, e avisa pelo alerta.
 
-O `atualizar-stacks.timer` verifica commits diariamente às 12:00 UTC. Quando
-algum `main` avança, valida o backup completo com `backup-db.sh --forcar` e
-chama o `deploy.sh` em série para cada app; cada deploy exige CI verde e
-confirma `/health` público. O `reconstruir-bases.timer` faz o mesmo a cada
-quarta-feira, para reconstruir as tags móveis das imagens-base mesmo sem
-mudança de código. Se uma imagem nova falhar, o deploy restaura os IDs exatos
+Deploy de commits novos é só à mão, com autorização do usuário: o timer diário
+que fazia isso saiu em 20/10/2026. O `atualizar-stacks.service` continua
+disponível para implantar de uma vez todos os `main` aprovados (`sudo systemctl
+start atualizar-stacks.service`): valida o backup completo com `backup-db.sh
+--forcar` e chama o `deploy.sh` em série para cada app; cada deploy exige CI
+verde e confirma `/health` público. O `reconstruir-bases.timer` roda o mesmo
+script com `--refresh` a cada quarta-feira, para reconstruir as tags móveis das
+imagens-base mesmo sem mudança de código; se algum `main` tiver avançado, esse
+deploy também aplica os commits novos. Se uma imagem nova falhar, o deploy restaura os IDs exatos
 que estavam no ar, sem rebuild durante o rollback. Migrações de banco não são
 revertidas automaticamente; por isso o backup validado é obrigatório antes de
 qualquer reconstrução automática. Cada chamada de `deploy.sh` toma um lock do

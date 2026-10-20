@@ -129,7 +129,12 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
     exit 0
 fi
 if [ "${1:-}" = inspect ]; then
-    if [[ "$*" == *ImageManifestDescriptor* ]]; then
+    if [ "${3:-}" = '{{.Image}}' ]; then
+        if [[ "$RUN_VARIANT" == config_digest* ]]; then printf 'sha256:%064d
+' 1
+        else printf 'sha256:%s
+' "$FAKE_IMAGE_ID"; fi
+    elif [[ "$*" == *ImageManifestDescriptor* ]]; then
         printf 'sha256:%064d linux/arm64
 ' 8
     elif [[ "$RUN_VARIANT" == config_digest* ]]; then
@@ -153,6 +158,14 @@ if [ "${1:-}" = inspect ]; then
     exit 0
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = tag ]; then exit 0; fi
+if [ "${1:-}" = image ] && [ "${2:-}" = ls ]; then
+    # Guardas do app: a da imagem em uso e uma antiga, que deve ser podada.
+    printf '%s:000000000000
+%s:abcdefabcdef
+' "${!#}" "${!#}"
+    exit 0
+fi
+if [ "${1:-}" = image ] && [ "${2:-}" = rm ]; then exit 0; fi
 case " $* " in
     *' up -d --no-build '*)
         # Preserva a override temporária para conferir o contrato do rollback.
@@ -306,6 +319,11 @@ assert_log 'mv <-f> <-->' 'registro deve terminar por rename atômico'
 assert_no_log 'git <reset>' 'sucesso não deve executar rollback'
 # Decisão de 20/10/2026: a validação é feita na máquina antes do commit.
 assert_no_log 'api.github.com' 'o deploy não consulta a CI do GitHub'
+# Guardas por app (20/10/2026): o nome compartilhado do banco não pode mais
+# deixar sem nome, e portanto apagar, a imagem que um app está rodando.
+assert_log 'docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <mspa-deploy/controle-bancario:000000000000>' 'guarda a imagem em uso com nome do app'
+assert_log 'docker <image> <rm> <mspa-deploy/controle-bancario:abcdefabcdef>' 'poda a guarda que não é nem a atual nem a anterior'
+assert_no_log 'docker <image> <rm> <mspa-deploy/controle-bancario:000000000000>' 'mantém a guarda da imagem em uso'
 end_case 'sucesso registra SHA novo atomicamente, sem consultar a CI'
 
 begin_case
@@ -492,6 +510,7 @@ SCENARIO=success
 ARTIFACT=1
 run_deploy
 assert_eq 0 "$EXIT_CODE" 'montagem local deve implantar'
+assert_log_count 'docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <mspa-deploy/controle-bancario:000000000000>' 6 'guarda as anteriores (2), as montadas (2) e as em uso (2)'
 assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <build>' 'deve montar as imagens no servidor'
 assert_no_log '<build> <--pull>' 'deploy comum não busca imagens-base novas'
 assert_no_log 'docker <pull>' 'nada é baixado do registry'
@@ -555,7 +574,8 @@ for variante in previous_digest previous_id; do
     run_deploy
     [ "$EXIT_CODE" -ne 0 ] || fail 'deploy revertido continua falhando'
     assert_log 'git <reset> <--hard>' 'rollback devolve código'
-    assert_no_log 'docker <image> <tag>' 'referência por digest ou por ID não é tag a restaurar'
+    assert_no_log '> <ghcr.io/' 'referência por digest não é tag a restaurar'
+    assert_no_log "<tag> <sha256:$(printf '%064d' 0)> <sha256:" 'referência por ID não é tag a restaurar'
     assert_log '<--no-build> <--pull> <never>' 'rollback não remonta nem busca outra imagem'
     assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback registra commit anterior'
     assert_eq "app=sha256:$(printf '%064d' 0)

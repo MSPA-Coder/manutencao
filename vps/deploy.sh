@@ -138,7 +138,39 @@ montar_imagens() {
     fi
     APP_IMAGE=$(docker image inspect --format '{{.Id}}' "$imagem_app") || return 1
     POSTGRES_IMAGE=$(docker image inspect --format '{{.Id}}' "$imagem_banco") || return 1
+    guardar_imagem "$APP_IMAGE" && guardar_imagem "$POSTGRES_IMAGE" || return 1
     echo "Imagens montadas: $imagem_app ($APP_IMAGE) / $imagem_banco ($POSTGRES_IMAGE)."
+}
+
+# Os quatro apps dão o mesmo nome à imagem do banco (`mspa-postgres:17-alpine`).
+# Montar um app move esse nome, e no image store do containerd a imagem que fica
+# sem nome é apagada -- inclusive a que outro app está rodando, que perde o
+# ponto de volta (aconteceu em 20/10/2026 com o banco do CB, do Conforto e do
+# Mega-Sena). Por isso cada app guarda, com nome próprio, as imagens que estão
+# no ar e as que acabou de montar; `podar_guardas` mantém só a atual e a
+# anterior.
+GUARDA=mspa-deploy
+guardar_imagem() {
+    local id=$1
+    [[ "$id" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+    docker image tag "$id" "$GUARDA/$DIR:${id:7:12}"
+}
+
+podar_guardas() {
+    local manter tag container id
+    manter=$(cut -d' ' -f1 "$IMAGENS_ANTERIORES" 2>/dev/null || true)
+    for container in $(compose ps -q 2>/dev/null); do
+        id=$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null) || continue
+        if [ "$(docker image inspect --format '{{.Id}}' "$id" 2>/dev/null)" != "$id" ]; then
+            id=$(id_pelo_manifesto "$container" "$(docker inspect --format '{{.Config.Image}}' "$container")") || continue
+        fi
+        guardar_imagem "$id" || true
+        manter+=$'\n'"$id"
+    done
+    docker image ls --format '{{.Repository}}:{{.Tag}}' "$GUARDA/$DIR" 2>/dev/null | while read -r tag; do
+        grep -q "^sha256:${tag##*:}" <<<"$manter" && continue
+        docker image rm "$tag" >/dev/null 2>&1 || true
+    done
 }
 
 # Nunca deixa a notificação derrubar o deploy: um alerta que não sai não pode
@@ -271,6 +303,7 @@ capturar_imagens_anteriores() {
             imagem="$id ${imagem#* }"
         fi
         printf '%s\n' "$imagem" >>"$IMAGENS_ANTERIORES" || return 1
+        guardar_imagem "${imagem%% *}" || return 1
         if [ "$IMAGEM_POR_ID" = 1 ]; then
             id=${imagem%% *}
             servicos_anteriores[$servico]=$id
@@ -570,6 +603,7 @@ if verificar_saude "$TENTATIVAS_SAUDE"; then
 commit confirmado em $ESTADO_DIR. O código não foi revertido."
         exit 1
     fi
+    podar_guardas || true
     rm -f -- "$IMAGENS_ANTERIORES"
 
     # Poda o cache por tamanho, pois deploys frequentes podem manter todas as

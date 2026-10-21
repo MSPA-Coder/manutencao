@@ -150,7 +150,7 @@ if [ "${1:-}" = inspect ]; then
             *) printf 'postgres\n' ;;
         esac
     elif [ "$RUN_VARIANT" = previous_digest ]; then
-        printf 'sha256:%s ghcr.io/mspa-coder/sistema-financeiro@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
+        printf 'sha256:%s ghcr.io/mspa-coder/controle-bancario@sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
     elif [ "$RUN_VARIANT" = previous_id ]; then
         printf 'sha256:%s sha256:%s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_ID"
     else printf 'sha256:%s %s\n' "$FAKE_IMAGE_ID" "$FAKE_IMAGE_NAME"

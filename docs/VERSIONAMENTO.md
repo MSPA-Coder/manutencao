@@ -31,7 +31,7 @@ fim deste documento.
 
 ## Controle Bancário
 
-Repositório: [MSPA-Coder/sistema-financeiro](https://github.com/MSPA-Coder/sistema-financeiro/releases)
+Repositório: [MSPA-Coder/controle-bancario](https://github.com/MSPA-Coder/controle-bancario/releases)
 
 | Versão | Data | Commit | O que mudou |
 |---|---|---|---|

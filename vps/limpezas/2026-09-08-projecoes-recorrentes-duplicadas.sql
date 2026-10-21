@@ -6,7 +6,7 @@
 -- todas as linhas da maior data de cada operação recorrente e criava uma linha
 -- nova por molde. Quando um mês tinha duas linhas iguais, todo mês seguinte
 -- nascia com duas, e o seguinte a esse com quatro. O defeito de propagação foi
--- corrigido no PR #59 do `sistema-financeiro`; este arquivo trata do resíduo
+-- corrigido no PR #59 do `controle-bancario`; este arquivo trata do resíduo
 -- que ficou nos dados.
 --
 -- Os pares originais são de 31/07 e 06/08/2026 e vieram de uma implementação

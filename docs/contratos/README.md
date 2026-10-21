@@ -14,7 +14,7 @@ byte a byte, e a suíte dele a aplica:
 
 | Repositório | Cópia | Quem a valida |
 |---|---|---|
-| `sistema-financeiro` (CB) | `tests/contrato/patrimonio-v4.schema.json` | a saída real das três rotas, num cenário com os quatro recursos que o CB publica (`tests/test_contrato_v4_schema.py`) |
+| `controle-bancario` (CB) | `tests/contrato/patrimonio-v4.schema.json` | a saída real das três rotas, num cenário com os quatro recursos que o CB publica (`tests/test_contrato_v4_schema.py`) |
 | `ControleRendaVariavel` (CRV) | `tests/contrato/patrimonio-v4.schema.json` | a saída real das três rotas (`tests/test_contrato_v4_schema.py`) |
 | `WealthfolioTeste` | `addons/controle-patrimonial-sync/sim/contrato/patrimonio-v4.schema.json` | as fixtures da simulação do add-on e, com `SIM_REAL=1`, as respostas de produção (`sim/contrato.mjs`) |
 

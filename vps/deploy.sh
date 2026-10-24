@@ -68,6 +68,7 @@ PADRAO_SAUDE=$PADRAO_OK
 # faixa 56xx fica sem dono. O NetWorth, consolidador que lê o bancário e o renda, entrou em 17/09/2026 no 57xx
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
 projeto_info() {
+    TIPO=compose
     APP_SERVICES=(web)
     MIGRATION_SERVICE=migrate
     case "$1" in
@@ -90,10 +91,69 @@ projeto_info() {
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=wealthfolio-mspa.duckdns.org
             PADRAO_SAUDE='^ok$' ;;
+        viva-passo)
+            DIR=viva-passo;             DOMINIO=viva-mspa.duckdns.org
+            TIPO=static ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda | wealthfolio" >&2
+            echo "Use: bancario | conforto | megasena | renda | wealthfolio | viva-passo" >&2
             return 1 ;;
     esac
+}
+
+# Site estático não possui contêiner, imagem ou migração. Ainda usa o mesmo
+# contrato de deploy: checkout limpo, fast-forward, lock, sonda pública e
+# rollback para o SHA anterior se a publicação não responder saudável.
+deploy_estatico() {
+    if [ "$REFRESH" = 1 ]; then
+        echo "--refresh não se aplica a site estático." >&2
+        return 1
+    fi
+    if ! travar_app "$DIR"; then return $?; fi
+    cd "$APPS/$DIR"
+
+    local sujo atual novo quebrado detalhe
+    sujo=$(git status --porcelain)
+    if [ -n "$sujo" ]; then
+        echo "ABORTADO: há alteração não commitada no servidor." >&2
+        # shellcheck disable=SC2001 # cada linha precisa receber a indentação.
+        echo "$sujo" | sed 's/^/  /' >&2
+        return 1
+    fi
+    git fetch --quiet origin main || { echo "ABORTADO: não foi possível buscar origin/main." >&2; return 1; }
+    atual=$(git rev-parse HEAD) || return 1
+    novo=$(git rev-parse origin/main) || return 1
+    if [ "$atual" = "$novo" ]; then
+        echo "Já está na versão do main ($(git rev-parse --short HEAD)). Nada a fazer."
+        return 0
+    fi
+
+    echo "Mudanças a aplicar:"
+    git log --oneline "$atual..$novo" | sed 's/^/  /'
+    if ! git merge --ff-only origin/main; then
+        echo "ABORTADO: origin/main não pôde ser aplicado por fast-forward." >&2
+        return 1
+    fi
+    quebrado=$novo
+    if verificar_saude "$TENTATIVAS_SAUDE"; then
+        registrar_implantacao_saudavel || {
+            echo "FALHOU: site saudável, mas o commit não pôde ser registrado." >&2
+            return 1
+        }
+        echo "OK: $DIR em $(git rev-parse --short HEAD)"
+        return 0
+    fi
+
+    detalhe="/health não confirmou saúde (HTTP $VERIF_CODE; corpo: $(printf '%s' "$VERIF_CORPO" | head -c 300))"
+    echo "FALHOU após atualizar para ${quebrado:0:7}: $detalhe" >&2
+    if git reset --hard "$atual" && verificar_saude "$TENTATIVAS_SAUDE"; then
+        registrar_implantacao_saudavel || true
+        alertar "DEPLOY REVERTIDO: $DIR" "A implantação de ${quebrado:0:7} falhou e voltou para ${atual:0:7}.\n\nMotivo: $detalhe"
+        echo "REVERTIDO: $DIR voltou para ${atual:0:7}." >&2
+    else
+        alertar "DEPLOY QUEBRADO E REVERSÃO FALHOU: $DIR" "A implantação de ${quebrado:0:7} falhou e o checkout anterior não confirmou saúde.\n\nMotivo: $detalhe"
+        echo "GRAVE: a reversão não confirmou saúde." >&2
+    fi
+    return 1
 }
 
 # Bancário e renda podem compartilhar a rede interna de patrimônio. Recalcular
@@ -444,7 +504,7 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda wealthfolio; do
+    for p in bancario conforto megasena renda wealthfolio viva-passo; do
         projeto_info "$p"
         # Um projeto ainda não clonado no servidor não deve derrubar o --status
         # dos demais.
@@ -475,6 +535,11 @@ for opcao in "${@:2}"; do
         *) echo "Opção desconhecida: $opcao (use --refresh)" >&2; exit 1 ;;
     esac
 done
+
+if [ "$TIPO" = static ]; then
+    deploy_estatico
+    exit $?
+fi
 
 # O mesmo lock é tomado pelo backup quando ele copia o volume rotulado. Sem
 # isto, `docker pause` poderia congelar o contêiner entre o `compose up` e a

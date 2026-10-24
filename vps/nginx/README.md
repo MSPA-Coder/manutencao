@@ -10,7 +10,7 @@ anterior se a validação falhar e só recarrega o Nginx quando a sintaxe é vá
 
 | Fonte | Destino em `/etc/nginx/` | Função |
 |---|---|---|
-| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `wealthfolio` | `sites-available/` | Vhosts TLS da frota. O arquivo `wealthfolio` serve `wealthfolio-mspa.duckdns.org` e encaminha para o Wealthfolio na porta 18088. O hostname histórico `networth-mspa.duckdns.org` e o vhost `networth` foram retirados depois da confirmação do novo domínio; não há alias legado. Os vhosts variam por domínio, porta e `client_max_body_size`; os do CB e do CRV fecham `/patrimonio/`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
+| `conforto-termico`, `controle-bancario`, `controle-renda-variavel`, `megasena`, `wealthfolio`, `viva-passo` | `sites-available/` | Vhosts TLS da frota. O arquivo `wealthfolio` serve `wealthfolio-mspa.duckdns.org` e encaminha para o Wealthfolio na porta 18088. `viva-passo` serve conteúdo estático do checkout privado em `/home/ubuntu/apps/viva-passo` e responde `{"status":"ok"}` em `/health`. Os vhosts variam por domínio, porta e `client_max_body_size`; os do CB e do CRV fecham `/patrimonio/`. Esta pasta é a fonte de TODOS os vhosts da frota; quais deles vão para um servidor é decidido pelo diretório de origem usado na instalação (abaixo). |
 | `recusa-host-desconhecido` | `sites-available/`, com link em `sites-enabled/` | Servidor padrão da porta 443 que recusa o handshake de nomes desconhecidos. |
 | `conf.d/00-comum.conf` | `conf.d/` | Tipos gzip, chave por método e zona compartilhada do limitador de login. |
 | `snippets/proxy-app.conf` | `snippets/` | Cabeçalhos e timeout comuns aos proxies. |
@@ -70,6 +70,11 @@ um nome inexistente, para provar o `default_server` desta máquina e não o de
 outra. Se alguma conferência operacional falhar apesar de `nginx -t` passar,
 use o caminho de backup exibido pelo próprio instalador para restaurar a
 configuração anterior.
+
+No VPS2, use `instalar-vps2-viva-passo.sh`. Ele monta uma origem temporária
+somente com o vhost Viva Passo e as três peças compartilhadas, depois chama o
+mesmo instalador transacional. Assim o VPS2 não recebe vhosts de outras
+aplicações.
 
 Não inclua neste repositório credenciais, chaves privadas ou caminhos pessoais
 para arquivos de autenticação.

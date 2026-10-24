@@ -63,6 +63,7 @@ make_fakes() {
         "$CASE_TMP/apps/conforto-termico" \
         "$CASE_TMP/apps/mega-sena" \
         "$CASE_TMP/apps/wealthfolio-teste" \
+        "$CASE_TMP/apps/viva-passo" \
         "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
     printf '%s\n' "$OLD_SHA" >"$CASE_TMP/head"
@@ -307,6 +308,25 @@ YAML
 
 set -e
 printf 'TAP version 13\n'
+
+begin_case
+SCENARIO=success
+run_deploy viva-passo
+assert_eq 0 "$EXIT_CODE" 'deploy estático saudável deve sair zero'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/head")" 'site estático deve ficar no commit novo'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/viva-passo.commit")" 'site estático deve registrar SHA novo'
+assert_no_log 'docker' 'site estático não deve montar nem subir contêiner'
+assert_no_log 'git <reset>' 'site estático saudável não deve executar rollback'
+end_case 'site estático faz fast-forward, sonda pública e registro sem Docker'
+
+begin_case
+SCENARIO=health_failure
+run_deploy viva-passo
+[ "$EXIT_CODE" -ne 0 ] || fail 'site estático sem saúde deve sair não zero'
+assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'site estático sem saúde deve voltar ao SHA anterior'
+assert_log 'git <reset> <--hard> <1111111111111111111111111111111111111111>' 'site estático sem saúde deve executar rollback'
+assert_no_log 'docker' 'rollback estático não deve tocar Docker'
+end_case 'site estático reverte checkout quando a sonda pública falha'
 
 begin_case
 SCENARIO=success

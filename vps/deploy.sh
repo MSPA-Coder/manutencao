@@ -69,6 +69,7 @@ PADRAO_SAUDE=$PADRAO_OK
 # e foi aposentado em 29/09/2026: o Wealthfolio (18088) opera no domínio dele.
 projeto_info() {
     TIPO=compose
+    PADRAO_SAUDE=$PADRAO_OK
     APP_SERVICES=(web)
     MIGRATION_SERVICE=migrate
     case "$1" in

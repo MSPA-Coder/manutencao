@@ -18,6 +18,8 @@ id_ed25519*
 *token*
 
 # Ruído de sistema
+__pycache__/
+*.pyc
 Thumbs.db
 desktop.ini
 .DS_Store

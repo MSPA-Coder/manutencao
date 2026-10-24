@@ -222,3 +222,17 @@ for publicador in $PUBLICADORES; do
     fi
 done
 echo "# /patrimonio/ recusado na borda do CB e do CRV; o resto segue para a aplicação"
+
+# O Viva Passo é estático: a sonda não depende de processo de aplicação e a
+# rota de saúde deve continuar disponível sem revelar os arquivos do site.
+viva="$ANDAIME/sites/viva-passo.conf"
+[ -f "$viva" ] || { echo "FALHOU: vhost viva-passo ausente." >&2; exit 1; }
+grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/apps/viva-passo;' "$viva" \
+    || { echo "FALHOU: viva-passo não aponta para o checkout declarado." >&2; exit 1; }
+dominio_viva=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;[:space:]]*\).*/\1/p' "$viva" | head -n 1)
+obtido=$(codigo "$dominio_viva" /health)
+if [ "$obtido" != 200 ]; then
+    echo "FALHOU: $dominio_viva/health respondeu ${obtido:-nada}; esperado 200." >&2
+    exit 1
+fi
+echo "# Viva Passo: /health estático responde 200"

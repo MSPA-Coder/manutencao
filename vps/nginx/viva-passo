@@ -1,0 +1,40 @@
+# Site estático Viva Passo. O conteúdo é o checkout privado em
+# /home/ubuntu/apps/viva-passo; o deploy.sh é o único caminho que o atualiza.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name viva-mspa.duckdns.org;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name viva-mspa.duckdns.org;
+
+    ssl_certificate /etc/letsencrypt/live/viva-mspa.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/viva-mspa.duckdns.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    root /home/ubuntu/apps/viva-passo;
+    index index.html;
+
+    location = /health {
+        default_type application/json;
+        return 200 '{"status":"ok"}\n';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

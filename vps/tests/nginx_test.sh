@@ -45,6 +45,11 @@ trap 'rm -rf "$ANDAIME"' EXIT
 # Peças que o certbot escreve no servidor e que não vivem neste repositório.
 # ---------------------------------------------------------------------------
 mkdir -p /etc/letsencrypt
+mkdir -p /etc/nginx/segredos
+# O arquivo real contém o hash de credenciais e vive só no VPS. Para testar o
+# contrato do vhost, basta existir um arquivo legível; nenhuma credencial entra
+# neste repositório ou nesta suíte.
+: >/etc/nginx/segredos/viva-passo.htpasswd
 
 # Versão mínima do arquivo do certbot: só o suficiente para o `include` do
 # vhost resolver. As opções reais de TLS são responsabilidade do certbot no
@@ -235,4 +240,9 @@ if [ "$obtido" != 200 ]; then
     echo "FALHOU: $dominio_viva/health respondeu ${obtido:-nada}; esperado 200." >&2
     exit 1
 fi
-echo "# Viva Passo: /health estático responde 200"
+obtido=$(codigo "$dominio_viva" /)
+if [ "$obtido" != 401 ]; then
+    echo "FALHOU: $dominio_viva/ respondeu ${obtido:-nada}; esperado 401 sem credencial." >&2
+    exit 1
+fi
+echo "# Viva Passo: /health estático responde 200 e o conteúdo pede credencial"

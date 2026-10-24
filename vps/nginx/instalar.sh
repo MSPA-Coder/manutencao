@@ -224,7 +224,7 @@ if [ "${#DOMINIOS[@]}" -gt 0 ]; then
 fi
 
 # O teste bate em 127.0.0.1 com um `Host`/SNI que não é de ninguém, em vez do
-# IP público chumbado (era o `163.176.214.214`, do primeiro VPS). Assim ele
+# IP público chumbado (o do primeiro VPS). Assim ele
 # prova o `default_server` DESTA máquina — do outro jeito, rodado no segundo
 # servidor, ele estaria conferindo o nginx do primeiro pela internet.
 echo

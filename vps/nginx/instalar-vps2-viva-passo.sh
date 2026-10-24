@@ -14,4 +14,4 @@ cp "$RAIZ/snippets/proxy-app.conf" "$ORIGEM/snippets/proxy-app.conf"
 cp "$RAIZ/recusa-host-desconhecido" "$ORIGEM/recusa-host-desconhecido"
 cp "$RAIZ/viva-passo" "$ORIGEM/viva-passo"
 
-"$RAIZ/instalar.sh" "$ORIGEM"
+bash "$RAIZ/instalar.sh" "$ORIGEM"

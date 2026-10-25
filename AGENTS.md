@@ -34,7 +34,8 @@ commit vai direto ao `main`, com `git push`, sem PR e sem esperar nada; a
 regra do `main` continua impedindo apagá-lo ou reescrever o histórico (nada de
 push forçado nem de rebase do `main`). A CI roda depois de cada push só como
 aviso e não bloqueia nada; se falhar, investigue. O Dependabot continua por PR,
-com os checks obrigatórios e auto-merge.
+com os checks obrigatórios; o merge é manual (o workflow de auto-merge foi
+removido).
 
 Não adicione retries, locks, backups ou serviços sem descrever a falha concreta
 que eles evitam e como a suíte a reproduz.

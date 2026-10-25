@@ -11,7 +11,7 @@ from pathlib import Path
 project = os.environ["PROBE_PROJECT"]
 cases = {
     "MegaSena": ("app/draws/statistics.py", "prize_winners[key] += winners", "prize_winners[key] += int(winners > 0)", "tests/test_estatisticas_com_banco.py::test_estatisticas_preservam_frequencias_e_diferenciam_ganhadores_de_concursos", ["app"]),
-    "MpPortal": ("institucional/previa.py", "self.send_response(404)", "self.send_response(200)", "tests/test_entrega_http.py::test_pagina_inexistente_preserva_status_e_semantica_head[GET]", ["institucional", "templates", "static", "php"]),
+    "Site_Mp-solucoes": ("institucional/previa.py", "self.send_response(404)", "self.send_response(200)", "tests/test_entrega_http.py::test_pagina_inexistente_preserva_status_e_semantica_head[GET]", ["institucional", "templates", "static", "php"]),
     "FinancasMCP": ("financas_mcp/conexao.py", "truncado = len(linhas) > limite", "truncado = len(linhas) >= limite", "tests/test_contratos_leitura.py::test_limite_distingue_resultado_completo_de_cortado[2-2-False]", ["financas_mcp"]),
     "ControleBancario": ("management/services.py", "            account__currency=BASE_CURRENCY,\n", "", "tests/test_gestao_persistida.py::test_orcamento_recalcula_realizado_sem_misturar_moedas_ou_virada_do_ano", ["accounts", "bank_statements", "banking", "core", "dashboard", "financeiro", "management", "reports", "transactions"]),
     "BackupRestore": ("restaurar.py", 'if motor.sha256_arquivo(origem) != artefato["sha256"]:', 'if False and motor.sha256_arquivo(origem) != artefato["sha256"]:', "tests.test_fluxo_backup.FluxoBackupTests.test_restauracao_adulterada_e_recusada_antes_de_falar_com_docker", []),

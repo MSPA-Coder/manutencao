@@ -1,7 +1,7 @@
 param(
     [string]$RaizProjetos = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
     [string]$Saida,
-    [string[]]$Projetos = @('SharedAuth', 'FinancasMCP', 'BackupRestore', 'MpPortal', 'MegaSena', 'ConfortoTermico', 'ControleRendaVariavel', 'ControleBancario')
+    [string[]]$Projetos = @('SharedAuth', 'FinancasMCP', 'BackupRestore', 'Site_Mp-solucoes', 'MegaSena', 'ConfortoTermico', 'ControleRendaVariavel', 'ControleBancario')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +24,7 @@ $configuracoes = @{
     SharedAuth = @{ Fontes = 'sharedauth'; Comando = 'ruff check . && python /validation/coverage_runner.py' }
     FinancasMCP = @{ Fontes = 'financas_mcp'; Comando = 'ruff check . && python /validation/coverage_runner.py' }
     BackupRestore = @{ Fontes = '/workspace'; Comando = 'python /validation/coverage_runner.py' }
-    MpPortal = @{ Fontes = 'institucional'; Comando = 'ruff check . && ruff format --check . && python /validation/coverage_runner.py' }
+    'Site_Mp-solucoes' = @{ Fontes = 'institucional'; Comando = 'ruff check . && ruff format --check . && python /validation/coverage_runner.py' }
     MegaSena = @{ Fontes = 'app'; Ambiente = '.env.docker'; Comando = 'ruff check . && mypy && python /validation/coverage_runner.py' }
     ConfortoTermico = @{ Fontes = 'app'; Ambiente = '.env.docker'; Comando = 'ruff check . && mypy && python /validation/coverage_runner.py' }
     ControleRendaVariavel = @{ Fontes = 'app'; Comando = 'ruff check . && mypy && python /validation/coverage_runner.py' }
@@ -39,7 +39,7 @@ foreach ($projeto in $Projetos) {
     $argumentos = @('compose')
     if ($configuracao.Ambiente) { $argumentos += @('--env-file', $configuracao.Ambiente) }
     $argumentos += @('-f', 'compose.yaml', '--profile', 'quality', 'run', '--build', '--rm')
-    if ($projeto -in @('SharedAuth', 'BackupRestore', 'MpPortal')) { $argumentos += '--no-deps' }
+    if ($projeto -in @('SharedAuth', 'BackupRestore', 'Site_Mp-solucoes')) { $argumentos += '--no-deps' }
     $argumentos += @(
         '-e', 'PYTHONPATH=/validation/coverage-tool',
         '-e', "VALIDATION_PROJECT=$projeto", '-e', "VALIDATION_SOURCES=$($configuracao.Fontes)",

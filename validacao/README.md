@@ -44,7 +44,7 @@ próprio, além de uma cópia separada dos módulos desde o início do interpret
 
 `mutacoes.py` comprova cinco erros representativos nas novas asserções (soma de
 ganhadores, resposta HTTP, truncamento de leitura, mistura de moedas e hash de
-backup). Recebe `PROBE_PROJECT` com MegaSena, MpPortal, FinancasMCP,
+backup). Recebe `PROBE_PROJECT` com MegaSena, Site_Mp-solucoes, FinancasMCP,
 ControleBancario ou BackupRestore e grava o resultado em `/evidence`.
 Monte esta pasta como `/validation:ro` e a saída como `/evidence` no serviço
 `quality`, então execute `python /validation/mutacoes.py`. O código modificado

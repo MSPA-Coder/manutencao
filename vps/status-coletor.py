@@ -58,6 +58,20 @@ def dominios(pasta: Path | None = None) -> list[str]:
     return sorted(encontrados)
 
 
+def _marca_do_conteiner(status: str) -> str:
+    """✅ rodando bem, ⏹️ tarefa de uma vez que terminou bem, ⚠️ o resto.
+
+    `migrate`, `db-provision` e `schema` rodam a cada deploy e saem com 0: o
+    ⚠️ que o bot antigo punha neles parecia problema e não era."""
+    if "unhealthy" in status:
+        return "⚠️"
+    if status.startswith("Up"):
+        return "✅"
+    if status.startswith("Exited (0)"):
+        return "⏹️"
+    return "⚠️"
+
+
 def coletar_containers() -> str:
     saida = rodar("docker ps -a --format '{{.Names}}\t{{.Status}}' | sort")
     if saida == "(sem saída)":
@@ -69,8 +83,7 @@ def coletar_containers() -> str:
             linhas.append(linha)
             continue
         nome, status = partes
-        bom = "healthy" in status or ("Up" in status and "unhealthy" not in status)
-        linhas.append(f"{'✅' if bom else '⚠️'} {nome}: {status}")
+        linhas.append(f"{_marca_do_conteiner(status)} {nome}: {status}")
     return "\n".join(linhas)
 
 

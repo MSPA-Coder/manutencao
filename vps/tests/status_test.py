@@ -76,6 +76,17 @@ class ColetorTests(unittest.TestCase):
             coletor.CATEGORIAS["reboot"] = original
         self.assertEqual(len(chamado), 2)
 
+    def test_marca_dos_conteineres(self) -> None:
+        marca = coletor._marca_do_conteiner
+        self.assertEqual(marca("Up 14 hours (healthy)"), "✅")
+        self.assertEqual(marca("Up 3 seconds (health: starting)"), "✅")
+        self.assertEqual(marca("Up 2 hours (unhealthy)"), "⚠️")
+        # A tarefa de uma vez do deploy que terminou bem não é problema.
+        self.assertEqual(marca("Exited (0) 14 hours ago"), "⏹️")
+        self.assertEqual(marca("Exited (1) 5 minutes ago"), "⚠️")
+        self.assertEqual(marca("Exited (127) 3 days ago"), "⚠️")
+        self.assertEqual(marca("Restarting (1) 2 seconds ago"), "⚠️")
+
     def test_bot_e_coletor_tem_as_mesmas_categorias(self) -> None:
         self.assertEqual(list(bot.SECOES), list(coletor.CATEGORIAS))
 

@@ -29,6 +29,15 @@
 #     mais recente;
 #   - volume que já teve cópia e sumiu é acusado, como os bancos.
 #
+# E, desde 25/10/2026, os sites que o nginx publica e a configuração do
+# servidor:
+#   - o site vem do vhost (`root` ou `proxy_pass` para a porta de um contêiner),
+#     nunca de lista; a página padrão e o webroot do certbot não são site;
+#   - segredos e o que se regenera ficam fora da cópia;
+#   - cópia idêntica à última não vira arquivo novo;
+#   - site que sai do nginx é aviso, não falha;
+#   - a máquina sem banco nenhum é normal; o Docker que não responde é falha.
+#
 # O `docker` é um script falso no PATH, não um parâmetro do script sob teste:
 # assim o `backup-db.sh` exercitado aqui é literalmente o que roda no servidor,
 # chamando `docker` pelo nome, como lá.
@@ -75,7 +84,7 @@ begin_case() {
     DEST_TMP="$CASE_TMP/backups"
     SAIDA="$CASE_TMP/saida.txt"
     REGISTRO="$CASE_TMP/docker.log"
-    mkdir -p "$DEST_TMP" "$CASE_TMP/bin" "$CASE_TMP/vol"
+    mkdir -p "$DEST_TMP" "$CASE_TMP/bin" "$CASE_TMP/vol" "$CASE_TMP/raiz"
     : >"$CASE_TMP/containers"
     : >"$REGISTRO"
 }
@@ -91,9 +100,29 @@ end_case() {
 }
 
 # Declara um contêiner para o `docker` falso: nome, imagem, projeto do Compose
-# e, opcionais, os rótulos `mspa.backup.volume` e `mspa.backup.postgres`.
+# e, opcionais, os rótulos `mspa.backup.volume` e `mspa.backup.postgres`, as
+# portas publicadas (como o `docker ps` as mostra) e a pasta do Compose.
 contêiner() {
-    printf '%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "${4:-}" "${5:-}" >>"$CASE_TMP/containers"
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-}" "${7:-}" \
+        >>"$CASE_TMP/containers"
+}
+
+# Um vhost habilitado: `vhost <nome> <conteúdo>`. A raiz `/` da máquina é
+# `$CASE_TMP/raiz`.
+vhost() {
+    mkdir -p "$CASE_TMP/raiz/etc/nginx/sites-enabled"
+    printf '%s\n' "$2" >"$CASE_TMP/raiz/etc/nginx/sites-enabled/$1"
+}
+
+# Um arquivo sob a raiz da máquina: `arquivo_na_raiz <caminho> <conteúdo>`.
+arquivo_na_raiz() {
+    mkdir -p "$(dirname "$CASE_TMP/raiz$1")"
+    printf '%s' "$2" >"$CASE_TMP/raiz$1"
+}
+
+# Os membros de uma cópia, um por linha, sem o `./` do começo.
+membros() {
+    tar -tzf "$1" | sed 's#^\./##' | sort
 }
 
 # Um arquivo dentro do volume que o `docker cp` falso entrega:
@@ -113,15 +142,22 @@ instalar_docker_falso() {
 LISTA="$CASE_DIR/containers"
 REGISTRO="$CASE_DIR/docker.log"
 
+[ -e "$CASE_DIR/docker-fora" ] && exit 1
+
 case "$1" in
     ps)
-        cut -d'|' -f1 "$LISTA"
+        case "$*" in
+            *Ports*) awk -F'|' '{print $1 "\t" $6}' "$LISTA" ;;
+            *Image*) awk -F'|' '{print "  " $1 "  " $2}' "$LISTA" ;;
+            *)       cut -d'|' -f1 "$LISTA" ;;
+        esac
         ;;
     inspect)
         # `-f <formato> <nome>`
         formato="$2"; [ "$formato" = "-f" ] && { formato="$3"; nome="$4"; } || nome="$3"
         linha=$(grep "^${nome}|" "$LISTA") || exit 1
         case "$formato" in
+            *working_dir*)    printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f7)" ;;
             *Config.Image*)   printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f2)" ;;
             *compose.project*) printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f3)" ;;
             *mspa.backup.volume*) printf '%s\n' "$(printf '%s' "$linha" | cut -d'|' -f4)" ;;
@@ -171,6 +207,7 @@ roda() {
     instalar_docker_falso
     CASE_DIR="$CASE_TMP" \
     DEST="$DEST_TMP" \
+    CONFIG_RAIZ="$CASE_TMP/raiz" LEITOR='' \
     APP_LOCK_DIR="$CASE_TMP/app-locks" APP_LOCK_TIMEOUT_SEGUNDOS="${APP_LOCK_TIMEOUT_SEGUNDOS:-300}" \
     PATH="$CASE_TMP/bin:$PATH" \
         bash "$BACKUP_DB" "$@" >"$SAIDA" 2>&1
@@ -238,8 +275,8 @@ for rotulo in "" false True postgres; do
     begin_case
     contêiner app-web-1 ghcr.io/mspa-coder/app:run-1-1 app "" "$rotulo"
     roda
-    [ "$EXIT_CODE" -ne 0 ] || fail 'sem opt-in exato não pode inferir banco'
-    assert_saida 'nenhum contêiner postgres rodando' 'imagem desconhecida sem true é recusada'
+    assert_eq 0 "$(grep -c ' == app$' "$SAIDA")" 'sem opt-in exato não pode inferir banco'
+    assert_saida 'nenhum contêiner postgres nesta máquina' 'imagem desconhecida sem true é recusada'
     end_case "não inventa servidor a partir do rótulo: '$rotulo'"
 done
 
@@ -261,12 +298,23 @@ roda --estado
 assert_saida 'controle_renda_variavel' 'o sufixo -db-1 é descoberto igual ao -postgres-1'
 end_case 'o slug vem do projeto do Compose, não do nome do contêiner'
 
+# Até 25/10/2026 a descoberta vazia era sempre erro. O VPS2 só serve sites e
+# nunca teve banco: ali o vazio é o normal, e o que não pode passar calado é o
+# Docker fora do ar (o banco que existia e sumiu é acusado à parte, pelo
+# histórico em disco).
 begin_case
 roda
-[ "$EXIT_CODE" -ne 0 ] || fail 'ciclo sem nenhum banco deve sair não zero'
-assert_saida 'nenhum contêiner postgres rodando' 'a descoberta vazia precisa ser dita em voz alta'
+assert_eq 0 "$EXIT_CODE" 'máquina sem banco nenhum é operação normal'
+assert_saida 'nenhum contêiner postgres nesta máquina' 'o vazio é dito no log'
+end_case 'máquina sem banco nenhum não é falha'
+
+begin_case
+: >"$CASE_TMP/docker-fora"
+roda
+[ "$EXIT_CODE" -ne 0 ] || fail 'docker fora do ar deve sair não zero'
+assert_saida 'o docker não responde' 'o docker parado precisa ser dito em voz alta'
 assert_sem_saida 'ciclo concluído sem falhas' 'não pode declarar sucesso sem ter salvo nada'
-end_case 'descoberta vazia é erro barulhento, nunca sucesso silencioso'
+end_case 'docker fora do ar é erro barulhento, nunca sucesso silencioso'
 
 begin_case
 contêiner mp-portal-postgres-1 postgres:17-alpine mp-portal
@@ -444,9 +492,9 @@ begin_case
 contêiner "$WF" wealthfolio-teste:3.9.1-local wealthfolio-teste /data
 arquivo_no_volume "$WF" /data/wealthfolio.db 'banco'
 roda
-[ "$EXIT_CODE" -ne 0 ] || fail 'sem nenhum postgres, o ciclo continua sendo falha'
-assert_saida 'nenhum contêiner postgres rodando' 'a guarda dos bancos continua falando'
-assert_eq 1 "$(copias wealthfolio_teste | wc -l)" 'mas o volume é copiado mesmo assim'
+assert_eq 0 "$EXIT_CODE" 'sem nenhum postgres, o ciclo do volume sai bem'
+assert_saida 'nenhum contêiner postgres nesta máquina' 'a guarda dos bancos continua falando'
+assert_eq 1 "$(copias wealthfolio_teste | wc -l)" 'e o volume é copiado'
 end_case 'falta de banco não impede a cópia do volume'
 
 begin_case
@@ -488,7 +536,7 @@ com_wealthfolio
 : >"$CASE_TMP/cp-lento"
 instalar_docker_falso
 CASE_DIR="$CASE_TMP" DEST="$DEST_TMP" PATH="$CASE_TMP/bin:$PATH" \
-    APP_LOCK_DIR="$CASE_TMP/app-locks" \
+    CONFIG_RAIZ="$CASE_TMP/raiz" LEITOR='' APP_LOCK_DIR="$CASE_TMP/app-locks" \
     setsid bash "$BACKUP_DB" >"$SAIDA" 2>&1 &
 pid=$!
 for _ in $(seq 1 100); do
@@ -500,6 +548,130 @@ wait "$pid"
 [ -e "$CASE_TMP/pausado.$WF" ] && fail 'o contêiner ficou pausado depois do TERM'
 assert_eq "unpause $WF" "$(tail -1 "$REGISTRO")" 'o trap despausou'
 end_case 'TERM no meio da cópia ainda devolve o contêiner'
+
+# ---------------------------------------------------------------------------
+# Sites publicados pelo nginx e configuração do servidor
+
+# Um site estático com um pouco de tudo: página, imagem, e o que NÃO pode ir
+# para a cópia (segredo, Git, dependências).
+com_site_estatico() {
+    SITE="$CASE_TMP/raiz/var/www/villa-rica"
+    vhost villa-rica "server {
+    server_name villa-rica.duckdns.org;
+    root $SITE;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+}"
+    vhost default 'server { server_name _; root /var/www/html; }'
+    arquivo_na_raiz /var/www/villa-rica/index.html '<h1>oi</h1>'
+    arquivo_na_raiz /var/www/villa-rica/assets/brasao.jpg 'jpg'
+    arquivo_na_raiz /var/www/villa-rica/.env 'SENHA=1'
+    arquivo_na_raiz /var/www/villa-rica/chave.key 'segredo'
+    arquivo_na_raiz /var/www/villa-rica/.secrets/token 'segredo'
+    arquivo_na_raiz /var/www/villa-rica/.git/HEAD 'ref'
+    arquivo_na_raiz /var/www/villa-rica/node_modules/x/index.js 'js'
+}
+
+begin_case
+com_site_estatico
+roda
+assert_eq 0 "$EXIT_CODE" 'ciclo com site sai bem'
+copia=$(copias site_villa_rica)
+[[ "$copia" =~ ^site_villa_rica_volume_[0-9]{8}_[0-9]{6}\.tar\.gz$ ]] \
+    || fail "nome da cópia fora do formato que o agente aceita: '$copia'"
+final="$DEST_TMP/site_villa_rica/$copia"
+assert_eq "assets/brasao.jpg
+index.html" "$(membros "$final")" 'só os arquivos do site, sem segredo, Git nem dependências'
+assert_eq "$(sha256sum "$final" | cut -d' ' -f1)" "$(cat "$final.sha256" 2>/dev/null)" \
+    'o .sha256 é o do arquivo gravado'
+assert_eq 0 "$(find "$DEST_TMP" -maxdepth 1 -name 'site_html' | wc -l)" 'a página padrão não é site'
+[ -e "$DEST_TMP/site_certbot" ] && fail 'o webroot do certbot não é site'
+assert_saida 'villa-rica.duckdns.org' 'o log diz o domínio do site'
+end_case 'site estático é descoberto pelo vhost e copiado sem segredos'
+
+begin_case
+com_site_estatico
+roda
+roda
+assert_eq 1 "$(copias site_villa_rica | wc -l)" 'a segunda rodada sem mudança não grava'
+assert_saida 'sem alterações desde a última cópia' 'e diz por quê'
+arquivo_na_raiz /var/www/villa-rica/index.html '<h1>mudou</h1>'
+sleep 1
+roda
+assert_eq 2 "$(copias site_villa_rica | wc -l)" 'o site alterado ganha cópia nova'
+end_case 'site só ganha cópia nova quando muda'
+
+begin_case
+# Aplicação atrás de proxy: o vhost só diz a porta; a pasta vem do Compose do
+# contêiner que a publica.
+APP="$CASE_TMP/raiz/home/ubuntu/apps/viva-passo"
+contêiner viva-passo-web-1 viva-passo:local viva-passo "" "" "127.0.0.1:5701->80/tcp" "$APP"
+vhost viva-passo 'server {
+    server_name viva-mspa.duckdns.org;
+    location / { proxy_pass http://127.0.0.1:5701; }
+}'
+arquivo_na_raiz /home/ubuntu/apps/viva-passo/compose.yaml 'services: {}'
+arquivo_na_raiz /home/ubuntu/apps/viva-passo/app.js 'x'
+roda
+assert_eq 0 "$EXIT_CODE" 'ciclo com aplicação sai bem'
+assert_eq 1 "$(copias site_viva_passo | wc -l)" 'a pasta do Compose vira cópia'
+assert_eq "app.js
+compose.yaml" "$(membros "$DEST_TMP/site_viva_passo/$(copias site_viva_passo)")" \
+    'com os arquivos da aplicação'
+end_case 'proxy_pass leva à pasta do Compose do contêiner da porta'
+
+begin_case
+vhost orfao 'server { server_name x.duckdns.org; location / { proxy_pass http://127.0.0.1:9999; } }'
+roda
+assert_eq 0 "$EXIT_CODE" 'porta sem contêiner não derruba o ciclo'
+[ -e "$DEST_TMP/site_orfao" ] && fail 'porta sem contêiner não inventa site'
+end_case 'proxy_pass para porta sem contêiner é ignorado'
+
+begin_case
+com_site_estatico
+roda
+rm -f "$CASE_TMP/raiz/etc/nginx/sites-enabled/villa-rica"
+printf '2000-01-01T00:00:00Z\n' >"$DEST_TMP/site_villa_rica/.ultima_conferencia"
+roda
+assert_eq 0 "$EXIT_CODE" 'site retirado do nginx não é falha'
+assert_saida 'não está mais no nginx' 'mas é avisado'
+assert_eq 1 "$(copias site_villa_rica | wc -l)" 'a cópia antiga fica'
+[ "$(cat "$DEST_TMP/site_villa_rica/.ultima_conferencia")" = '2000-01-01T00:00:00Z' ] \
+    && fail 'a conferência precisa andar, ou o vigia alerta todo dia'
+end_case 'site que sai do nginx é aviso, com a cópia antiga preservada'
+
+begin_case
+com_site_estatico
+arquivo_na_raiz /etc/nginx/sites-available/villa-rica 'server { }'
+arquivo_na_raiz /etc/systemd/system/backup-db.timer '[Timer]'
+arquivo_na_raiz /etc/letsencrypt/renewal/villa-rica.duckdns.org.conf 'renova'
+arquivo_na_raiz /etc/letsencrypt/live/villa-rica.duckdns.org/privkey.pem 'CHAVE'
+arquivo_na_raiz /etc/hostname 'vps-teste'
+arquivo_na_raiz /etc/nginx/segredos/viva-passo.htpasswd 'usuario:hash-bcrypt'
+roda
+assert_eq 0 "$EXIT_CODE" 'ciclo com configuração sai bem'
+copia=$(copias configuracao_servidor)
+[[ "$copia" =~ ^configuracao_servidor_volume_[0-9]{8}_[0-9]{6}\.tar\.gz$ ]] \
+    || fail "nome da cópia fora do formato que o agente aceita: '$copia'"
+conteudo=$(membros "$DEST_TMP/configuracao_servidor/$copia")
+for esperado in INVENTARIO.txt etc/nginx/sites-available/villa-rica \
+                etc/systemd/system/backup-db.timer \
+                etc/letsencrypt/renewal/villa-rica.duckdns.org.conf etc/hostname; do
+    grep -qx "$esperado" <<<"$conteudo" || fail "a configuração não trouxe $esperado"
+done
+grep -q 'privkey' <<<"$conteudo" && fail 'chave privada do certificado não entra'
+grep -q 'htpasswd' <<<"$conteudo" && fail 'arquivo de senhas do nginx não entra'
+inventario=$(tar -xzOf "$DEST_TMP/configuracao_servidor/$copia" ./INVENTARIO.txt)
+grep -q 'site_villa_rica' <<<"$inventario" || fail 'o inventário lista o site'
+grep -q 'villa-rica.duckdns.org' <<<"$inventario" || fail 'com o domínio'
+grep -q 'vps-teste' <<<"$inventario" || fail 'e o nome da máquina'
+grep -q '/etc/nginx/segredos/viva-passo.htpasswd' <<<"$inventario" \
+    || fail 'o inventário diz qual segredo ficou de fora'
+grep -Fq 'segredos fora da cópia (do cofre): .env .secrets/token chave.key' <<<"$inventario" \
+    || fail 'e quais segredos de cada site ficaram fora da cópia'
+sleep 1
+roda
+assert_eq 1 "$(copias configuracao_servidor | wc -l)" 'configuração igual não gera cópia nova'
+end_case 'configuração do servidor: vhosts, unidades e inventário, sem chave privada'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

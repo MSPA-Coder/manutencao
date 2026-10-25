@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Backup diário dos bancos de produção e dos volumes rotulados.
+# Backup diário dos bancos de produção, dos volumes rotulados, dos sites que o
+# nginx publica e da configuração do servidor.
 #
-#   ./backup-db.sh            faz o ciclo dos bancos e volumes que encontrar rodando
+#   ./backup-db.sh            faz o ciclo de tudo o que encontrar
 #   ./backup-db.sh --estado   mostra o estado sem alterar nada
 #   ./backup-db.sh --forcar   ignora a checagem de alteração e grava de novo
 #
@@ -430,10 +431,366 @@ fazer_copia() {
     aplicar_retencao "$dir" tar.gz
 }
 
+# --------------------------------------------------------------------------
+# Sites publicados e configuração do servidor (25/10/2026)
+#
+# POR QUE EXISTE. O backup cobria só o ESTADO das aplicações (bancos e volumes
+# rotulados), porque o código delas é espelho do `main` no GitHub. Mas os
+# servidores passaram a hospedar sites estáticos que não estão em Git nenhum
+# (o villa-rica, no VPS2, só existia no servidor), e a reconstrução de uma
+# máquina perdida dependia de configuração que também só existia nela: vhosts
+# do nginx, unidades do systemd, regras do firewall.
+#
+# O QUE É "SITE": tudo o que o nginx publica, descoberto dos vhosts habilitados,
+# nunca de uma lista (o porquê está em `descobrir_projetos`).
+#   - `root`/`alias` -> a pasta servida (site estático);
+#   - `proxy_pass` para uma porta local -> a pasta do Compose do contêiner que
+#     publica essa porta (o rótulo `com.docker.compose.project.working_dir`).
+# Um site novo entra sozinho no ciclo seguinte; o slug é `site_<pasta>`.
+#
+# O QUE NÃO ENTRA: segredos (`.env*`, `.secrets/`, `*.key`, `*.pem`) e o que se
+# regenera (`.git`, dependências, caches). Os segredos continuam no cofre, à mão,
+# como os dos aplicativos (KIT_RECUPERACAO.md do BackupRestore); os certificados
+# o certbot emite de novo.
+#
+# SÓ GRAVA QUANDO MUDA, pela mesma regra de `motivo_copia`: a cópia é montada de
+# forma determinística (lista ordenada, `gzip -n`), então o mesmo conteúdo dá o
+# mesmo SHA-256 e não vira arquivo novo. O nome segue o formato que o agente já
+# entrega (`<slug>_volume_<carimbo>.tar.gz`): o `backup-agent.sh` não muda.
+#
+# SITE QUE SAI DO NGINX não é falha, ao contrário de um banco que some: é o
+# operador tirando uma experiência do ar. O ciclo avisa no log e continua
+# marcando a conferência, para o vigia não alertar todo dia; as cópias antigas
+# ficam (o agente nunca apaga a mais recente). Para esquecê-lo de vez, apague
+# `~/backups/site_<pasta>`.
+# --------------------------------------------------------------------------
+
+# Sobrescrevíveis para a suíte, pelo mesmo motivo de `DEST`.
+CONFIG_RAIZ=${CONFIG_RAIZ:-}
+NGINX_HABILITADOS=${NGINX_HABILITADOS:-$CONFIG_RAIZ/etc/nginx/sites-enabled}
+# Pastas do nginx que não são site: a página padrão e o webroot do certbot.
+PASTAS_NAO_SITE=${PASTAS_NAO_SITE:-/var/www/html /var/www/certbot}
+# Leitura com `sudo -n`: há arquivos de site e de `/etc` que só o root lê. Só
+# leitura; o arquivo gravado continua do usuário do serviço.
+LEITOR=${LEITOR-sudo -n}
+SLUG_CONFIG=configuracao_servidor
+# Caminho de arquivo de configuração que é segredo (ver `copiar_configuracao`).
+PADRAO_SEGREDO='(^|/)(segredos|\.secrets)/|\.(key|pem)$|(^|/)\.env(\.[^/]*)?$|(^|/)letsencrypt/(live|archive|accounts|keys)/'
+
+# O que a configuração do servidor leva, relativo à raiz. Pasta entra inteira
+# (só arquivos regulares). O que não existir na máquina é pulado.
+CONFIG_ITENS=(
+    etc/nginx
+    etc/systemd/system
+    etc/letsencrypt/renewal
+    etc/letsencrypt/renewal-hooks
+    etc/letsencrypt/options-ssl-nginx.conf
+    etc/fail2ban/jail.local
+    etc/fail2ban/jail.d
+    etc/ssh/sshd_config
+    etc/ssh/sshd_config.d
+    etc/iptables
+    etc/docker/daemon.json
+    etc/sudoers.d
+    etc/crontab
+    etc/cron.d
+    etc/hosts
+    etc/hostname
+    etc/timezone
+    home/ubuntu/.ssh/config
+    home/ubuntu/.ssh/authorized_keys
+)
+
+slug_de_pasta() {
+    local nome
+    nome=$(basename "$1" | tr 'A-Z.-' 'a-z__' | tr -cd 'a-z_')
+    nome=$(sed -e 's/__*/_/g' -e 's/^_//' -e 's/_$//' <<<"$nome")
+    [ -n "$nome" ] || return 1
+    printf 'site_%s\n' "$nome"
+}
+
+# Pasta do Compose do contêiner que publica a porta local `$1`.
+pasta_da_porta() {
+    local porta="$1" nome portas
+    while IFS=$'\t' read -r nome portas; do
+        [ -n "$nome" ] || continue
+        case ",$portas," in
+            *":$porta->"*)
+                docker inspect -f \
+                    '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' \
+                    "$nome" 2>/dev/null
+                return 0 ;;
+        esac
+    done < <(docker ps --format $'{{.Names}}	{{.Ports}}' 2>/dev/null)
+    return 1
+}
+
+# As diretivas de um vhost, uma por linha (`nome argumentos`), qualquer que
+# seja a formatação: sem comentários e quebrado em `{`, `}` e `;`. Ler linha a
+# linha perdia `location / { proxy_pass ...; }` escrito numa linha só.
+diretivas_do_vhost() {
+    sed -e 's/#.*//' -e 's/[{};]/\n/g' "$1" \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]\{1,\}/ /g' -e 's/ $//' \
+        | sed '/^$/d'
+}
+
+# Saída: `slug|pasta|origem|domínios`, uma linha por pasta, ordenada.
+# `origem` é `estático` ou `porta <n>`.
+descobrir_sites() {
+    local vhost linha pasta porta dominios origem slug diretivas
+    [ -d "$NGINX_HABILITADOS" ] || return 0
+    for vhost in "$NGINX_HABILITADOS"/*; do
+        [ -f "$vhost" ] || continue
+        diretivas=$(diretivas_do_vhost "$vhost")
+        dominios=$(sed -n 's/^server_name //p' <<<"$diretivas" \
+            | tr ' ' '\n' | sed '/^_\{0,1\}$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')
+        while IFS= read -r linha; do
+            pasta=""; origem=""
+            case "$linha" in
+                root\ *|alias\ *)
+                    pasta=${linha#* }; origem="estático" ;;
+                proxy_pass\ *)
+                    porta=$(sed -n 's#^proxy_pass https\{0,1\}://\(127\.0\.0\.1\|localhost\):\([0-9]\{1,5\}\).*#\2#p' <<<"$linha")
+                    [ -n "$porta" ] || continue
+                    pasta=$(pasta_da_porta "$porta") || continue
+                    origem="porta $porta" ;;
+            esac
+            pasta=${pasta%/}
+            [ -n "$pasta" ] || continue
+            case " $PASTAS_NAO_SITE " in *" $pasta "*) continue ;; esac
+            caminho_valido "$pasta" || continue
+            slug=$(slug_de_pasta "$pasta") || continue
+            printf '%s|%s|%s|%s\n' "$slug" "$pasta" "$origem" "${dominios:--}"
+        done < <(grep -E '^(root|alias|proxy_pass) ' <<<"$diretivas" | cut -d' ' -f1,2)
+    done | sort -t'|' -k1,1 -k3,3 | awk -F'|' '!visto[$1 "|" $2]++'
+}
+
+# Lista ordenada (relativa a `$1`) dos arquivos regulares de um site, sem o que
+# é segredo ou se regenera.
+arquivos_do_site() {
+    (cd "$1" && $LEITOR find . \
+        \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+           -o -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache \
+           -o -name .ruff_cache -o -name .secrets \) -prune \
+        -o -type f ! -name '.env' ! -name '.env.*' ! -name '*.key' ! -name '*.pem' \
+        -print) | LC_ALL=C sort
+}
+
+# Os segredos que `arquivos_do_site` deixa de fora, só os nomes, para o
+# inventário dizer o que buscar no cofre.
+segredos_do_site() {
+    (cd "$1" && $LEITOR find . \
+        \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+           -o -name __pycache__ \) -prune \
+        -o -type f \( -name '.env' -o -name '.env.*' -o -name '*.key' -o -name '*.pem' \
+                      -o -path '*/.secrets/*' \) -print) 2>/dev/null \
+        | sed 's#^\./##' | LC_ALL=C sort
+}
+
+# Grava `$2` (tar.gz) a partir da lista `$3`, relativa a `$1`, e o relê.
+empacotar() {
+    local base="$1" tmp="$2" lista="$3" listagem
+    if ! $LEITOR tar -C "$base" -cf - -T "$lista" 2>/dev/null | gzip -n >"$tmp"; then
+        rm -f "$tmp"
+        log "  ERRO: não foi possível empacotar $base"
+        return 1
+    fi
+    if ! gzip -t "$tmp" 2>/dev/null || ! listagem=$(tar -tvzf "$tmp" 2>/dev/null); then
+        rm -f "$tmp"
+        log "  ERRO: cópia reprovada na releitura (gzip -t, tar)"
+        return 1
+    fi
+    if ! grep -q '^-' <<<"$listagem"; then
+        rm -f "$tmp"
+        log "  ERRO: a cópia não tem nenhum arquivo"
+        return 1
+    fi
+}
+
+# Dá o nome final a `$2` se `motivo_copia` aprovar; senão o descarta.
+# `gravar_se_mudou <pasta do projeto> <tmp> <final> <forcar>`.
+gravar_se_mudou() {
+    local dir="$1" tmp="$2" final="$3" forcar="$4" sha motivo
+    sha=$(sha256sum "$tmp" | awk '{print $1}')
+    if [ "$forcar" = sim ]; then
+        motivo="forçado"
+    elif ! motivo=$(motivo_copia "$dir" "$sha"); then
+        rm -f "$tmp"
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$dir/.ultima_conferencia"
+        log "  sem alterações desde a última cópia — nada a fazer"
+        return 0
+    fi
+    log "  motivo: $motivo"
+    if ! mv "$tmp" "$final"; then
+        rm -f "$tmp"
+        log "  ERRO: não foi possível dar o nome final à cópia"
+        return 1
+    fi
+    printf '%s\n' "$sha" > "$final.sha256"
+    date -u '+%Y-%m-%dT%H:%M:%SZ' > "$dir/.ultima_conferencia"
+    log "  gravado $(basename "$final") ($(du -h "$final" | cut -f1))"
+    aplicar_retencao "$dir" tar.gz
+}
+
+copiar_site() {
+    local slug="$1" pasta="$2" forcar="$3"
+    local dir="$DEST/$slug" nome tmp lista
+    if [ ! -d "$pasta" ]; then
+        log "  ERRO: a pasta $pasta, publicada pelo nginx, não existe"
+        return 1
+    fi
+    mkdir -p "$dir"
+    nome="${slug}_volume_$(date -u '+%Y%m%d_%H%M%S').tar.gz"
+    tmp="$dir/.${nome}.tmp"
+    lista="$dir/.lista.tmp"
+    if ! arquivos_do_site "$pasta" >"$lista" || [ ! -s "$lista" ]; then
+        rm -f "$lista"
+        log "  ERRO: nenhum arquivo legível em $pasta"
+        return 1
+    fi
+    if ! empacotar "$pasta" "$tmp" "$lista"; then
+        rm -f "$lista"
+        return 1
+    fi
+    rm -f "$lista"
+    gravar_se_mudou "$dir" "$tmp" "$dir/$nome" "$forcar"
+}
+
+# Texto que explica a máquina a quem for reconstruí-la. Sem nada que mude
+# sozinho (hora, uptime, estado de contêiner): uma linha diferente aqui é uma
+# mudança de verdade, e vira cópia nova.
+inventario() {
+    local sites="$1" segredos="${2:-}" slug pasta origem dominios git item segs
+    printf 'INVENTÁRIO DO SERVIDOR %s\n\n' "$(cat "$CONFIG_RAIZ/etc/hostname" 2>/dev/null || hostname)"
+    printf 'Sistema: %s (%s)\n' \
+        "$(sed -n 's/^PRETTY_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CONFIG_RAIZ/etc/os-release" 2>/dev/null || true)" \
+        "$(uname -m)"
+    if command -v tailscale >/dev/null 2>&1; then
+        printf 'Tailscale: %s\n' "$(tailscale ip -4 2>/dev/null | head -1)"
+    fi
+
+    printf '\nSITES PUBLICADOS PELO NGINX (cópia dos arquivos em ~/backups/<slug>)\n'
+    if [ -z "$sites" ]; then
+        printf '  nenhum\n'
+    fi
+    while IFS='|' read -r slug pasta origem dominios; do
+        [ -n "$slug" ] || continue
+        git="sem Git"
+        if [ -d "$pasta/.git" ]; then
+            git="Git $(git -C "$pasta" remote get-url origin 2>/dev/null || echo '(sem origin)')"
+            git="$git @ $(git -C "$pasta" rev-parse --short HEAD 2>/dev/null || echo '?')"
+            if [ -n "$(git -C "$pasta" status --porcelain 2>/dev/null)" ]; then
+                git="$git, COM ALTERAÇÕES LOCAIS"
+            fi
+        fi
+        printf '  %s\n    domínios: %s\n    servido por: %s\n    pasta: %s\n    código: %s\n' \
+            "$slug" "$dominios" "$origem" "$pasta" "$git"
+        segs=$(segredos_do_site "$pasta" | tr '\n' ' ' | sed 's/ $//')
+        printf '    segredos fora da cópia (do cofre): %s\n' "${segs:-nenhum}"
+    done <<<"$sites"
+
+    printf '\nVHOSTS HABILITADOS (links em sites-enabled)\n'
+    for vhost in "$NGINX_HABILITADOS"/*; do
+        [ -e "$vhost" ] && printf '  %s\n' "$(basename "$vhost")"
+    done
+    printf '\nCONTÊINERES (nome e imagem)\n'
+    docker ps --format '{{.Names}}  {{.Image}}' 2>/dev/null | LC_ALL=C sort | sed 's/^/  /' || true
+
+    if command -v systemctl >/dev/null 2>&1; then
+        printf '\nTIMERS HABILITADOS\n'
+        systemctl list-unit-files --type=timer --state=enabled --no-legend --no-pager 2>/dev/null \
+            | awk '{print "  " $1}' | LC_ALL=C sort || true
+    fi
+    if command -v apt-mark >/dev/null 2>&1; then
+        printf '\nPACOTES INSTALADOS À MÃO (apt-mark showmanual)\n'
+        apt-mark showmanual 2>/dev/null | LC_ALL=C sort | tr '\n' ' ' | fold -s -w 78 | sed 's/^/  /'
+        printf '\n'
+    fi
+
+    printf '\nSEGREDOS QUE NÃO ESTÃO NESTE PACOTE (recriar a partir do cofre)\n'
+    if [ -n "$segredos" ]; then
+        while IFS= read -r item; do printf '  /%s\n' "$item"; done <<<"$segredos"
+    else
+        printf '  nenhum encontrado\n'
+    fi
+
+    cat <<'FIM'
+
+COMO RECONSTRUIR ESTA MÁQUINA (roteiro curto)
+  1. Criar a VM (mesma arquitetura e versão do Ubuntu acima), entrar no
+     Tailscale e instalar docker, nginx, certbot e fail2ban.
+  2. Clonar o repositório `manutencao` em ~/manutencao e rodar
+     `bash vps/instalar.sh` (scripts e timers).
+  3. Copiar os arquivos deste pacote de volta para os mesmos caminhos
+     (etc/nginx -> /etc/nginx etc.), conferindo antes de sobrescrever, e
+     religar os vhosts listados acima:
+     `ln -s /etc/nginx/sites-available/<nome> /etc/nginx/sites-enabled/`.
+  4. Para cada site acima: com Git, clonar o repositório na pasta indicada;
+     sem Git, extrair a cópia de ~/backups/<slug>. Depois, os segredos do cofre.
+  5. Emitir os certificados de novo (`certbot --nginx -d <domínio>`),
+     `nginx -t` e recarregar. Aplicativos com banco: RESTAURAR.md do BackupRestore.
+FIM
+}
+
+copiar_configuracao() {
+    local sites="$1" forcar="$2"
+    local dir="$DEST/$SLUG_CONFIG" nome tmp lista area item
+    mkdir -p "$dir"
+    nome="${SLUG_CONFIG}_volume_$(date -u '+%Y%m%d_%H%M%S').tar.gz"
+    tmp="$dir/.${nome}.tmp"
+    area=$(mktemp -d "$dir/.area.XXXXXX")
+    lista="$area.lista"
+
+    # Uma área com os arquivos nos caminhos de origem e o inventário na raiz:
+    # o pacote abre como uma árvore de `/`. A hora de cada arquivo é a da
+    # origem, para o pacote só mudar quando algo mudou.
+    local -a encontrados=()
+    for item in "${CONFIG_ITENS[@]}"; do
+        [ -e "$CONFIG_RAIZ/$item" ] || continue
+        mapfile -t -O "${#encontrados[@]}" encontrados < <(
+            cd "${CONFIG_RAIZ:-/}" && $LEITOR find "$item" -type f 2>/dev/null)
+    done
+    # Segredo fica fora, como nos sites; só o NOME vai para o inventário, para
+    # quem reconstrói saber o que buscar no cofre.
+    local segredos=""
+    segredos=$(printf '%s\n' "${encontrados[@]}" | grep -E "$PADRAO_SEGREDO" | LC_ALL=C sort || true)
+    for item in "${encontrados[@]}"; do
+        grep -Eq "$PADRAO_SEGREDO" <<<"$item" && continue
+        mkdir -p "$area/$(dirname "$item")"
+        $LEITOR cat "$CONFIG_RAIZ/$item" >"$area/$item" 2>/dev/null || continue
+        # Com o mesmo leitor: em pasta que só o root atravessa (`/etc/sudoers.d`)
+        # o `touch -r` do usuário não lê a hora da origem, a cópia ficava com a
+        # hora da rodada e o pacote mudava todo dia (visto no ensaio do VPS2).
+        $LEITOR touch -r "$CONFIG_RAIZ/$item" "$area/$item" 2>/dev/null || true
+    done
+    inventario "$sites" "$segredos" >"$area/INVENTARIO.txt"
+    touch -d '@0' "$area/INVENTARIO.txt" 2>/dev/null || touch -t 197001010000 "$area/INVENTARIO.txt"
+
+    (cd "$area" && find . -type f) | LC_ALL=C sort >"$lista"
+    if ! LEITOR='' empacotar "$area" "$tmp" "$lista"; then
+        rm -rf "$area" "$lista"
+        return 1
+    fi
+    rm -rf "$area" "$lista"
+    gravar_se_mudou "$dir" "$tmp" "$dir/$nome" "$forcar"
+}
+
+# Pastas de site que já tiveram cópia e não estão mais no nginx.
+sites_fora_do_ar() {
+    local sites="$1" dir slug
+    for dir in "$DEST"/site_*/; do
+        [ -d "$dir" ] || continue
+        slug=$(basename "$dir")
+        [ -n "$(backups_do_projeto "$dir" tar.gz)" ] || continue
+        grep -Eq "^${slug}\|" <<<"$sites" && continue
+        printf '%s\n' "$slug"
+    done
+}
+
 ciclo() {
     local forcar="${1:-nao}"
     local falhas=0
-    local projetos volumes desaparecidos
+    local projetos volumes desaparecidos sites
 
     projetos=$(descobrir_projetos)
 
@@ -444,10 +801,17 @@ ciclo() {
     #
     # Conta como falha e segue, em vez de encerrar: os volumes, mais abaixo,
     # não dependem de Postgres nenhum estar de pé.
-    if [ -z "$projetos" ]; then
-        log "ERRO: nenhum contêiner postgres rodando — nenhum banco foi salvo"
-        log "  (docker fora do ar, ou os bancos não subiram: docker ps)"
+    #
+    # Desde 25/10/2026 a máquina sem banco nenhum é normal (o VPS2 só serve
+    # sites), então o barulho ficou com quem o merece: o Docker que não
+    # responde. Banco que existia e não subiu continua acusado logo abaixo,
+    # como desaparecido, porque deixou histórico em disco.
+    if ! docker ps >/dev/null 2>&1; then
+        log "ERRO: o docker não responde — nenhum banco nem volume foi salvo"
+        log "  (docker fora do ar: systemctl status docker)"
         falhas=$((falhas + 1))
+    elif [ -z "$projetos" ]; then
+        log "nenhum contêiner postgres nesta máquina — sem bancos a salvar"
     fi
 
     for entrada in $projetos; do
@@ -517,13 +881,45 @@ ciclo() {
         fi
     done
 
-    desaparecidos=$(descobrir_desaparecidos "$volumes" tar.gz)
+    # Sites e a configuração também gravam `.tar.gz`, mas não vêm de contêiner
+    # rotulado: o sumiço deles é tratado mais abaixo.
+    desaparecidos=$(descobrir_desaparecidos "$volumes" tar.gz \
+        | grep -Ev "^(site_.*|$SLUG_CONFIG)$" || true)
     if [ -n "$desaparecidos" ]; then
         while IFS= read -r slug; do
             [ -n "$slug" ] || continue
             log "ERRO: $slug tem cópia de volume anterior e nenhum contêiner com o rótulo $ROTULO_VOLUME rodando"
             falhas=$((falhas + 1))
         done <<<"$desaparecidos"
+    fi
+
+    sites=$(descobrir_sites)
+    local vistos=" " slug pasta origem dominios
+    while IFS='|' read -r slug pasta origem dominios; do
+        [ -n "$slug" ] || continue
+        log "== $slug (site: $dominios)"
+        if [[ "$vistos" == *" $slug "* ]]; then
+            log "  ERRO: outra pasta já usa o slug $slug ($pasta) — renomeie uma das duas"
+            falhas=$((falhas + 1))
+            continue
+        fi
+        vistos="$vistos$slug "
+        if ! copiar_site "$slug" "$pasta" "$forcar"; then
+            falhas=$((falhas + 1))
+        fi
+    done <<<"$sites"
+
+    while IFS= read -r slug; do
+        [ -n "$slug" ] || continue
+        log "== $slug (site)"
+        log "  AVISO: não está mais no nginx — as cópias antigas ficam;"
+        log "  para esquecê-lo, apague $DEST/$slug"
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$DEST/$slug/.ultima_conferencia"
+    done < <(sites_fora_do_ar "$sites")
+
+    log "== $SLUG_CONFIG"
+    if ! copiar_configuracao "$sites" "$forcar"; then
+        falhas=$((falhas + 1))
     fi
 
     if [ "$falhas" -gt 0 ]; then
@@ -545,6 +941,7 @@ slugs_conhecidos() {
         for entrada in $(descobrir_projetos) $(descobrir_volumes); do
             printf '%s\n' "${entrada%%:*}"
         done
+        descobrir_sites | cut -d'|' -f1
         for dir in "$DEST"/*/; do
             [ -d "$dir" ] || continue
             basename "$dir"

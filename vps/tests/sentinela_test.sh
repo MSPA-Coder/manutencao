@@ -71,6 +71,7 @@ roda() {
     LOG_5XX="$LOG" \
     ESTADO_DIR="$CASE_TMP/estado" \
     APP_LOCK_DIR="$CASE_TMP/locks" \
+    JANELAS_DEPLOY="$CASE_TMP/janelas.log" \
         bash "$SENTINELA" "$@" >"$CASE_TMP/saida.txt" 2>&1
     EXIT_CODE=$?
 }
@@ -207,6 +208,63 @@ linha bancario.example 500 /a >"$LOG"
 roda
 assert_eq 1 "$(conta_alertas)" 'lock existente mas livre não é operação em curso'
 end_case 'arquivo de lock sem ninguém segurando não silencia o sentinela'
+
+# ---------------------------------------------------------------------------
+# Janelas de deploy (25/10/2026): o 502 da troca de contêiner não é incidente.
+
+# O instante das linhas de `linha()`: 2026-09-08T12:00:00-03:00.
+T0=$(date -u -d '2026-09-08 15:00:00' +%s)
+
+# `linha_em <segundos depois de T0> <host> <status>`, com o fuso UTC do VPS.
+linha_em() {
+    printf '%s host=%s status=%s metodo=GET rota=/api/collector/configuration upstream=%s tempo=0.001\n' \
+        "$(date -u -d "@$(( T0 + $1 ))" '+%Y-%m-%dT%H:%M:%S+00:00')" "$2" "$3" "$3"
+}
+
+janela() {  # `janela <domínio> <início> [fim]`, em segundos depois de T0
+    printf 'inicio %s %s\n' "$1" "$(( T0 + $2 ))" >>"$CASE_TMP/janelas.log"
+    [ -z "${3:-}" ] || printf 'fim %s %s\n' "$1" "$(( T0 + $3 ))" >>"$CASE_TMP/janelas.log"
+}
+
+begin_case
+janela renda.example 0 60
+{ linha renda.example 502 /a; linha_em 50 renda.example 502; } >"$LOG"
+roda
+assert_eq 0 "$EXIT_CODE" 'drenagem sai zero'
+assert_sem_alerta '502 do domínio no meio do próprio deploy não alerta'
+end_case 'a troca de contêiner de um deploy não vira alerta'
+
+begin_case
+janela renda.example 0 60
+{ linha_em 30 renda.example 502; linha_em 30 bancario.example 502; } >"$LOG"
+roda
+assert_eq 1 "$(conta_alertas)" 'só o domínio sem deploy alerta'
+assert_alerta 'TITULO=5xx em bancario.example' 'o outro domínio, no mesmo minuto, continua alertando'
+end_case 'o deploy de um aplicativo não cala os outros'
+
+begin_case
+janela renda.example 0 60
+linha_em 400 renda.example 502 >"$LOG"
+roda
+assert_alerta 'TITULO=5xx em renda.example' '502 minutos depois do fim do deploy é incidente'
+end_case 'fora da janela (e da margem) o 5xx alerta normalmente'
+
+begin_case
+janela renda.example 0
+{ linha_em 1000 renda.example 502; linha_em 2500 renda.example 502; } >"$LOG"
+roda
+assert_eq 1 "$(conta_alertas)" 'deploy sem fim cala por no máximo 30 min'
+assert_alerta '1 resposta(s) 5xx' 'só a linha depois do teto alerta'
+end_case 'deploy que morreu sem registrar o fim não cala o domínio para sempre'
+
+begin_case
+janela renda.example 0 60
+printf 'lixo\nfim renda.example nao-e-numero\n' >>"$CASE_TMP/janelas.log"
+linha_em 30 renda.example 502 >"$LOG"
+roda
+assert_eq 0 "$EXIT_CODE" 'linha estragada no registro não derruba o sentinela'
+assert_sem_alerta 'e a janela válida continua valendo'
+end_case 'registro de janelas com lixo é tolerado'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

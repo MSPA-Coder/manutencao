@@ -110,6 +110,7 @@ deploy_estatico() {
         return 1
     fi
     if ! travar_app "$DIR"; then return $?; fi
+    abrir_janela
     cd "$APPS/$DIR"
 
     local sujo atual novo quebrado detalhe
@@ -321,7 +322,35 @@ registrar_implantacao_saudavel() {
 IMAGENS_ANTERIORES=
 ROLLBACK_OVERRIDE=
 IMAGEM_POR_ID=0
-trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"' EXIT
+trap 'rm -f -- "${IMAGENS_ANTERIORES:-}" "${ROLLBACK_OVERRIDE:-}"; marcar_janela fim' EXIT
+
+# Janela de cada deploy (`inicio <domínio> <epoch>` e `fim <domínio> <epoch>`),
+# lida pelo `sentinela.sh` para não alertar os 5xx que a troca de contêiner
+# produz. Em 18-24/10/2026 mais da metade dos alertas de 5xx foram isso: o
+# coletor do CRV consulta a cada 30 s e caía no meio do `compose up`. O lock
+# da aplicação já calava o sentinela, mas só se ele acordasse DURANTE o deploy,
+# e o deploy dura menos que o intervalo de 5 min dele. O deploy que dá errado
+# continua avisando por conta própria (DEPLOY REVERTIDO / QUEBRADO). Falhar em
+# gravar aqui nunca derruba o deploy.
+JANELAS_DEPLOY=${JANELAS_DEPLOY:-$ESTADO_DIR/janelas.log}
+JANELA_ABERTA=""
+marcar_janela() {
+    [ -n "$JANELA_ABERTA" ] || return 0
+    {
+        install -d -m 700 "$(dirname "$JANELAS_DEPLOY")" \
+            && printf '%s %s %s\n' "$1" "$JANELA_ABERTA" "$(date +%s)" >>"$JANELAS_DEPLOY" \
+            && if [ "$(wc -l <"$JANELAS_DEPLOY")" -gt 400 ]; then
+                   tail -n 200 "$JANELAS_DEPLOY" >"$JANELAS_DEPLOY.tmp" \
+                       && mv -f -- "$JANELAS_DEPLOY.tmp" "$JANELAS_DEPLOY"
+               fi
+    } 2>/dev/null || true
+    [ "$1" = fim ] && JANELA_ABERTA=""
+    return 0
+}
+abrir_janela() {
+    JANELA_ABERTA=$DOMINIO
+    marcar_janela inicio
+}
 capturar_imagens_anteriores() {
     local containers container imagem servico id
     local -A servicos_anteriores=()
@@ -546,7 +575,7 @@ fi
 # isto, `docker pause` poderia congelar o contêiner entre o `compose up` e a
 # sonda do deploy, ou o deploy poderia recriá-lo no meio do snapshot SQLite.
 if travar_app "$DIR"; then
-    :
+    abrir_janela
 else
     exit $?
 fi

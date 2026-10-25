@@ -147,9 +147,31 @@ fi
 # depois de criado ("Monitor type cannot be changed after creation"), e o
 # cadastro cria um HTTP simples que aprovaria um 503.
 # --------------------------------------------------------------------------
+# A palavra que prova saúde depende de quem responde o `/health`: os
+# aplicativos Flask/Django devolvem JSON e a palavra é `"ok"` com aspas (ver
+# `PALAVRA`); o Wealthfolio e os sites estáticos do VPS2 devolvem só `ok`.
+# Com `"ok"` para todos, esses monitores nasciam acusando queda (25/10/2026).
+# A resposta de agora decide; o que não for nenhuma das duas não vira monitor.
+# O `ok` sem aspas não casa com as páginas de erro do nginx ("Bad Gateway",
+# "Not Found", "Internal Server Error"), que é o que se quer pegar.
+palavra_do_dominio() {
+    local corpo
+    corpo=$(curl -fsS --max-time 15 "https://$1/health" 2>/dev/null) || return 1
+    case "$corpo" in
+        *'"ok"'*) printf '%s' "$PALAVRA" ;;
+        ok)       printf 'ok' ;;
+        *)        return 1 ;;
+    esac
+}
+
 echo
 for dominio in "${DOMINIOS[@]}"; do
     url="https://$dominio/health"
+
+    if ! palavra=$(palavra_do_dominio "$dominio"); then
+        echo "-- $dominio: /health não respondeu \"ok\" nem ok agora; monitor NÃO criado"
+        continue
+    fi
 
     leitura=$(printf '%s' "$atuais" | python3 -c '
 import json, sys
@@ -183,7 +205,7 @@ print(json.dumps({
     "assignedAlertContacts": [
         {"alertContactId": int(contato), "threshold": 0, "recurrence": 0}
     ],
-}))' "$dominio" "$url" "$PALAVRA" "$INTERVALO" "$CONTATO")
+}))' "$dominio" "$url" "$palavra" "$INTERVALO" "$CONTATO")
 
     if [ -n "$id" ]; then
         echo "-- $dominio: ajustando id $id"

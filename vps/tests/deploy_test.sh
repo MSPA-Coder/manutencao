@@ -346,6 +346,21 @@ assert_log 'docker <image> <rm> <mspa-deploy/controle-bancario:abcdefabcdef>' 'p
 assert_no_log 'docker <image> <rm> <mspa-deploy/controle-bancario:000000000000>' 'mantém a guarda da imagem em uso'
 end_case 'sucesso registra SHA novo atomicamente, sem consultar a CI'
 
+# A janela que o `sentinela.sh` lê para não alertar o 502 da troca de
+# contêiner: início e fim, com o domínio da sonda, no deploy que dá certo e no
+# que é revertido.
+for SCENARIO in success compose_failure; do
+    begin_case
+    run_deploy
+    janelas="$CASE_TMP/state/janelas.log"
+    [ -f "$janelas" ] || fail "o deploy ($SCENARIO) deve registrar a janela"
+    assert_eq 'inicio bancario-mspa.duckdns.org
+fim bancario-mspa.duckdns.org' "$(cut -d' ' -f1,2 "$janelas" 2>/dev/null)" \
+        "início e fim com o domínio ($SCENARIO)"
+    grep -Eq '^(inicio|fim) [^ ]+ [0-9]+$' "$janelas" || fail 'cada linha termina no epoch'
+    end_case "deploy registra a própria janela para o sentinela ($SCENARIO)"
+done
+
 begin_case
 SCENARIO=ff_failure
 run_deploy

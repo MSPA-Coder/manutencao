@@ -165,6 +165,105 @@ if [ -z "$novas" ]; then
 fi
 
 # --------------------------------------------------------------------------
+# 5xx durante o deploy do mesmo domínio (25/10/2026)
+#
+# A troca de contêiner num deploy produz 502 por alguns segundos, e o coletor
+# do CRV, que consulta a cada 30 s, caía nela quase sempre: de 18 a 24/10, mais
+# da metade dos alertas de 5xx eram isso. O lock da aplicação (abaixo) só cala
+# o sentinela se ele acordar DURANTE o deploy, o que quase nunca acontece. O
+# `deploy.sh` registra cada janela (`marcar_janela`); a linha do MESMO domínio
+# dentro dela, com margem, é descartada aqui. Outro domínio no mesmo minuto
+# continua alertando, e o deploy que dá errado avisa por conta própria.
+# --------------------------------------------------------------------------
+JANELAS_DEPLOY=${JANELAS_DEPLOY:-/home/ubuntu/.local/state/mspa-deploy/janelas.log}
+MARGEM_ANTES=30
+MARGEM_DEPOIS=90
+# Deploy sem `fim` registrado está em curso, ou morreu sem o trap (KILL).
+# Este teto impede que um deploy morto cale o domínio para sempre.
+JANELA_ABERTA_MAX=1800
+
+# `2026-10-18T04:31:06+00:00` -> epoch. Sem `date -d` com fuso, que o busybox
+# não entende: a hora vai como UTC e o deslocamento é aplicado à mão.
+epoch_iso() {
+    local data hora sinal oh om segundos
+    [[ "$1" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2})(Z|([+-])([0-9]{2}):([0-9]{2}))$ ]] \
+        || return 1
+    data=${BASH_REMATCH[1]} hora=${BASH_REMATCH[2]}
+    sinal=${BASH_REMATCH[4]} oh=${BASH_REMATCH[5]} om=${BASH_REMATCH[6]}
+    segundos=$(date -u -d "$data $hora" +%s 2>/dev/null) || return 1
+    if [ -n "$sinal" ]; then
+        if [ "$sinal" = "+" ]; then
+            segundos=$(( segundos - 10#$oh * 3600 - 10#$om * 60 ))
+        else
+            segundos=$(( segundos + 10#$oh * 3600 + 10#$om * 60 ))
+        fi
+    fi
+    printf '%s\n' "$segundos"
+}
+
+janelas=()
+if [ -r "$JANELAS_DEPLOY" ]; then
+    declare -A abertas=()
+    while read -r evento dominio quando; do
+        [[ "${quando:-}" =~ ^[0-9]+$ ]] || continue
+        case "$evento" in
+            inicio) abertas[$dominio]=$quando ;;
+            fim)
+                if [ -n "${abertas[$dominio]:-}" ]; then
+                    janelas+=("$dominio ${abertas[$dominio]} $quando")
+                    unset "abertas[$dominio]"
+                fi ;;
+        esac
+    done <"$JANELAS_DEPLOY"
+    agora=$(date +%s)
+    for dominio in "${!abertas[@]}"; do
+        inicio=${abertas[$dominio]}
+        fim=$(( inicio + JANELA_ABERTA_MAX ))
+        [ "$agora" -lt "$fim" ] && fim=$agora
+        janelas+=("$dominio $inicio $fim")
+    done
+fi
+
+if [ "${#janelas[@]}" -gt 0 ]; then
+    mantidas=""
+    descartadas_deploy=0
+    dominios_deploy=""
+    while IFS= read -r linha_5xx; do
+        [ -n "$linha_5xx" ] || continue
+        durante_deploy=0
+        if [[ "$linha_5xx" =~ ^([^ ]+)\ host=([^ ]+)\  ]]; then
+            host_linha=${BASH_REMATCH[2]}
+            if quando_linha=$(epoch_iso "${BASH_REMATCH[1]}"); then
+                for janela in "${janelas[@]}"; do
+                    read -r dominio inicio fim <<<"$janela"
+                    [ "$dominio" = "$host_linha" ] || continue
+                    if [ "$quando_linha" -ge $((inicio - MARGEM_ANTES)) ] \
+                       && [ "$quando_linha" -le $((fim + MARGEM_DEPOIS)) ]; then
+                        durante_deploy=1
+                        break
+                    fi
+                done
+            fi
+        fi
+        if [ "$durante_deploy" -eq 1 ]; then
+            descartadas_deploy=$((descartadas_deploy + 1))
+            case " $dominios_deploy " in
+                *" $host_linha "*) ;;
+                *) dominios_deploy="${dominios_deploy:+$dominios_deploy }$host_linha" ;;
+            esac
+        else
+            mantidas+="$linha_5xx"$'\n'
+        fi
+    done <<<"$novas"
+    if [ "$descartadas_deploy" -gt 0 ]; then
+        registrar "$descartadas_deploy linha(s) de 5xx durante deploy descartadas: $dominios_deploy"
+        [ "$MODO" = "--estado" ] && printf 'durante deploy de %s: %s linha(s) de 5xx descartadas\n' \
+            "$dominios_deploy" "$descartadas_deploy"
+    fi
+    novas=$mantidas
+fi
+
+# --------------------------------------------------------------------------
 # Um alerta por host
 #
 # Uma quebra costuma render dezenas de linhas em segundos. Agrupar por host

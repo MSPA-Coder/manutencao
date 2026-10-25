@@ -49,7 +49,17 @@ fi
 # --------------------------------------------------------------------------
 # Monta a mensagem
 # --------------------------------------------------------------------------
-HOST=$(hostname -s 2>/dev/null || echo desconhecido)
+# Nome curto no título: `instance-20260818-1632` não diz a quem lê o alerta no
+# celular de qual máquina ele veio (pedido de 25/10/2026). Máquina nova ou
+# reconstruída cai no hostname até ganhar uma linha aqui.
+nome_do_servidor() {
+    case "$1" in
+        instance-20260818-1632) echo VPS1 ;;
+        instance-20260913-1619) echo VPS2 ;;
+        *)                      echo "$1" ;;
+    esac
+}
+HOST=$(nome_do_servidor "$(hostname -s 2>/dev/null || echo desconhecido)")
 QUANDO=$(date '+%d/%m %H:%M %Z')
 
 case "${1:-}" in

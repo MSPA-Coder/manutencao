@@ -744,25 +744,31 @@ copiar_configuracao() {
     # Uma área com os arquivos nos caminhos de origem e o inventário na raiz:
     # o pacote abre como uma árvore de `/`. A hora de cada arquivo é a da
     # origem, para o pacote só mudar quando algo mudou.
-    local -a encontrados=()
+    local -a presentes=()
     for item in "${CONFIG_ITENS[@]}"; do
-        [ -e "$CONFIG_RAIZ/$item" ] || continue
-        mapfile -t -O "${#encontrados[@]}" encontrados < <(
-            cd "${CONFIG_RAIZ:-/}" && $LEITOR find "$item" -type f 2>/dev/null)
+        [ -e "$CONFIG_RAIZ/$item" ] && presentes+=("$item")
     done
     # Segredo fica fora, como nos sites; só o NOME vai para o inventário, para
     # quem reconstrói saber o que buscar no cofre.
-    local segredos=""
-    segredos=$(printf '%s\n' "${encontrados[@]}" | grep -E "$PADRAO_SEGREDO" | LC_ALL=C sort || true)
-    for item in "${encontrados[@]}"; do
-        grep -Eq "$PADRAO_SEGREDO" <<<"$item" && continue
-        mkdir -p "$area/$(dirname "$item")"
-        $LEITOR cat "$CONFIG_RAIZ/$item" >"$area/$item" 2>/dev/null || continue
-        # Com o mesmo leitor: em pasta que só o root atravessa (`/etc/sudoers.d`)
-        # o `touch -r` do usuário não lê a hora da origem, a cópia ficava com a
-        # hora da rodada e o pacote mudava todo dia (visto no ensaio do VPS2).
-        $LEITOR touch -r "$CONFIG_RAIZ/$item" "$area/$item" 2>/dev/null || true
-    done
+    local todos segredos=""
+    todos=$(cd "${CONFIG_RAIZ:-/}" && $LEITOR find "${presentes[@]}" -type f 2>/dev/null \
+        | LC_ALL=C sort || true)
+    segredos=$(grep -E "$PADRAO_SEGREDO" <<<"$todos" || true)
+    grep -Ev "$PADRAO_SEGREDO" <<<"$todos" | sed '/^$/d' >"$lista" || true
+    # Um `tar` com o leitor e outro sem ele: uma leitura privilegiada só, em vez
+    # de duas por arquivo (o `sudo` de cada uma enchia o journal), e a hora de
+    # cada arquivo vem junto -- inclusive de pasta que só o root atravessa
+    # (`/etc/sudoers.d`), onde o `touch -r` do usuário falhava e o pacote mudava
+    # todo dia (visto no ensaio do VPS2).
+    if [ -s "$lista" ] && ! { $LEITOR tar -C "${CONFIG_RAIZ:-/}" -cf - -T "$lista" 2>/dev/null \
+            | tar -C "$area" -xf - 2>/dev/null; }; then
+        rm -rf "$area" "$lista"
+        log "  ERRO: não foi possível copiar a configuração"
+        return 1
+    fi
+    # O que veio com modo restrito (`0440` do sudoers, pasta `0555`) precisa
+    # ser lido e apagado pelo usuário do serviço daqui em diante.
+    chmod -R u+rwX "$area"
     inventario "$sites" "$segredos" >"$area/INVENTARIO.txt"
     touch -d '@0' "$area/INVENTARIO.txt" 2>/dev/null || touch -t 197001010000 "$area/INVENTARIO.txt"
 

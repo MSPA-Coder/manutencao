@@ -90,6 +90,12 @@ EOF
     cat >"$CASE_TMP/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf 'systemctl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
+# Serviço contínuo parado, a menos que o caso diga que está rodando: é o
+# estado do bot de status no VPS2 (ver `SERVICO_DE` no instalador).
+if [ "${1:-}" = is-active ]; then
+    [ -e "$(dirname "$CALL_LOG")/ativo.${!#}" ] && exit 0
+    exit 3
+fi
 exit 0
 EOF
 
@@ -176,7 +182,22 @@ assert_log_count 'systemctl <enable>' "$TIMERS_ESPERADOS" 'deve habilitar cada t
 assert_log 'mv <-f> <-->' 'publicação deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -name '.instalar.*' -print)" ] || fail 'rename atômico não deve deixar temporário'
 grep -q '^OK: ' "$CASE_TMP/output" || fail 'deve confirmar a conferência final'
+assert_no_log 'systemctl <restart> <telegram-bot-status.service>' \
+    'o bot parado (o caso do VPS2) não pode ser ligado pelo instalador'
 end_case 'instalação limpa entrega tudo, com modo e systemd recarregado'
+
+# --------------------------------------------------------------------------
+# O bot de status fica ligado numa máquina só: o instalador o reinicia quando
+# um arquivo dele muda, mas só onde ele já estava rodando.
+begin_case
+: >"$CASE_TMP/ativo.telegram-bot-status.service"
+run_instalar "$INSTALAR"
+assert_eq 0 "$EXIT_CODE" 'instalação com o bot rodando deve sair zero'
+assert_log_count 'systemctl <restart> <telegram-bot-status.service>' 1 \
+    'o bot que estava rodando é reiniciado uma vez, com a versão nova'
+assert_no_log 'systemctl <enable> <telegram-bot-status.service>' \
+    'o instalador nunca habilita o bot: quem decide a máquina é o operador'
+end_case 'bot de status rodando é reiniciado; parado continua parado'
 
 # --------------------------------------------------------------------------
 begin_case

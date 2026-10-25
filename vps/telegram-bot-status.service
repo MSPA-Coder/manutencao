@@ -1,0 +1,21 @@
+# Bot de status do Telegram (menu /status). Instalado nas duas máquinas pelo
+# `instalar.sh`, mas HABILITADO só no VPS1: o Telegram entrega os cliques a um
+# único processo por bot, e o menu do VPS1 já mostra o VPS2 (ver o cabeçalho
+# de `telegram-bot-status.py`). Habilitá-lo também no VPS2 faria os dois
+# brigarem pelos cliques (HTTP 409).
+[Unit]
+Description=Bot de status do VPS via Telegram
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/bin/python3 /home/ubuntu/telegram-bot-status.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

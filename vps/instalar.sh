@@ -77,6 +77,8 @@ INVENTARIO=(
     "deploy.sh|$DESTINO_SCRIPTS/deploy.sh|755|$DONO_SCRIPTS"
     "docker-prune.sh|$DESTINO_SCRIPTS/docker-prune.sh|755|$DONO_SCRIPTS"
     "sentinela.sh|$DESTINO_SCRIPTS/sentinela.sh|755|$DONO_SCRIPTS"
+    "status-coletor.py|$DESTINO_SCRIPTS/status-coletor.py|755|$DONO_SCRIPTS"
+    "telegram-bot-status.py|$DESTINO_SCRIPTS/telegram-bot-status.py|755|$DONO_SCRIPTS"
     "uptimerobot-monitores.sh|$DESTINO_SCRIPTS/uptimerobot-monitores.sh|755|$DONO_SCRIPTS"
     "vigia.sh|$DESTINO_SCRIPTS/vigia.sh|755|$DONO_SCRIPTS"
     "nginx/instalar.sh|$DESTINO_SCRIPTS/instalar-nginx.sh|755|$DONO_SCRIPTS"
@@ -92,6 +94,7 @@ INVENTARIO=(
     "docker-prune.timer|$DESTINO_SYSTEMD/docker-prune.timer|644|$DONO_SYSTEMD"
     "sentinela.service|$DESTINO_SYSTEMD/sentinela.service|644|$DONO_SYSTEMD"
     "sentinela.timer|$DESTINO_SYSTEMD/sentinela.timer|644|$DONO_SYSTEMD"
+    "telegram-bot-status.service|$DESTINO_SYSTEMD/telegram-bot-status.service|644|$DONO_SYSTEMD"
     "vigia.service|$DESTINO_SYSTEMD/vigia.service|644|$DONO_SYSTEMD"
     "vigia.timer|$DESTINO_SYSTEMD/vigia.timer|644|$DONO_SYSTEMD"
     "certbot.service.d/alerta.conf|$DESTINO_SYSTEMD/certbot.service.d/alerta.conf|644|$DONO_SYSTEMD"
@@ -239,12 +242,27 @@ if [ "$modo_check" -eq 1 ]; then
     exit 1
 fi
 
-declare -a timers=()
+#: Serviços contínuos (não timers) a reiniciar quando um arquivo deles mudar —
+#: só se já estiverem rodando nesta máquina. O bot de status fica ligado numa
+#: máquina só (ver `telegram-bot-status.service`): reiniciar sem conferir o
+#: ligaria também na outra, e as duas brigariam pelos cliques do Telegram.
+declare -A SERVICO_DE=(
+    [telegram-bot-status.py]=telegram-bot-status.service
+    [telegram-bot-status.service]=telegram-bot-status.service
+    [status-coletor.py]=telegram-bot-status.service
+)
+
+declare -a timers=() servicos=()
 recarregar_systemd=0
 for item in "${diferentes[@]}"; do
     IFS='|' read -r relativo destino modo dono <<<"$item"
     instalar_um "$ORIGEM/$relativo" "$destino" "$modo" "$dono"
     echo "  instalado  $destino"
+
+    servico=${SERVICO_DE[$(basename -- "$destino")]:-}
+    if [ -n "$servico" ] && [[ " ${servicos[*]-} " != *" $servico "* ]]; then
+        servicos+=("$servico")
+    fi
 
     case "$destino" in
         "$DESTINO_SYSTEMD"/*)
@@ -281,6 +299,14 @@ if [ "$recarregar_systemd" -eq 1 ]; then
         $SUDO "$SYSTEMCTL" restart "$timer"
     done
 fi
+
+for servico in "${servicos[@]-}"; do
+    [ -n "$servico" ] || continue
+    if "$SYSTEMCTL" is-active --quiet "$servico" 2>/dev/null; then
+        echo "  reiniciando $servico (estava rodando)"
+        $SUDO "$SYSTEMCTL" restart "$servico"
+    fi
+done
 
 # --------------------------------------------------------------------------
 # Conferência final

@@ -1,13 +1,16 @@
-# Servidor padrão de HTTPS: recusa requisição com `Host` que não é de nenhum
-# dos quatro domínios.
+# Servidores padrão de HTTPS e de HTTP: recusam requisição com `Host` que não é
+# de nenhum dos domínios da máquina.
 #
 # POR QUE EXISTE: sem um `default_server` na 443, o nginx atende `Host`
 # desconhecido com o primeiro bloco `server` carregado. Um domínio sem
 # correspondência não deve receber conteúdo de nenhuma aplicação.
 #
-# A porta 80 usa o `default_server` do pacote do Ubuntu em
-# `/etc/nginx/sites-available/default`. Este arquivo trata apenas a 443 e não
-# conflita com esse site.
+# A porta 80 também tem o seu servidor padrão aqui (25/10/2026). Antes ela
+# ficava com o `default` do pacote do Ubuntu, que mostrava "Welcome to nginx"
+# (e a versão) a quem chegasse pelo IP; o instalador desabilita esse site. O
+# desafio ACME continua respondido a partir de `/var/www/html`, como o `default`
+# fazia, para o certificado de um domínio novo poder ser emitido antes do vhost
+# dele existir.
 #
 # `ssl_reject_handshake on` (nginx 1.19.4+) corta a conexão
 # ainda no aperto de mão TLS. É melhor que responder 444 depois de estabelecer
@@ -24,4 +27,19 @@ server {
     server_name _;
 
     ssl_reject_handshake on;
+}
+
+# 444 fecha a conexão sem resposta nenhuma: nem página, nem versão.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 444;
+    }
 }

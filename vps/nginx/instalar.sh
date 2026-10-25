@@ -73,7 +73,7 @@ printf '  %s\n' "${VHOSTS[@]}"
 echo
 
 echo "== estado atual salvo em $BACKUP =="
-sudo tar czf "$BACKUP" \
+sudo tar czf "$BACKUP" /etc/nginx/nginx.conf \
     /etc/nginx/sites-available /etc/nginx/sites-enabled \
     /etc/nginx/conf.d /etc/nginx/snippets 2>/dev/null
 sudo chown ubuntu:ubuntu "$BACKUP"
@@ -103,6 +103,14 @@ done
 sudo ln -sf /etc/nginx/sites-available/recusa-host-desconhecido \
             /etc/nginx/sites-enabled/recusa-host-desconhecido
 echo "  recusa-host-desconhecido (habilitado)"
+# O `recusa-host-desconhecido` assumiu o padrão da porta 80; dois
+# `default_server` na mesma porta reprovariam o `nginx -t`.
+sudo rm -f /etc/nginx/sites-enabled/default
+# A versão do nginx sai do cabeçalho `Server`. A diretiva mora no `nginx.conf`
+# do pacote (o do Ubuntu 26.04 traz `server_tokens build;`), e repeti-la em
+# `conf.d/` reprovaria o `nginx -t` por duplicada.
+sudo sed -i -E 's/^(\s*)server_tokens\s+(on|build)\s*;.*/\1server_tokens off;/' \
+    /etc/nginx/nginx.conf
 
 echo
 echo "== nginx -t =="

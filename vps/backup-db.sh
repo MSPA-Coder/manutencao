@@ -20,6 +20,9 @@
 #   4. retenção por último            nunca apagar antes de ter o substituto
 
 set -euo pipefail
+# Dump de banco é o dado inteiro em claro: nasce legível só pelo dono. Quem lê
+# os backups (agente, vigia, bot) roda como o mesmo usuário (25/10/2026).
+umask 077
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source=app-lock.sh

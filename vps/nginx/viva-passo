@@ -34,6 +34,12 @@ server {
         return 200 '{"status":"ok"}\n';
     }
 
+    # A raiz é o checkout: `.git` e qualquer arquivo oculto ficam de fora mesmo
+    # para quem tem a senha, para que ela não entregue o histórico inteiro.
+    location ~ /\. {
+        return 404;
+    }
+
     location / {
         # O site guarda dados pessoais de saúde. A conta temporária fica neste
         # arquivo protegido do VPS, fora do checkout e fora do Git.

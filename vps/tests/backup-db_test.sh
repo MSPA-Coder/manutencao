@@ -178,6 +178,7 @@ case "$1" in
         printf 'pause %s\n' "$2" >>"$REGISTRO"
         ;;
     unpause)
+        [ -e "$CASE_DIR/falha-unpause" ] && exit 1
         rm -f "$CASE_DIR/pausado.$2"
         printf 'unpause %s\n' "$2" >>"$REGISTRO"
         ;;
@@ -417,6 +418,16 @@ unpause $WF" 'o contêiner volta mesmo quando a cópia falha'
 assert_eq '' "$(copias wealthfolio_teste)" 'cópia falha não deixa arquivo final'
 assert_eq '' "$(find "$DEST_TMP" -name '*.tmp')" 'nem o .tmp'
 end_case 'cópia que falha despausa o contêiner e não grava nada'
+
+begin_case
+com_wealthfolio
+: >"$CASE_TMP/falha-unpause"
+roda
+[ "$EXIT_CODE" -ne 0 ] || fail 'falha de despausa precisa sair não zero'
+[ -e "$CASE_TMP/pausado.$WF" ] || fail 'simulador deveria manter contêiner pausado'
+assert_eq '' "$(copias wealthfolio_teste)" 'não publica cópia quando a despausa falha'
+grep -q 'não foi possível despausar' "$SAIDA" || fail 'deve informar a falha de despausa'
+end_case 'falha ao despausar é informada e não publica cópia'
 
 begin_case
 com_wealthfolio

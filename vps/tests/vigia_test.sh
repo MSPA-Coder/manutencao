@@ -22,7 +22,9 @@
 # O `alerta.sh` é um script falso que registra título e corpo.
 #
 # Uso:
-#   docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/vigia_test.sh
+#   docker run --rm --network none -v "${PWD}:/repo:ro" python:3.15-slim bash /repo/vps/tests/vigia_test.sh
+# O teste exige o date do GNU coreutils para datas ISO e cálculo do cron;
+# a imagem bash:5.2 usa BusyBox e não interpreta esses formatos.
 
 set -u
 

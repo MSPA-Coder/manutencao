@@ -311,10 +311,11 @@ despausar() {
     [ -n "$PAUSADO" ] || return 0
     if ! docker unpause "$PAUSADO" >/dev/null 2>&1; then
         log "  ERRO: não foi possível despausar $PAUSADO (docker unpause $PAUSADO)"
+        return 1
     fi
     PAUSADO=""
 }
-trap despausar EXIT
+trap 'despausar || true' EXIT
 
 # Absoluto, sem `..` e só com caracteres que o `docker cp` e a lista
 # `slug:contêiner:caminho` atravessam sem ambiguidade.
@@ -337,7 +338,10 @@ copiar_volume() {
     # mesmo arquivo, e é o hash que decide se houve alteração.
     timeout "$PAUSA_MAX_SEGUNDOS" docker cp "$container:$caminho" - 2>/dev/null \
         | gzip -n > "$tmp" || copiou=1
-    despausar
+    if ! despausar; then
+        rm -f "$tmp"
+        return 1
+    fi
 
     if [ "$copiou" -ne 0 ]; then
         rm -f "$tmp"
@@ -407,7 +411,7 @@ fazer_copia() {
         return $?
     fi
     if ! copiar_volume "$container" "$caminho" "$tmp"; then
-        destravar_app
+        [ -n "$PAUSADO" ] || destravar_app
         return 1
     fi
     destravar_app
@@ -887,6 +891,8 @@ ciclo() {
         log "== $slug (volume)"
         if ! fazer_copia "$slug" "${resto%%:*}" "${resto#*:}" "$forcar"; then
             falhas=$((falhas + 1))
+            # Encerra mantendo a trava até o trap tentar despausar novamente.
+            [ -z "$PAUSADO" ] || return 1
         fi
     done
 

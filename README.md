@@ -71,6 +71,10 @@ verifica.
 
 ## Deploy
 
+Se a despausa de um contêiner após copiar seu volume falhar, o backup acusa
+falha e tenta despausá-lo novamente ao encerrar, mantendo a trava da aplicação
+até essa tentativa. Uma falha persistente exige intervenção do operador.
+
 No VPS, a interface é:
 
 ```bash

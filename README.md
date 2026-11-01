@@ -139,6 +139,15 @@ só registra o estado depois que o endpoint público confirma saúde. Mesmo
 quando a reversão recupera o site, o deploy original termina com erro e o
 commit defeituoso permanece em `main` até ser corrigido.
 
+Os apps dão o mesmo nome à imagem do banco (`mspa-postgres:17-alpine`), e no
+image store do containerd a imagem que perde o nome é apagada mesmo com um
+contêiner rodando nela. Por isso, antes de montar, o deploy guarda a imagem de
+**todo** contêiner em execução no servidor como `mspa-deploy/<projeto>:<id12>`
+(projeto pelo rótulo do Compose), e não só as do app que está implantando:
+em 01/11/2026 o banco do CB, recriado fora do deploy por um `docker compose
+run` de manutenção, rodava uma imagem sem guarda, e a montagem do CRV a
+apagou. Cada app poda só as próprias guardas, no deploy dele.
+
 Se o image store perdeu a imagem de um banco ainda em execução, o deploy
 recusa sem tocar no serviço. Não retagueie uma imagem diferente como se fosse a
 antiga nem faça `docker commit` (pode incorporar estado/segredos): a

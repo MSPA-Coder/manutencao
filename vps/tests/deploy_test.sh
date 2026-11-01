@@ -142,6 +142,9 @@ if [ "${1:-}" = inspect ]; then
         # containerd: `.Image` é o digest da configuração, que não se resolve.
         printf 'sha256:%064d %s
 ' 1 "$FAKE_IMAGE_NAME"
+    elif [[ "$*" == *com.docker.compose.project* ]]; then
+        # Contêiner de OUTRO app em execução no servidor.
+        printf 'controle-renda-variavel\n'
     elif [[ "$*" == *com.docker.compose.service* ]]; then
         case "${!#}" in
             fake-ict) printf 'ict\n' ;;
@@ -555,6 +558,23 @@ assert_eq "app=sha256:$(printf '%064d' 0)
 postgres=sha256:$(printf '%064d' 0)" \
     "$(read_file "$CASE_TMP/state/controle-bancario.images")" 'estado guarda os IDs montados'
 end_case 'imagens montadas no servidor sobem por ID e ficam registradas'
+
+# 01/11/2026: o banco do CB recriado fora do deploy rodava uma imagem sem guarda,
+# e a montagem do CRV levou o nome compartilhado e a apagou. Antes de montar,
+# toda imagem em uso no servidor ganha a guarda do projeto do contêiner.
+begin_case
+SCENARIO=success
+ARTIFACT=1
+run_deploy
+assert_eq 0 "$EXIT_CODE" 'deploy com guarda de todo o servidor deve implantar'
+guarda_alheia='docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <mspa-deploy/controle-renda-variavel:000000000000>'
+assert_log "$guarda_alheia" 'guarda a imagem em uso de outro app com o nome dele'
+linha_guarda=$(grep -nF -- "$guarda_alheia" "$CALL_LOG" | head -1 | cut -d: -f1)
+linha_build=$(grep -nF -- '<compose.yaml> <build>' "$CALL_LOG" | head -1 | cut -d: -f1)
+[ -n "$linha_guarda" ] && [ -n "$linha_build" ] && [ "$linha_guarda" -lt "$linha_build" ] \
+    || fail 'a guarda de todo o servidor deve vir antes da montagem'
+assert_no_log 'docker <image> <rm> <mspa-deploy/controle-renda-variavel' 'a poda de um app não toca a guarda de outro'
+end_case 'antes de montar, toda imagem em uso no servidor fica guardada com o nome do seu projeto'
 
 begin_case
 SCENARIO=build_failure

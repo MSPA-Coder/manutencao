@@ -218,6 +218,31 @@ guardar_imagem() {
     docker image tag "$id" "$GUARDA/$DIR:${id:7:12}"
 }
 
+# A guarda acima só cobre os contêineres do próprio app, e só os que o
+# deploy subiu. Em 01/11/2026 o banco do CB tinha sido recriado fora do deploy
+# (um `docker compose run` de manutenção, que com `pull_policy: build` monta a
+# imagem e recria a dependência), com uma imagem que nenhuma guarda conhecia; o
+# deploy seguinte do CRV montou `mspa-postgres:17-alpine`, o nome saiu dela, o
+# image store a apagou e o deploy do CB abortou sem ponto de volta. Por isso,
+# antes de montar qualquer coisa, a imagem de TODO contêiner em execução no
+# servidor ganha a guarda do projeto dele (rótulo do Compose). É idempotente,
+# não troca contêiner e nunca derruba o deploy; a poda continua sendo a de cada
+# app, no deploy dele.
+guardar_imagens_em_uso() {
+    local container projeto id
+    for container in $(docker ps -q 2>/dev/null); do
+        projeto=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null) || continue
+        [[ "$projeto" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || continue
+        id=$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null) || continue
+        if [ "$(docker image inspect --format '{{.Id}}' "$id" 2>/dev/null)" != "$id" ]; then
+            id=$(id_pelo_manifesto "$container" "$(docker inspect --format '{{.Config.Image}}' "$container")") || continue
+        fi
+        [[ "$id" =~ ^sha256:[a-f0-9]{64}$ ]] || continue
+        docker image tag "$id" "$GUARDA/$projeto:${id:7:12}" >/dev/null 2>&1 || true
+    done
+    return 0
+}
+
 podar_guardas() {
     local manter tag container id
     manter=$(cut -d' ' -f1 "$IMAGENS_ANTERIORES" 2>/dev/null || true)
@@ -648,6 +673,7 @@ quebrado=$novo
 
 # Montar não troca contêiner nenhum: se falhar, basta devolver o código.
 echo "-- montando as imagens no servidor --"
+guardar_imagens_em_uso
 montou=1
 if [ "$IMAGEM_POR_ID" = 1 ]; then
     montar_imagens || montou=0

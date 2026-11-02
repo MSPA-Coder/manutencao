@@ -1,3 +1,13 @@
+# Regra geral da frota: o repositorio guarda LF e o checkout entrega LF,
+# independentemente de `core.autocrlf` na maquina. As regras abaixo vieram
+# antes dela, uma por caso que quebrou; continuam valendo e documentam o porque.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
 # Os arquivos de `vps/` rodam em Linux. Sem isto, o `core.autocrlf=true` desta
 # máquina Windows entregaria o script com CRLF no checkout, e o `\r` no fim da
 # linha do shebang quebra o bash com um erro que não parece ter relação nenhuma

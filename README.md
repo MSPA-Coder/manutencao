@@ -22,6 +22,11 @@ rodada.
 contrato `patrimonio/v4` entre o CB, o CRV e o Wealthfolio, com a lista das
 cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
 
+[`compartilhados/`](compartilhados/) junta as cópias canônicas dos arquivos que
+são iguais em vários repositórios (estes dois e mais três dos apps) e o
+`sincronizar.py`, que confere e copia. Mude a canônica e rode
+`python compartilhados/sincronizar.py --aplicar`, em vez de editar cada cópia.
+
 [`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md) fixa a regra de versão de cada
 aplicativo (SemVer por projeto, desde a primeira versão) e guarda a tabela de
 releases e a correspondência com as tags antigas.

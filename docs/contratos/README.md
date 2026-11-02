@@ -25,8 +25,9 @@ GitHub não deve travar um PR nem o portão do deploy.
 ### Como mudar o contrato
 
 1. Mude **este** arquivo.
-2. Copie para os três repositórios acima, no mesmo dia, cada um em um PR com a
-   mudança de código que a motivou.
+2. `python compartilhados/sincronizar.py --aplicar` copia para os três
+   repositórios acima; commite cada cópia junto com a mudança de código que a
+   motivou.
 3. Rode `python3 docs/contratos/verificar.py` aqui: confere JSON, LF, `$ref`s e as
    seis definições.
 

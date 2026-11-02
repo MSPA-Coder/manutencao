@@ -115,6 +115,16 @@ EOF
 printf 'docker' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 if [ "${1:-}" = builder ]; then exit 0; fi
 if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
+    ultimo=${!#}
+    if [[ "$ultimo" == mspa-recebida/* ]]; then
+        # Rótulo de revisão da imagem enviada pela máquina.
+        case "$RUN_VARIANT" in
+            recebida) printf '%s\n' "${ultimo##*:}" ;;
+            recebida_errada) printf '%s\n' "$OLD_SHA" ;;
+            *) exit 1 ;;
+        esac
+        exit 0
+    fi
     if [ "$RUN_VARIANT" = missing_previous ]; then exit 1; fi
     if [[ "$*" == *'--platform linux/arm64'* ]]; then
         # Manifesto da tag na plataforma do contêiner.
@@ -191,6 +201,8 @@ case " $* " in
             *) printf 'postgres\ndb-provision\nmigrate\nweb\n' ;;
         esac
         exit 0 ;;
+    *' config --images wealthfolio '*)
+        printf 'wealthfolio-teste:local\n'; exit 0 ;;
     *' config --images postgres '*|*' config --images db '*)
         printf 'mspa-postgres:17-alpine\n'; exit 0 ;;
     *' config --images '*)
@@ -445,6 +457,31 @@ assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" '
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
 assert_no_log 'api.github.com' 'Wealthfolio também não consulta a CI'
 end_case 'Wealthfolio implanta montando no servidor'
+
+begin_case
+SCENARIO=wealthfolio_success
+RUN_VARIANT=recebida
+add_patrimonio_override wealthfolio-teste
+run_deploy wealthfolio
+assert_eq 0 "$EXIT_CODE" 'deploy com imagem recebida deve sair zero'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'registra o SHA novo'
+assert_log "docker <image> <tag> <mspa-recebida/wealthfolio-teste:$NEW_SHA> <wealthfolio-teste:local>" 'a imagem recebida ganha o nome do Compose'
+assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--no-build> <--pull> <never>' 'sobe sem montar'
+assert_no_log '<up> <-d> <--build>' 'não monta no servidor'
+assert_no_log '<build>' 'nenhum build no servidor'
+assert_output 'Imagem recebida da máquina' 'a saída diz de onde veio a imagem'
+end_case 'Wealthfolio sobe a imagem recebida do commit sem montar no servidor'
+
+begin_case
+SCENARIO=wealthfolio_success
+RUN_VARIANT=recebida_errada
+add_patrimonio_override wealthfolio-teste
+run_deploy wealthfolio
+assert_eq 0 "$EXIT_CODE" 'imagem recebida de outro commit não bloqueia o deploy'
+assert_no_log "<image> <tag> <mspa-recebida/" 'imagem de outro commit não é usada'
+assert_log '<up> <-d> <--build>' 'monta no servidor como antes'
+assert_output 'montando no servidor' 'a saída explica a recusa'
+end_case 'imagem recebida com rótulo de outro commit é ignorada e o servidor monta'
 
 begin_case
 SCENARIO=success

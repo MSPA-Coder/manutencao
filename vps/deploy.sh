@@ -14,7 +14,9 @@
 # POR QUE NÃO CONSULTA A CI: desde 20/10/2026 a validação completa é feita na
 # máquina do usuário antes do commit, e o deploy só roda quando ele manda. A
 # CI do GitHub ficou como aviso. As imagens são montadas aqui, a partir do
-# código do main, sem esperar nem baixar nada do GitHub (`montar_imagens`).
+# código do main, sem esperar nem baixar nada do GitHub (`montar_imagens`). A
+# exceção é a imagem que a máquina já montou e enviou para o commit
+# (`usar_imagem_recebida`), hoje usada pelo Wealthfolio.
 #
 # POR QUE NADA MUDA SOZINHO: não há timer que implante ou remonte apps. Um
 # deploy comum monta sem `--pull`, então as imagens-base continuam as que já
@@ -91,6 +93,7 @@ projeto_info() {
         wealthfolio)
             DIR=wealthfolio-teste;      ENVF=.env;        PORTA=18088
             DOMINIO=wealthfolio-mspa.duckdns.org
+            APP_SERVICES=(wealthfolio)
             PADRAO_SAUDE='^ok$' ;;
         viva-passo)
             DIR=viva-passo;             DOMINIO=viva-mspa.duckdns.org
@@ -202,6 +205,44 @@ montar_imagens() {
     POSTGRES_IMAGE=$(docker image inspect --format '{{.Id}}' "$imagem_banco") || return 1
     guardar_imagem "$APP_IMAGE" && guardar_imagem "$POSTGRES_IMAGE" || return 1
     echo "Imagens montadas: $imagem_app ($APP_IMAGE) / $imagem_banco ($POSTGRES_IMAGE)."
+}
+
+# Imagem recebida pronta. O Wealthfolio compila Rust: aqui, com 2 CPUs ARM, a
+# montagem levava 35 min (01/11/2026), repetindo o que a máquina do usuário já
+# tinha montado e testado. Agora a máquina monta a imagem do commit para
+# linux/arm64 e a envia (`scripts/enviar-imagem.sh` do WealthfolioTeste), que
+# chega como `mspa-recebida/<dir>:<sha completo>` e com o rótulo
+# `org.opencontainers.image.revision=<sha>`. Se a do commit candidato estiver
+# aqui e o rótulo conferir, ela ganha o nome que o Compose usa e sobe sem
+# montar. Sem ela, monta no servidor como antes: nunca bloqueia um deploy.
+RECEBIDA=mspa-recebida
+usar_imagem_recebida() {
+    local ref="$RECEBIDA/$DIR:$novo" revisao imagem_app
+    if ! revisao=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ref" 2>/dev/null); then
+        echo "Sem imagem recebida para ${novo:0:7}; montando no servidor (demora)."
+        return 1
+    fi
+    if [ "$revisao" != "$novo" ]; then
+        echo "A imagem $ref diz ser de '${revisao:0:7}', não de ${novo:0:7}; montando no servidor." >&2
+        return 1
+    fi
+    imagem_app=$(compose config --images "${APP_SERVICES[0]}" | sort -u) || return 1
+    if [ "$(wc -l <<<"$imagem_app")" != 1 ]; then
+        echo "Não foi possível identificar a imagem de ${APP_SERVICES[0]}; montando no servidor." >&2
+        return 1
+    fi
+    docker image tag "$ref" "$imagem_app" || return 1
+    echo "Imagem recebida da máquina: $ref -> $imagem_app (sem montar no servidor)."
+}
+
+# A recebida do commit no ar fica até o próximo deploy; as outras saem. A imagem
+# em uso continua protegida pela guarda e pelo nome do Compose.
+podar_recebidas() {
+    local tag
+    docker image ls --format '{{.Repository}}:{{.Tag}}' "$RECEBIDA/$DIR" 2>/dev/null | while read -r tag; do
+        [ "$tag" = "$RECEBIDA/$DIR:$novo" ] && continue
+        docker image rm "$tag" >/dev/null 2>&1 || true
+    done
 }
 
 # Os quatro apps dão o mesmo nome à imagem do banco (`mspa-postgres:17-alpine`).
@@ -675,10 +716,13 @@ quebrado=$novo
 echo "-- montando as imagens no servidor --"
 guardar_imagens_em_uso
 montou=1
+recebida=0
 if [ "$IMAGEM_POR_ID" = 1 ]; then
     montar_imagens || montou=0
 elif [ "$REFRESH" = 1 ]; then
     compose build --pull --no-cache || montou=0
+elif usar_imagem_recebida; then
+    recebida=1
 fi
 if [ "$montou" != 1 ]; then
     echo "ABORTADO: a montagem das imagens falhou; nenhum contêiner foi trocado." >&2
@@ -697,6 +741,8 @@ fi
 echo "-- subindo a versão nova --"
 if [ "$IMAGEM_POR_ID" = 1 ]; then
     DEPLOY_OVERRIDE=compose.release.yaml
+    SUBIDA=(up -d --no-build --pull never)
+elif [ "$recebida" = 1 ]; then
     SUBIDA=(up -d --no-build --pull never)
 else
     SUBIDA=(up -d --build)
@@ -725,6 +771,7 @@ commit confirmado em $ESTADO_DIR. O código não foi revertido."
         exit 1
     fi
     podar_guardas || true
+    podar_recebidas || true
     rm -f -- "$IMAGENS_ANTERIORES"
 
     # Poda o cache por tamanho, pois deploys frequentes podem manter todas as

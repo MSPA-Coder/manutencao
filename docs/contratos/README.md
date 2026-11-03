@@ -20,7 +20,7 @@ byte a byte, e a suíte dele a aplica:
 
 O CI semanal de cada um baixa esta cópia e confere que a dele é idêntica. A
 rodada é só semanal de propósito: depende da rede, e uma indisponibilidade do
-GitHub não deve travar um PR nem o portão do deploy.
+GitHub não deve deixar a CI vermelha a cada push.
 
 ### Como mudar o contrato
 

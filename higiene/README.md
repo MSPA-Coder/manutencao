@@ -41,17 +41,40 @@ global do Docker como substituto dessa conferência.
   subpastas precisam cobrir essa profundidade, por exemplo `**/__pycache__`.
   Confira também que fontes, testes e migrações necessários ao Dockerfile
   continuam disponíveis.
-- O Dropbox não interpreta `.dropboxignore` dentro dos projetos. A configuração
-  nativa atual é `rules.dropboxignore` na raiz da conta Dropbox, por dispositivo.
-  A raiz atual dos projetos está fora da pasta Dropbox configurada; não é
-  necessário alterar a sincronização para este workspace.
+- O Dropbox não lê arquivo de ignore dentro dos projetos. A proteção
+  preventiva usa duas camadas, descritas abaixo.
 
-Se o workspace voltar a uma pasta sincronizada, confirme primeiro a localização
-na configuração local do Dropbox. Só então configure regras na raiz daquela
-conta, limitadas à árvore de desenvolvimento. Não exclua a pasta de projetos
-inteira, nem use sincronização seletiva para preservar arquivos exclusivamente
-locais. As regras novas não removem conteúdo já sincronizado. A sintaxe e esses
-limites estão na [documentação oficial do Dropbox](https://help.dropbox.com/sync/how-to-prevent-files-from-syncing).
+## Dropbox: proteção preventiva em duas camadas
+
+O workspace fica fora do Dropbox, mas qualquer projeto pode voltar para lá. Duas
+camadas impedem que segredos, dados e ambientes subam junto. Ambas foram
+conferidas em 03/11/2026: o item ignorado fica sem o atributo `ReparsePoint`
+(0x400), que o Dropbox põe em tudo o que sincroniza.
+
+1. **Marca por item (`.dropignore` + `dropignore.py`).** Cada pasta do workspace
+   tem um `.dropignore` com a sintaxe do `.gitignore`. A ferramenta grava em cada
+   item que casa o fluxo NTFS `com.dropbox.ignored`, e o Windows leva essa marca
+   junto quando a pasta é movida dentro do mesmo disco. Pasta marcada protege
+   tudo o que nascer nela; arquivo solto perde a marca se for apagado e
+   recriado, então rode `--aplicar` de novo antes de mover.
+
+   ```powershell
+   py -3 .\higiene\dropignore.py C:\Dev\VSCodeProjects            # confere; sai 1 se faltar marca
+   py -3 .\higiene\dropignore.py C:\Dev\VSCodeProjects --aplicar  # grava o que falta
+   ```
+
+2. **Regras nativas (`rules.dropboxignore` na raiz do Dropbox).** Valem para
+   conteúdo novo, inclusive segredo criado depois dentro de pasta sincronizada.
+   O arquivo não sincroniza, então cada computador precisa da sua cópia. As
+   regras ficam restritas a `/Programacao/VSCodeProjects/` e
+   `/Programacao/PycharmProjects/`: um `*.dump` global cortaria a cópia que o
+   BackupRestore grava em `Programacao/Backups`.
+
+Limites do Dropbox: regra nova não remove o que já subiu; renomear um arquivo
+sincronizado para um nome que casa com a regra apaga a cópia em dropbox.com; e
+negação com `**` no meio não funciona, então `.env.example` também fica de fora
+(ele já está no Git). Não use sincronização seletiva para manter arquivos só na
+máquina. Sintaxe e limites na [documentação oficial do Dropbox](https://help.dropbox.com/sync/how-to-prevent-files-from-syncing).
 
 ## Migrações e scripts
 

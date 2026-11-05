@@ -72,11 +72,6 @@ outra. Se alguma conferência operacional falhar apesar de `nginx -t` passar,
 use o caminho de backup exibido pelo próprio instalador para restaurar a
 configuração anterior.
 
-No VPS2, use `instalar-vps2-viva-passo.sh`. Ele monta uma origem temporária
-somente com o vhost Viva Passo e as três peças compartilhadas, depois chama o
-mesmo instalador transacional. Assim o VPS2 não recebe vhosts de outras
-aplicações.
-
 No VPS1, use `instalar-vps1-villa-rica.sh`. Ele entrega os cinco aplicativos
 já ativos, o Viva Passo e o Villa Rica, preservando a seleção explícita de
 vhosts desta máquina.

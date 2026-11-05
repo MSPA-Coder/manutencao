@@ -91,7 +91,28 @@ class ColetorTests(unittest.TestCase):
         self.assertEqual(list(bot.SECOES), list(coletor.CATEGORIAS))
 
 
+DOIS_SERVIDORES = (
+    ("VPS1", "instance-20260818-1632", "100.94.82.91"),
+    ("VPS2", "instance-teste", "192.0.2.2"),
+)
+
+
 class MenuUnificadoTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # O VPS2 não existe mais (05/11/2026). A lógica de vários servidores
+        # continua coberta com uma lista de teste.
+        self.real = bot.SERVIDORES
+        bot.SERVIDORES = DOIS_SERVIDORES
+        self.addCleanup(setattr, bot, "SERVIDORES", self.real)
+
+    def test_a_lista_real_tem_so_o_vps1(self) -> None:
+        bot.SERVIDORES = self.real
+        self.assertEqual([s[0] for s in bot.SERVIDORES], ["VPS1"])
+        texto = bot.montar_texto("containers", coletar=lambda nome, _: f"estado do {nome}")
+        self.assertIn("━━ VPS1 ━━", texto)
+        self.assertNotIn("VPS2", texto)
+        self.assertNotIn("VPS2", bot.TEXTO_MENU)
+
     def test_cada_secao_mostra_os_dois_servidores_em_ordem(self) -> None:
         texto = bot.montar_texto("containers", coletar=lambda nome, _: f"estado do {nome}")
         self.assertTrue(texto.startswith("🐳 Containers"))
@@ -116,7 +137,7 @@ class MenuUnificadoTests(unittest.TestCase):
         finally:
             bot.coletar_local, bot.coletar_remoto = original_local, original_remoto
         self.assertIn(("local", "vps"), chamadas)
-        self.assertIn(("remoto", "100.86.176.64"), chamadas)
+        self.assertIn(("remoto", "192.0.2.2"), chamadas)
         self.assertEqual(len(chamadas), 2)
 
     def test_sem_a_chave_a_secao_remota_diz_por_que(self) -> None:

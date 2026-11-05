@@ -4,15 +4,15 @@
     status-coletor.py <categoria>     imprime a seção em texto
     status-coletor.py --categorias    lista as categorias aceitas
 
-Roda nos dois VPS. No VPS1 o bot o chama direto; no VPS2 ele é o único
+No VPS1 o bot o chama direto. Em outro servidor, se houver, ele é o único
 comando que a chave do bot pode executar (`command=` no `authorized_keys`,
 como o `backup-agent.sh`), e então a categoria chega em
 `SSH_ORIGINAL_COMMAND`. Só lê: nenhuma categoria muda nada na máquina.
 
 POR QUE SAIU DO BOT (25/10/2026). O bot vivia solto no VPS1, fora do Git, com
 a lista de domínios escrita à mão (sem o Wealthfolio). Para o menu mostrar
-também o VPS2, a coleta virou este programa à parte, o mesmo nas duas
-máquinas, e os domínios passaram a vir dos vhosts habilitados do nginx, como
+também um segundo servidor (o VPS2, desativado em 05/11/2026), a coleta
+virou este programa à parte, o mesmo em qualquer máquina, e os domínios passaram a vir dos vhosts habilitados do nginx, como
 no `vigia.sh`.
 """
 

@@ -91,7 +91,7 @@ EOF
 #!/usr/bin/env bash
 printf 'systemctl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 # Serviço contínuo parado, a menos que o caso diga que está rodando: é o
-# estado do bot de status no VPS2 (ver `SERVICO_DE` no instalador).
+# estado do bot de status numa máquina que não o roda (ver `SERVICO_DE` no instalador).
 if [ "${1:-}" = is-active ]; then
     [ -e "$(dirname "$CALL_LOG")/ativo.${!#}" ] && exit 0
     exit 3
@@ -183,7 +183,7 @@ assert_log 'mv <-f> <-->' 'publicação deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/scripts" "$CASE_TMP/systemd" -name '.instalar.*' -print)" ] || fail 'rename atômico não deve deixar temporário'
 grep -q '^OK: ' "$CASE_TMP/output" || fail 'deve confirmar a conferência final'
 assert_no_log 'systemctl <restart> <telegram-bot-status.service>' \
-    'o bot parado (o caso do VPS2) não pode ser ligado pelo instalador'
+    'o bot parado não pode ser ligado pelo instalador'
 end_case 'instalação limpa entrega tudo, com modo e systemd recarregado'
 
 # --------------------------------------------------------------------------

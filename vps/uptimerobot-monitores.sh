@@ -149,7 +149,7 @@ fi
 # --------------------------------------------------------------------------
 # A palavra que prova saúde depende de quem responde o `/health`: os
 # aplicativos Flask/Django devolvem JSON e a palavra é `"ok"` com aspas (ver
-# `PALAVRA`); o Wealthfolio e os sites estáticos do VPS2 devolvem só `ok`.
+# `PALAVRA`); o Wealthfolio e os sites estáticos devolvem só `ok`.
 # Com `"ok"` para todos, esses monitores nasciam acusando queda (25/10/2026).
 # A resposta de agora decide; o que não for nenhuma das duas não vira monitor.
 # O `ok` sem aspas não casa com as páginas de erro do nginx ("Bad Gateway",

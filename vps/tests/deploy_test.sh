@@ -64,6 +64,7 @@ make_fakes() {
         "$CASE_TMP/apps/mega-sena" \
         "$CASE_TMP/apps/wealthfolio-teste" \
         "$CASE_TMP/apps/viva-passo" \
+        "$CASE_TMP/apps/villa-rica" \
         "$CASE_TMP/state"
     : >"$CASE_TMP/calls.log"
     printf '%s\n' "$OLD_SHA" >"$CASE_TMP/head"
@@ -342,6 +343,14 @@ assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'site estático sem saúde 
 assert_log 'git <reset> <--hard> <1111111111111111111111111111111111111111>' 'site estático sem saúde deve executar rollback'
 assert_no_log 'docker' 'rollback estático não deve tocar Docker'
 end_case 'site estático reverte checkout quando a sonda pública falha'
+
+begin_case
+SCENARIO=success
+run_deploy villa-rica
+assert_eq 0 "$EXIT_CODE" 'villa-rica (site estático) saudável deve sair zero'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/villa-rica.commit")" 'villa-rica deve registrar SHA novo'
+assert_no_log 'docker' 'villa-rica não deve montar nem subir contêiner'
+end_case 'villa-rica é implantado como site estático, sem Docker'
 
 begin_case
 SCENARIO=success

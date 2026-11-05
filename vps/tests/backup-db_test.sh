@@ -299,7 +299,7 @@ roda --estado
 assert_saida 'controle_renda_variavel' 'o sufixo -db-1 é descoberto igual ao -postgres-1'
 end_case 'o slug vem do projeto do Compose, não do nome do contêiner'
 
-# Até 25/10/2026 a descoberta vazia era sempre erro. O VPS2 só serve sites e
+# Até 25/10/2026 a descoberta vazia era sempre erro. Uma máquina só de sites
 # nunca teve banco: ali o vazio é o normal, e o que não pode passar calado é o
 # Docker fora do ar (o banco que existia e sumiu é acusado à parte, pelo
 # histórico em disco).

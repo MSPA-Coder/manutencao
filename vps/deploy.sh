@@ -98,8 +98,11 @@ projeto_info() {
         viva-passo)
             DIR=viva-passo;             DOMINIO=viva-mspa.duckdns.org
             TIPO=static ;;
+        villa-rica)
+            DIR=villa-rica;             DOMINIO=villa-rica.duckdns.org
+            TIPO=static ;;
         *)  echo "Projeto desconhecido: $1" >&2
-            echo "Use: bancario | conforto | megasena | renda | wealthfolio | viva-passo" >&2
+            echo "Use: bancario | conforto | megasena | renda | wealthfolio | viva-passo | villa-rica" >&2
             return 1 ;;
     esac
 }
@@ -600,7 +603,7 @@ Diagnóstico inicial:
 
 status_geral() {
     printf '%-26s %-10s %-10s %-8s %-6s %s\n' PROJETO VPS GITHUB LIMPO HTTP SAUDE
-    for p in bancario conforto megasena renda wealthfolio viva-passo; do
+    for p in bancario conforto megasena renda wealthfolio viva-passo villa-rica; do
         projeto_info "$p"
         # Um projeto ainda não clonado no servidor não deve derrubar o --status
         # dos demais.
@@ -618,7 +621,7 @@ status_geral() {
 
 if [ "${1:-}" = "--status" ]; then status_geral; exit 0; fi
 if [ $# -lt 1 ]; then
-    echo "uso: $0 <bancario|conforto|megasena|renda|wealthfolio> [--refresh]" >&2
+    echo "uso: $0 <bancario|conforto|megasena|renda|wealthfolio|viva-passo|villa-rica> [--refresh]" >&2
     echo "     $0 --status" >&2
     exit 1
 fi

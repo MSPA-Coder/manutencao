@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Bot de status dos VPS via Telegram (long polling, só stdlib).
+"""Bot de status do VPS via Telegram (long polling, só stdlib).
 
 Responde a /status com um menu de botões inline. Só reage a mensagens do
 TELEGRAM_CHAT_ID configurado em .secrets/telegram.env; qualquer outro chat é
 ignorado em silêncio, então achar o bot publicamente não basta para usá-lo.
 
-MENU UNIFICADO (25/10/2026). Cada botão responde com uma seção por servidor:
-a desta máquina vem do `status-coletor.py` local e a do outro VPS vem do
-mesmo coletor, por SSH pelo Tailscale, com uma chave presa por `command=` ao
-coletor (só lê, como a chave do backup). O bot roda numa máquina só — hoje o
-VPS1 —, porque o Telegram entrega os cliques a um único `getUpdates` por bot:
-dois processos com o mesmo token brigam (HTTP 409) e o menu para de
-responder. Os alertas (`alerta.sh`) não têm esse limite e saem dos dois VPS.
+MENU. Cada botão responde com uma seção por servidor da lista `SERVIDORES`:
+a da máquina onde o bot roda vem do `status-coletor.py` local, e a de outro
+servidor, se houver, vem do mesmo coletor por SSH pelo Tailscale, com uma
+chave presa por `command=` ao coletor (só lê, como a chave do backup). Desde
+05/11/2026 o VPS2 não existe mais e a lista tem só o VPS1; o caminho remoto
+fica para um servidor futuro. O bot roda numa máquina só, porque o Telegram
+entrega os cliques a um único `getUpdates` por bot: dois processos com o mesmo
+token brigam (HTTP 409) e o menu para de responder.
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ HOSTS_CONHECIDOS = Path(os.environ.get("STATUS_KNOWN_HOSTS", "/home/ubuntu/.ssh/
 # endereço no Tailscale. O mesmo mapa de nomes do `alerta.sh`.
 SERVIDORES = (
     ("VPS1", "instance-20260818-1632", "100.94.82.91"),
-    ("VPS2", "instance-20260913-1619", "100.86.176.64"),
 )
 
 SECOES = {
@@ -140,7 +140,7 @@ def teclado_voltar() -> dict:
     return {"inline_keyboard": [[{"text": "⬅️ Menu", "callback_data": "menu"}]]}
 
 
-TEXTO_MENU = "Status dos VPS (VPS1 e VPS2) — escolha uma categoria:"
+TEXTO_MENU = "Status do VPS — escolha uma categoria:"
 
 
 class Bot:

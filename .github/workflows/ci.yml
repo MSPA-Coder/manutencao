@@ -141,7 +141,7 @@ jobs:
         run: bash vps/tests/autocura_test.sh
 
       # O menu /status do Telegram: o coletor só aceita as categorias da lista
-      # (é o comando preso à chave que o VPS1 usa para ler o VPS2), os domínios
+      # (é o comando preso à chave que o VPS1 usaria para ler outro servidor), os domínios
       # vêm do nginx e cada resposta traz um bloco por servidor.
       - name: Testar o bot de status
         run: python3 -m unittest vps/tests/status_test.py

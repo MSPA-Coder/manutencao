@@ -444,7 +444,7 @@ fazer_copia() {
 # POR QUE EXISTE. O backup cobria só o ESTADO das aplicações (bancos e volumes
 # rotulados), porque o código delas é espelho do `main` no GitHub. Mas os
 # servidores passaram a hospedar sites estáticos que não estão em Git nenhum
-# (o villa-rica, no VPS2, só existia no servidor), e a reconstrução de uma
+# (o villa-rica, que até 05/11/2026 só existia num servidor sem Git), e a reconstrução de uma
 # máquina perdida dependia de configuração que também só existia nela: vhosts
 # do nginx, unidades do systemd, regras do firewall.
 #
@@ -815,7 +815,7 @@ ciclo() {
     # Conta como falha e segue, em vez de encerrar: os volumes, mais abaixo,
     # não dependem de Postgres nenhum estar de pé.
     #
-    # Desde 25/10/2026 a máquina sem banco nenhum é normal (o VPS2 só serve
+    # Desde 25/10/2026 a máquina sem banco nenhum é normal (uma máquina só de
     # sites), então o barulho ficou com quem o merece: o Docker que não
     # responde. Banco que existia e não subiu continua acusado logo abaixo,
     # como desaparecido, porque deixou histórico em disco.

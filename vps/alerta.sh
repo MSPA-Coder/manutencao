@@ -55,7 +55,6 @@ fi
 nome_do_servidor() {
     case "$1" in
         instance-20260818-1632) echo VPS1 ;;
-        instance-20260913-1619) echo VPS2 ;;
         *)                      echo "$1" ;;
     esac
 }

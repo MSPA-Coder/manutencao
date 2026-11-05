@@ -1,0 +1,47 @@
+# Painel estático Villa Rica. O checkout privado contém exclusivamente os
+# arquivos públicos selecionados; dados de trabalho não são publicados.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name villa-rica.duckdns.org;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name villa-rica.duckdns.org;
+
+    ssl_certificate /etc/letsencrypt/live/villa-rica.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/villa-rica.duckdns.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    root /home/ubuntu/apps/villa-rica;
+    index contas-villa-rica-2026.html;
+
+    # A sonda permanece pública; o conteúdo financeiro exige autenticação.
+    location = /health {
+        default_type application/json;
+        return 200 '{"status":"ok"}\n';
+    }
+
+    location ~ /\. {
+        return 404;
+    }
+
+    location / {
+        auth_basic "Villa Rica";
+        auth_basic_user_file /etc/nginx/segredos/villa-rica.htpasswd;
+        try_files $uri $uri/ =404;
+    }
+}

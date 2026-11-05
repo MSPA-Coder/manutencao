@@ -50,6 +50,7 @@ mkdir -p /etc/nginx/segredos
 # contrato do vhost, basta existir um arquivo legível; nenhuma credencial entra
 # neste repositório ou nesta suíte.
 : >/etc/nginx/segredos/viva-passo.htpasswd
+: >/etc/nginx/segredos/villa-rica.htpasswd
 
 # Versão mínima do arquivo do certbot: só o suficiente para o `include` do
 # vhost resolver. As opções reais de TLS são responsabilidade do certbot no
@@ -246,3 +247,22 @@ if [ "$obtido" != 401 ]; then
     exit 1
 fi
 echo "# Viva Passo: /health estático responde 200 e o conteúdo pede credencial"
+
+# O Villa Rica segue o mesmo contrato de isolamento do conteúdo: a sonda é
+# pública para a operação, mas as páginas financeiras exigem credencial.
+villa_rica="$ANDAIME/sites/villa-rica.conf"
+[ -f "$villa_rica" ] || { echo "FALHOU: vhost villa-rica ausente." >&2; exit 1; }
+grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/apps/villa-rica;' "$villa_rica" \
+    || { echo "FALHOU: villa-rica não aponta para o checkout declarado." >&2; exit 1; }
+dominio_villa_rica=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;[:space:]]*\).*/\1/p' "$villa_rica" | head -n 1)
+obtido=$(codigo "$dominio_villa_rica" /health)
+if [ "$obtido" != 200 ]; then
+    echo "FALHOU: $dominio_villa_rica/health respondeu ${obtido:-nada}; esperado 200." >&2
+    exit 1
+fi
+obtido=$(codigo "$dominio_villa_rica" /)
+if [ "$obtido" != 401 ]; then
+    echo "FALHOU: $dominio_villa_rica/ respondeu ${obtido:-nada}; esperado 401 sem credencial." >&2
+    exit 1
+fi
+echo "# Villa Rica: /health estático responde 200 e o conteúdo pede credencial"

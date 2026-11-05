@@ -77,5 +77,10 @@ somente com o vhost Viva Passo e as três peças compartilhadas, depois chama o
 mesmo instalador transacional. Assim o VPS2 não recebe vhosts de outras
 aplicações.
 
+No VPS1, enquanto o DNS do Viva Passo ainda não aponta para ele, use
+`instalar-vps1-villa-rica.sh`. Ele entrega os cinco aplicativos já ativos e o
+Villa Rica, mas não habilita um vhost TLS do Viva Passo antes de o certificado
+correspondente poder ser emitido.
+
 Não inclua neste repositório credenciais, chaves privadas ou caminhos pessoais
 para arquivos de autenticação.

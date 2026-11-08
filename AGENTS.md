@@ -63,7 +63,9 @@ em `vps/tests/`; nunca teste contra o VPS durante desenvolvimento.
   schema precisa de compatibilidade ou de um procedimento explícito de retorno.
 - Não crie backup local por rotina de alteração. O backup diário de produção é
   a recuperação normal; exija uma validação adicional apenas para migração,
-  transformação persistente ou alteração de backup/criptografia.
+  transformação persistente ou alteração de backup/criptografia. Essa validação
+  usa `~/backup-db.sh --forcar`: dump feito à mão não tem `.sha256` e reprova a
+  sincronização do BackupRestore.
 - Segredos, chaves privadas e conteúdo de backups não entram no Git nem nos
   logs de testes.
 

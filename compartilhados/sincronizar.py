@@ -51,6 +51,15 @@ COPIAS: dict[str, list[tuple[str, str]]] = {
         ("ControleRendaVariavel", "tests/contrato/patrimonio-v4.schema.json"),
         ("WealthfolioTeste", "addons/controle-patrimonial-sync/sim/contrato/patrimonio-v4.schema.json"),
     ],
+    "docs/contratos/crv-fechamento-1.schema.json": [
+        ("ControleBancario", "tests/contrato/crv-fechamento-1.schema.json"),
+        ("ControleRendaVariavel", "tests/contrato/crv-fechamento-1.schema.json"),
+    ],
+    # O que o CB publica ao CRV, gerado pela suíte do CB e lido pela do CRV.
+    "docs/contratos/exemplos/cb-snapshot-vinculo.json": [
+        ("ControleBancario", "tests/contrato/exemplo-cb-snapshot-vinculo.json"),
+        ("ControleRendaVariavel", "tests/contrato/exemplo-cb-snapshot-vinculo.json"),
+    ],
     "compartilhados/Dockerfile.browser": [(r, "Dockerfile.browser") for r in APPS],
     "compartilhados/provision-db-runtime.sh": [(r, "scripts/provision-db-runtime.sh") for r in APPS],
     "compartilhados/gerar_relatorio.py": [(r, "docs/security-audit/gerar_relatorio.py") for r in APPS],

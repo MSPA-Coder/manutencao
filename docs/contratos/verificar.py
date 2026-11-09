@@ -1,4 +1,4 @@
-"""Confere a cópia canônica do schema do contrato patrimonio/v4, só com a biblioteca padrão.
+"""Confere as cópias canônicas dos contratos (os dois schemas e o exemplo), só com a biblioteca padrão.
 
     python3 docs/contratos/verificar.py
 
@@ -40,32 +40,43 @@ def refs(no):
             yield from refs(item)
 
 
-def main() -> int:
-    bruto = CAMINHO.read_bytes()
+def conferir(caminho: Path, entradas: tuple[str, ...] | None) -> int:
+    """`entradas` são as definições exigidas de um schema; `None` é um exemplo, só JSON em LF."""
+    bruto = caminho.read_bytes()
     problemas: list[str] = []
     if b"\r" in bruto:
         problemas.append("o arquivo tem CR: precisa ser LF")
     if not bruto.endswith(b"\n"):
         problemas.append("falta a quebra de linha no fim do arquivo")
     try:
-        schema = json.loads(bruto.decode("utf-8"))
+        documento = json.loads(bruto.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as erro:
-        print(f"{CAMINHO.name}: não é JSON válido: {erro}", file=sys.stderr)
+        print(f"{caminho.name}: não é JSON válido: {erro}", file=sys.stderr)
         return 1
-    definicoes = schema.get("$defs", {})
-    for entrada in ENTRADAS:
-        if entrada not in definicoes:
-            problemas.append(f"falta a definição {entrada}")
-    for ref in sorted(set(refs(schema))):
-        if not ref.startswith("#/$defs/"):
-            problemas.append(f"$ref fora do documento: {ref}")
-        elif ref.removeprefix("#/$defs/") not in definicoes:
-            problemas.append(f"$ref sem definição: {ref}")
+    definicoes = documento.get("$defs", {}) if entradas is not None else {}
+    if entradas is not None:
+        for entrada in entradas:
+            if entrada not in definicoes:
+                problemas.append(f"falta a definição {entrada}")
+        for ref in sorted(set(refs(documento))):
+            if not ref.startswith("#/$defs/"):
+                problemas.append(f"$ref fora do documento: {ref}")
+            elif ref.removeprefix("#/$defs/") not in definicoes:
+                problemas.append(f"$ref sem definição: {ref}")
     for problema in problemas:
-        print(f"{CAMINHO.name}: {problema}", file=sys.stderr)
+        print(f"{caminho.name}: {problema}", file=sys.stderr)
     if not problemas:
-        print(f"{CAMINHO.name}: ok ({len(definicoes)} definições)")
+        print(f"{caminho.name}: ok" + (f" ({len(definicoes)} definições)" if entradas is not None else ""))
     return 1 if problemas else 0
+
+
+def main() -> int:
+    pasta = CAMINHO.parent
+    return max(
+        conferir(CAMINHO, ENTRADAS),
+        conferir(pasta / "crv-fechamento-1.schema.json", ("resposta", "item", "estado", "etapa")),
+        conferir(pasta / "exemplos" / "cb-snapshot-vinculo.json", None),
+    )
 
 
 if __name__ == "__main__":

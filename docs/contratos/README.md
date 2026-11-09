@@ -44,3 +44,32 @@ de quem fez a mudança — que é o ponto.
 Os formatos são `pattern`, e não `format`: nenhum validador precisa de
 `FormatChecker`. O schema é válido em modo estrito no Ajv, e é preciso que
 continue: o Ajv é mais exigente que o `jsonschema` do Python.
+
+## `crv-fechamento-1.schema.json`
+
+O que o CRV responde em `GET /fechamento/status?ate=AAAA-MM-DD` ao Roteiro de
+fechamento do CB (contrato `crv-fechamento/1`): itens já avaliados, com etapa,
+estado e texto. Cópias em `tests/contrato/` do CRV e do CB.
+
+| Repositório | Quem a valida |
+|---|---|
+| `ControleRendaVariavel` | a resposta real da rota e cada item que depende do CB, em todo estado (`tests/test_fechamento_status.py`, `tests/test_contrato_com_o_cb.py`) |
+| `controle-bancario` | o leitor aceita exatamente os estados e as etapas do schema (`tests/test_contrato_com_o_crv.py`) |
+
+Estado ou etapa novos entram aqui e nos dois lados na mesma mudança: o CB
+descarta, calado, o item que não reconhece.
+
+## `exemplos/cb-snapshot-vinculo.json`
+
+A resposta **real** do CB ao CRV: o snapshot v4 pedido com o token do vínculo
+(`CRV_LINK_TOKEN`), recortado às contas de corretora. Não é escrito à mão: a
+suíte do CB o gera pelo caminho real (parser do extrato, detalhe gravado, rota)
+e reprova quando a resposta deixa de ser igual a ele, mostrando o arquivo novo
+(`tests/test_contrato_com_o_crv.py`). A suíte do CRV lê a mesma cópia com o
+cliente dele (`tests/test_contrato_com_o_cb.py`). Ids, instantes e a data do
+saldo são fixos; o resto é o que a rota respondeu.
+
+Para mudar o que o CB publica ao CRV: rode a suíte do CB, grave aqui o texto que
+o teste mostra entre `<<<EXEMPLO` e `EXEMPLO>>>`, rode
+`python compartilhados/sincronizar.py --aplicar` e depois a suíte do CRV. É ela
+que diz se o leitor do CRV ainda entende a resposta.

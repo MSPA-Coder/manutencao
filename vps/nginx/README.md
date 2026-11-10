@@ -42,7 +42,7 @@ cada aplicação.
   pedidos de verdade, e o instalador confere o 404 em cada domínio que fecha a
   rota.
 - Os vhosts usam `listen ... ssl;` seguido de `http2 on;` (Nginx 1.25.1 ou
-  superior, o que vale nos dois VPS desde o Ubuntu 26.04, Nginx 1.28). A forma
+  superior, o que vale no VPS1: Ubuntu 26.04, Nginx 1.28). A forma
   antiga `listen ... ssl http2` está obsoleta e gera aviso no `nginx -t`.
 
 ## Instalação
@@ -60,8 +60,8 @@ O conteúdo desse diretório é o que declara quais sites o servidor atende: o
 instalador entrega **e habilita** os vhosts que encontrar ali, lista quais são
 antes de tocar em qualquer coisa, e recusa rodar se não houver nenhum ou se
 faltar uma das peças compartilhadas. Copie só os vhosts do que aquela máquina
-serve (o VPS compartilhado, os cinco aplicativos; o segundo VPS, só o que ele
-hospedar).
+serve (hoje só o VPS1, com todos os aplicativos; um servidor futuro, só o que
+ele hospedar).
 
 O script precisa de `sudo` para escrever em `/etc/nginx` e recarregar o
 serviço. Ao final, ele verifica `/health` de cada domínio que acabou de

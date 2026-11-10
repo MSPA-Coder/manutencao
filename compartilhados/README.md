@@ -7,7 +7,8 @@ canônica aqui, e `sincronizar.py` a leva aos demais.
 
 | Canônica | Cópias |
 |---|---|
-| `compartilhados/AGENTS-comum.md` | bloco "Regras comuns" dentro do `AGENTS.md` de dez repositórios, entre os marcadores `<!-- comum: ... -->` |
+| `compartilhados/AGENTS-comum.md` | bloco "Regras comuns" dentro do `AGENTS.md` de treze repositórios, entre os marcadores `<!-- comum: ... -->` |
+| `compartilhados/AGENTS-comum-vps.md` | fim do mesmo bloco, só no que o `deploy.sh` implanta (os quatro apps, o WealthfolioTeste, o VivaPasso e o VillaRica) e no `_manutencao`: deploy e dados de produção |
 | `docs/TESTES.md` | `docs/TESTES.md` em oito repositórios |
 | `docs/contratos/patrimonio-v4.schema.json` | CB, CRV e WealthfolioTeste (ver `docs/contratos/README.md`) |
 | `compartilhados/Dockerfile.browser` | os quatro apps (CB, CRV, ConfortoTermico, MegaSena) |
@@ -39,7 +40,22 @@ O script agora barra a volta disso:
 - caminho citado entre crases (com pasta) que não existe;
 - frase do modelo de entrega anterior a 20/10/2026 em `AGENTS.md`, `README.md`
   ou `docs/` (CI que reprova, "abra um PR", checks antes do merge,
-  auto-merge). ADRs, `docs/historico/` e relatórios datados ficam de fora.
+  auto-merge). ADRs, `docs/historico/` e relatórios datados ficam de fora;
+- menção a dois VPS (só existe o VPS1 desde 05/11/2026);
+- seção "Validação proporcional": a validação por tipo de mudança mora na
+  seção "Validação" do `AGENTS.md`, e a cópia em `docs/` já tinha divergido
+  dela em dois apps.
+
+## Onde mora cada regra
+
+| Lugar | Guarda |
+|---|---|
+| `~/.claude/CLAUDE.md` (fora do Git) | a máquina: shell, PATH, codificação, acesso ao VPS |
+| Bloco comum | o processo igual em todos: quando perguntar, ciclo, dados, dependências, testes |
+| Resto do `AGENTS.md` | o que é do repositório, nesta ordem: o sistema, "Validação", limites, armadilhas |
+| `docs/` | referência do assunto e ADRs; ADR superado ganha "Substituído por" |
+
+Uma regra aparece num lugar só, e os outros apontam para ele.
 
 Ficaram de fora, de propósito, arquivos com o mesmo nome e conteúdo parecido,
 mas diferenças legítimas: `.github/dependabot.yml` (`pip` no ConfortoTermico,

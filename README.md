@@ -14,18 +14,17 @@ e confere o resultado.
 cobertura dos projetos locais pelos seus serviços Docker de qualidade.
 [`higiene/README.md`](higiene/README.md) descreve a limpeza local de caches,
 a conferência de ignores e a preservação de migrações e dados.
-Repositórios que carregam uma cópia devem mantê-la alinhada; nem todos têm uma.
-Para mudar uma regra, atualize o texto-base e as cópias existentes na mesma
-rodada.
 
 [`docs/contratos/`](docs/contratos/) guarda a cópia canônica do JSON Schema do
 contrato `patrimonio/v4` entre o CB, o CRV e o Wealthfolio, com a lista das
-cópias idênticas e quem as valida. Mesma regra: mude aqui e copie para todos.
+cópias idênticas e quem as valida.
 
 [`compartilhados/`](compartilhados/) junta as cópias canônicas dos arquivos que
-são iguais em vários repositórios (estes dois e mais três dos apps) e o
-`sincronizar.py`, que confere e copia. Mude a canônica e rode
-`python compartilhados/sincronizar.py --aplicar`, em vez de editar cada cópia.
+são iguais em vários repositórios (as diretrizes de teste, os contratos, o
+bloco de regras comuns de cada `AGENTS.md` e arquivos dos apps; a tabela está
+em [`compartilhados/README.md`](compartilhados/README.md)) e o
+`sincronizar.py`, que confere e copia. Mude sempre a canônica e rode
+`python compartilhados/sincronizar.py --aplicar`; nenhuma cópia se edita à mão.
 
 [`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md) fixa a regra de versão de cada
 aplicativo (SemVer por projeto, desde a primeira versão) e guarda a tabela de
@@ -83,7 +82,7 @@ até essa tentativa. Uma falha persistente exige intervenção do operador.
 No VPS, a interface é:
 
 ```bash
-~/deploy.sh <bancario|conforto|megasena|renda|wealthfolio>
+~/deploy.sh <bancario|conforto|megasena|renda|wealthfolio|viva-passo|villa-rica>
 ~/deploy.sh <projeto> --refresh   # remonta a versão no ar com imagens-base novas
 ~/deploy.sh --status
 ```

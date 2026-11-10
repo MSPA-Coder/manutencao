@@ -160,7 +160,7 @@ recuperação é manual, com backup restaurado e conferido antes.
 Teste hermético do fluxo, sem rede ou acesso ao VPS:
 
 ```powershell
-docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/deploy_test.sh
+docker run --rm -v "${PWD}:/repo:ro" ubuntu:24.04 bash /repo/vps/tests/deploy_test.sh
 ```
 
 ## Instalação da infraestrutura
@@ -185,7 +185,7 @@ incidente.
 Teste hermético do instalador, sem rede nem acesso ao VPS:
 
 ```powershell
-docker run --rm -v "${PWD}:/repo:ro" bash:5.2 bash /repo/vps/tests/instalar_test.sh
+docker run --rm -v "${PWD}:/repo:ro" ubuntu:24.04 bash /repo/vps/tests/instalar_test.sh
 ```
 
 O Nginx fica fora do inventário de conteúdo de propósito: tem instalador

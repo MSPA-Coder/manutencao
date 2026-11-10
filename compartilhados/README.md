@@ -14,6 +14,7 @@ canônica aqui, e `sincronizar.py` a leva aos demais.
 | `compartilhados/Dockerfile.browser` | os quatro apps (CB, CRV, ConfortoTermico, MegaSena) |
 | `compartilhados/provision-db-runtime.sh` | `scripts/` dos quatro apps |
 | `compartilhados/gerar_relatorio.py` | `docs/security-audit/` dos quatro apps |
+| `compartilhados/quality.ps1` | `scripts/quality.ps1` em dez repositórios: a verificação completa num comando, com os passos de cada um em `scripts/quality.passos` |
 
 A lista exata está no início de `sincronizar.py`.
 
@@ -44,7 +45,9 @@ O script agora barra a volta disso:
 - menção a dois VPS (só existe o VPS1 desde 05/11/2026);
 - seção "Validação proporcional": a validação por tipo de mudança mora na
   seção "Validação" do `AGENTS.md`, e a cópia em `docs/` já tinha divergido
-  dela em dois apps.
+  dela em dois apps;
+- ADR (`docs/adr/*.md`) sem a linha `Estado:` logo depois do título, ou cujo
+  estado cita um ADR que não existe.
 
 ## Onde mora cada regra
 
@@ -53,9 +56,16 @@ O script agora barra a volta disso:
 | `~/.claude/CLAUDE.md` (fora do Git) | a máquina: shell, PATH, codificação, acesso ao VPS |
 | Bloco comum | o processo igual em todos: quando perguntar, ciclo, dados, dependências, testes |
 | Resto do `AGENTS.md` | o que é do repositório, nesta ordem: o sistema, "Validação", limites, armadilhas |
-| `docs/` | referência do assunto e ADRs; ADR superado ganha "Substituído por" |
+| `docs/` | referência do assunto e ADRs; todo ADR abre com a linha `Estado:` |
 
 Uma regra aparece num lugar só, e os outros apontam para ele.
+
+Os nomes dos arquivos de `docs/` não são padronizados entre repositórios
+(`operations.md`, `deployment-vps.md`, `RUNBOOK.md`, `operacao.md`), por decisão
+de 10/11/2026: quem os lê chega pelo índice do `AGENTS.md` de cada um, e
+renomear quebraria as citações em relatórios datados, no histórico e em
+mensagens da aplicação, sem mudar o que o leitor encontra. Revisitar se um
+script passar a depender do nome.
 
 Ficaram de fora, de propósito, arquivos com o mesmo nome e conteúdo parecido,
 mas diferenças legítimas: `.github/dependabot.yml` (`pip` no ConfortoTermico,

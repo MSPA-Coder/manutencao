@@ -40,8 +40,9 @@ rode `python compartilhados/sincronizar.py --aplicar` no `_manutencao`.
 **Este arquivo.** Guarde aqui só o que o código não diz: limites, decisões com
 o motivo, armadilhas e comandos. Cada regra mora num lugar só: o que este bloco
 ou `docs/` já dizem não se repete. História fica no `git log`; decisão com
-alternativas vira ADR, e ADR superado ganha a linha "Substituído por"; detalhe
-de implementação fica no código. Para acrescentar uma regra, retire ou funda
+alternativas vira ADR, que abre com a linha `Estado:` (vigente, ou substituído
+por qual); detalhe de implementação fica no código. Para acrescentar uma
+regra, retire ou funda
 outra: `sincronizar.py` reprova este arquivo acima de 900 palavras fora deste
 bloco.
 
@@ -81,6 +82,14 @@ em `vps/tests/`; nunca teste contra o VPS durante desenvolvimento.
 
 ## Validação
 
+```powershell
+.\scripts\quality.ps1
+```
+
+Schema do contrato, `nginx -t`, sintaxe, todas as suítes de `vps/tests/` e o
+sincronizador, antes de todo commit; o ShellCheck roda só na CI. A tabela diz o
+que cada mudança pede a mais.
+
 | Mudança | Validação mínima |
 | --- | --- |
 | Documento ou unidade systemd | `git diff --check` e conferência de caminhos/comandos. |
@@ -89,6 +98,6 @@ em `vps/tests/`; nunca teste contra o VPS durante desenvolvimento.
 | Mudança que altera dados/volumes | Teste de backup e restauração no sandbox; não use o VPS como laboratório. |
 | Bloco comum (`compartilhados/AGENTS-comum.md`, `compartilhados/AGENTS-comum-vps.md`), `docs/TESTES.md` ou outra cópia | `python compartilhados/sincronizar.py --aplicar` e o mesmo sem argumento, que precisa sair 0. |
 
-Essa validação roda completa antes do commit. Não adicione retries, locks,
+Não adicione retries, locks,
 backups ou serviços sem descrever a falha concreta que eles evitam e como a
 suíte a reproduz.

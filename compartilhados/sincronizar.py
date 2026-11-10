@@ -22,6 +22,9 @@ O que é conferido:
    anterior a 20/10/2026 (CI que reprova, PR obrigatório, checks antes do
    merge). Relatórios datados, ADRs e `docs/historico/` ficam de fora: são
    registro do que foi.
+5. `docs/adr/*.md`: a linha `Estado:` nas primeiras linhas (vigente,
+   substituído pelo ADR N, revertido ou sem efeito), e o ADR citado existe.
+   Sem ela, um ADR superado continuava parecendo regra em vigor.
 
 Os repositórios são irmãos deste checkout (mesma pasta-mãe). O script só grava
 arquivos; o commit continua em cada repositório. Comparação e gravação em LF,
@@ -44,7 +47,7 @@ COM_TESTES = APPS + ["BackupRestore", "FinancasMCP", "SharedAuth", "Site_Mp-solu
 # Sites estáticos pequenos: só o bloco, sem docs/TESTES.md.
 SITES = ["VivaPasso", "VillaRica", "PlayBook"]
 COM_BLOCO = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name] + SITES
-COM_QUALITY = [r for r in COM_TESTES if r != "ControleBancario"]
+COM_QUALITY = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name]
 
 # canônica (relativa a este repositório) -> [(repositório, caminho lá)]
 COPIAS: dict[str, list[tuple[str, str]]] = {
@@ -66,7 +69,6 @@ COPIAS: dict[str, list[tuple[str, str]]] = {
     "compartilhados/Dockerfile.browser": [(r, "Dockerfile.browser") for r in APPS],
     "compartilhados/provision-db-runtime.sh": [(r, "scripts/provision-db-runtime.sh") for r in APPS],
     "compartilhados/gerar_relatorio.py": [(r, "docs/security-audit/gerar_relatorio.py") for r in APPS],
-    # O CB tem script próprio, mais antigo, que aceita argumentos do Compose.
     "compartilhados/quality.ps1": [(r, "scripts/quality.ps1") for r in COM_QUALITY],
 }
 
@@ -97,6 +99,10 @@ FRASES_VELHAS = [
      "a validação por tipo de mudança mora na seção \"Validação\" do AGENTS.md"),
 ]
 PULA_DOCS = re.compile(r"(^|/)(adr|historico|security-audit)/|\d{4}-\d{2}-\d{2}", re.I)
+
+# "Estado: vigente." / "Estado: substituído (em parte) pelo ADR 0005." / "revertido" / "sem efeito"
+ESTADO_ADR = re.compile(r"^Estado: (vigente|substituído (?:em parte )?pelo ADR \d+|revertido|sem efeito)\b")
+ADR_CITADO = re.compile(r"ADR (\d+)")
 
 EXTENSOES = ("py", "sh", "md", "yaml", "yml", "toml", "json", "ps1", "txt", "js", "cjs", "html", "css",
              "sql", "conf", "service", "timer", "bat", "cfg", "ini", "lock")
@@ -219,6 +225,26 @@ def conferir_frases() -> int:
     return problemas
 
 
+def conferir_adrs() -> int:
+    problemas = 0
+    for repo in COM_BLOCO:
+        pasta = BASE / repo / "docs" / "adr"
+        numeros = {re.match(r"\d+", a.name).group() for a in pasta.glob("[0-9]*.md")}
+        for arq in sorted(pasta.glob("*.md")):
+            estado = next((ln for ln in texto(arq).split("\n")[:12] if ln.startswith("Estado:")), "")
+            rel = f"{repo}/docs/adr/{arq.name}"
+            if not ESTADO_ADR.match(estado):
+                problemas += 1
+                print(f"  ADR        {rel}: falta a linha `Estado:` (vigente, substituído pelo ADR N,"
+                      " revertido ou sem efeito) logo depois do título")
+                continue
+            for citado in ADR_CITADO.findall(estado):
+                if citado not in numeros:
+                    problemas += 1
+                    print(f"  ADR        {rel}: o estado cita o ADR {citado}, que não existe")
+    return problemas
+
+
 def main(argv: list[str]) -> int:
     aplicar = "--aplicar" in argv
     # --pular=Repo1,Repo2: deixa de fora um checkout ocupado por outro trabalho
@@ -230,6 +256,7 @@ def main(argv: list[str]) -> int:
     copias = conferir_copias(aplicar)
     blocos, problemas = conferir_agents(aplicar)
     problemas += conferir_frases()
+    problemas += conferir_adrs()
     divergentes = copias + blocos
     if divergentes == 0 and problemas == 0:
         print("Cópias e blocos iguais às canônicas; orientação dentro dos limites.")

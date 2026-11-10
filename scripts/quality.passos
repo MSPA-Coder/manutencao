@@ -1,0 +1,7 @@
+# Passos de scripts/quality.ps1 (formato no cabecalho do script). A CI roda o
+# mesmo, mais o ShellCheck sobre todos os scripts.
+!docker run --rm --network none -v {raiz}:/repo:ro -w /repo python:3-alpine python docs/contratos/verificar.py
+-f .github/docker-compose.yml run --rm --no-deps nginx-test
+!docker run --rm --network none -v {raiz}:/repo:ro ubuntu:24.04 bash /repo/vps/tests/todas.sh
+!docker run --rm --network none -v {raiz}:/repo:ro -w /repo python:3-alpine python -m unittest vps/tests/status_test.py
+!py compartilhados/sincronizar.py

@@ -12,7 +12,7 @@
 -- Os pares originais são de 31/07 e 06/08/2026 e vieram de uma implementação
 -- anterior, que não existe mais no repositório.
 --
--- Em 08/09/2026 o resíduo era de 8 lançamentos e R$ 7.660,00 no futuro, em
+-- Em 08/09/2026 o resíduo era de 8 lançamentos e um valor pequeno no futuro, em
 -- quatro operações, igual no banco local e em produção.
 --
 -- COMO RODAR

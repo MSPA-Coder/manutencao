@@ -685,6 +685,99 @@ roda
 assert_eq 1 "$(copias configuracao_servidor | wc -l)" 'configuração igual não gera cópia nova'
 end_case 'configuração do servidor: vhosts, unidades e inventário, sem chave privada'
 
+# ---------------------------------------------------------------------------
+# Banco e volume no MESMO projeto: ControleBancario (comprovantes em
+# `media_volume`, montado em /workspace/media do serviço web, rotulado no
+# Compose dele). A pasta `controle_bancario` guarda dumps e cópias de volume
+# lado a lado, e cada tipo tem a própria retenção e o próprio piso.
+
+CBWEB=controle-bancario-web-1
+CBPG=controle-bancario-postgres-1
+
+com_bancario() {
+    contêiner "$CBPG" postgres:17-alpine controle-bancario
+    contêiner "$CBWEB" controle-bancario:local controle-bancario /workspace/media
+    arquivo_no_volume "$CBWEB" /workspace/media/attachments/comprovante.pdf 'pdf'
+}
+
+begin_case
+com_bancario
+roda
+assert_eq 0 "$EXIT_CODE" 'banco e volume do mesmo projeto, ciclo bom'
+assert_registro "pause $CBWEB
+cp $CBWEB:/workspace/media pausado
+unpause $CBWEB" 'só o web é pausado, e só durante a cópia; o banco nunca'
+copia=$(copias controle_bancario)
+[[ "$copia" =~ ^controle_bancario_volume_[0-9]{8}_[0-9]{6}\.tar\.gz$ ]] \
+    || fail "nome da cópia fora do formato que o agente aceita: '$copia'"
+final="$DEST_TMP/controle_bancario/$copia"
+assert_eq "$(sha256sum "$final" | cut -d' ' -f1)" "$(cat "$final.sha256" 2>/dev/null)" \
+    'o .sha256 ao lado confere com a cópia'
+grep -qx 'media/attachments/comprovante.pdf' <<<"$(membros "$final")" \
+    || fail 'o comprovante precisa estar na cópia'
+dumps=$(ls "$DEST_TMP/controle_bancario"/controle_bancario_banco_*.dump 2>/dev/null | wc -l)
+assert_eq 1 "$dumps" 'o dump do banco continua sendo feito na mesma pasta'
+end_case 'comprovantes do ControleBancario: cópia do volume ao lado do dump'
+
+begin_case
+com_bancario
+roda
+sleep 1
+roda
+assert_eq 1 "$(copias controle_bancario | wc -l)" 'comprovantes iguais não geram segunda cópia'
+sleep 1
+arquivo_no_volume "$CBWEB" /workspace/media/attachments/novo.pdf 'outro'
+roda
+assert_eq 2 "$(copias controle_bancario | wc -l)" 'comprovante novo gera cópia nova'
+end_case 'cópia do volume do CB só é regravada quando os comprovantes mudam'
+
+begin_case
+com_bancario
+roda
+velha=$(copias controle_bancario)
+touch -d "@$(( $(date +%s) - 20 * 86400 ))" "$DEST_TMP/controle_bancario/$velha"
+for dump in "$DEST_TMP/controle_bancario"/controle_bancario_banco_*.dump; do
+    touch -d "@$(( $(date +%s) - 30 * 86400 ))" "$dump"
+done
+sleep 1
+roda
+assert_eq 1 "$(copias controle_bancario | wc -l)" 'a cópia de 20 dias sai quando há substituta'
+[ -e "$DEST_TMP/controle_bancario/$velha" ] && fail 'a cópia velha devia ter saído'
+assert_eq 1 "$(ls "$DEST_TMP/controle_bancario"/controle_bancario_banco_*.dump | wc -l)" \
+    'o dump único continua: o piso de cada tipo é independente'
+end_case 'retenção do volume e a do dump não se confundem na mesma pasta'
+
+# O deploy trava pelo nome da pasta do app (`controle-bancario`). Se o backup
+# travasse por outro nome, o deploy poderia recriar o web no meio da pausa.
+begin_case
+com_bancario
+mkdir -p "$CASE_TMP/app-locks"
+(
+    exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
+    flock -n 9
+    sleep 3
+) &
+lock_pid=$!
+sleep 0.1
+APP_LOCK_TIMEOUT_SEGUNDOS=0 roda
+wait "$lock_pid"
+[ "$EXIT_CODE" -ne 0 ] || fail 'backup com o lock do deploy do CB ocupado deve falhar'
+assert_saida 'controle-bancario está em outra operação' 'a contenção identifica o app'
+assert_registro '' 'com o lock ocupado, o web não é pausado nem copiado'
+end_case 'backup do volume do CB espera o deploy do CB (mesmo arquivo de lock)'
+
+begin_case
+com_bancario
+roda
+rm -f "$CASE_TMP/containers"
+contêiner "$CBPG" postgres:17-alpine controle-bancario
+contêiner "$CBWEB" controle-bancario:local controle-bancario
+roda
+[ "$EXIT_CODE" -ne 0 ] || fail 'rótulo retirado do Compose precisa ser acusado'
+assert_saida 'controle_bancario tem cópia de volume anterior' \
+    'comprovantes que tinham cópia e deixaram de ter rótulo alertam'
+end_case 'rótulo retirado do web do CB não passa em silêncio'
+
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then
     printf '# %d de %d testes falharam\n' "$FAILED" "$TOTAL" >&2

@@ -885,6 +885,23 @@ confere_deploy_igual 'remoto ssh'
 assert_log 'api.github.com/repos/mspa-coder/projeto-teste/' 'dono e repo saem também de um remoto SSH'
 end_case 'dono e repositório saem de um remoto SSH'
 
+# O formato real do VPS: um apelido do ~/.ssh/config por chave de deploy.
+begin_case
+SCENARIO=success
+REMOTE_URL='git@github-bancario:mspa-coder/projeto-teste.git'
+run_deploy bancario
+confere_deploy_igual 'remoto ssh com apelido'
+assert_log 'api.github.com/repos/mspa-coder/projeto-teste/' 'dono e repo saem de um remoto SSH com apelido de host'
+end_case 'dono e repositório saem de um remoto SSH com apelido de host'
+
+begin_case
+SCENARIO=success
+REMOTE_URL='git@gitlab-bancario:mspa-coder/projeto-teste.git'
+run_deploy bancario
+confere_deploy_igual 'apelido que não é do GitHub'
+assert_no_log 'api.github.com' 'apelido de outro serviço não consulta a API'
+end_case 'apelido de host que não começa por github não é tratado como GitHub'
+
 begin_case
 SCENARIO=success
 CI_MODO=vermelha

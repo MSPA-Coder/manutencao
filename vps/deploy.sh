@@ -380,7 +380,10 @@ ci_classificar() {
 avisar_ci() {
     local sha="$1" curto="${1:0:7}" url repo json estado detalhe
     url=$(git remote get-url origin 2>/dev/null) || url=
-    repo=$(printf '%s' "$url" | sed -E 's#^(https?://([^@/]*@)?|ssh://git@|git@)github\.com[:/]##; s#/$##; s#\.git$##')
+    # No VPS cada checkout usa um apelido do ~/.ssh/config, um por chave de
+    # deploy (`git@github-bancario:dono/repo.git`); sem aceitá-lo, todo
+    # deploy de aplicativo dava "sem informação" (11/11/2026).
+    repo=$(printf '%s' "$url" | sed -E 's#^(https?://([^@/]*@)?github\.com/|ssh://git@github\.com/|git@github(\.com|-[A-Za-z0-9_-]+):)##; s#/$##; s#\.git$##')
     if [ "$repo" = "$url" ] || ! [[ "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
         echo "CI do commit $curto: sem informação (remoto não é um repositório do GitHub)."
         return 0

@@ -308,7 +308,10 @@ podar_guardas() {
 # virar o segundo incidente da noite.
 alertar() {
     [ -x "$ALERTA" ] || { echo "  (alerta.sh ausente — mensagem não enviada)" >&2; return 0; }
-    "$ALERTA" "$1" "${2:-}" >/dev/null 2>&1 || true
+    # `ALERTA_JANELA=0` desliga a antirrepetição do alerta.sh, que deduplica
+    # pelo título: o título do deploy não carrega o commit, e a segunda falha
+    # em 15 minutos (outro commit, outro motivo) era suprimida.
+    ALERTA_JANELA=0 "$ALERTA" "$1" "${2:-}" >/dev/null 2>&1 || true
 }
 
 # Consulta o /health público e devolve 0 só se o corpo trouxer "status":"ok".

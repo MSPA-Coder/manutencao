@@ -265,7 +265,7 @@ EOF
 
     cat >"$CASE_TMP/alerta.sh" <<'EOF'
 #!/usr/bin/env bash
-printf 'alerta' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
+printf 'alerta' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf ' janela=%s\n' "${ALERTA_JANELA-ausente}" >>"$CALL_LOG"
 EOF
     chmod +x "$CASE_TMP/bin/"* "$CASE_TMP/alerta.sh"
 }
@@ -407,6 +407,10 @@ assert_log 'docker <compose> <--env-file> <.env.vps> <-f> <compose.yaml> <-f> <c
 assert_log 'curl <-sSL>' 'rollback deve confirmar /health'
 assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" 'rollback saudável deve registrar SHA antigo'
 assert_log 'alerta <DEPLOY REVERTIDO: controle-bancario>' 'rollback saudável deve emitir alerta de reversão'
+# SEG-A3: o título do deploy não carrega o commit, então o `alerta.sh` (que
+# deduplica pelo título em 15 min) suprimiria a segunda falha. O deploy pede
+# janela zero: toda falha de deploy chega.
+assert_log ' janela=0' 'alerta de deploy deve pedir ALERTA_JANELA=0, senão a segunda falha em 15 min some'
 end_case 'bancario usa os dois Compose no deploy e no rollback'
 
 begin_case

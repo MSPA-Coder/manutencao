@@ -74,6 +74,7 @@ make_fakes() {
 printf 'git' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
 case "${1:-}" in
     cat-file) [ "$ARTIFACT" = 1 ]; exit $? ;;
+    remote) printf '%s\n' "${REMOTE_URL-https://github.com/mspa-coder/projeto-teste.git}" ;;
     status) exit 0 ;;
     fetch) exit 0 ;;
     rev-parse)
@@ -236,11 +237,41 @@ printf 'docker fake: comando inesperado: %s\n' "$*" >&2
 exit 90
 EOF
 
-    # Só a sonda pública /health passa por aqui: o deploy não consulta mais a
-    # API do GitHub, e qualquer chamada a ela é registrada para o teste negar.
+    # Corpo que a API de check-runs devolveria, conforme CI_MODO.
+    cat >"$CASE_TMP/ci-payload" <<'EOF'
+#!/usr/bin/env bash
+case "${CI_MODO:-verde}" in
+    verde) printf '{"total_count":2,"check_runs":[{"name":"lint","status":"completed","conclusion":"success"},{"name":"test","status":"completed","conclusion":"skipped"}]}' ;;
+    vermelha) printf '{"total_count":2,"check_runs":[{"name":"lint","status":"completed","conclusion":"success","app":{"name":"GitHub Actions"}},{"name":"test (py3.14)","status":"completed","conclusion":"failure","app":{"name":"GitHub Actions"}}]}' ;;
+    andamento) printf '{"total_count":2,"check_runs":[{"name":"lint","status":"completed","conclusion":"success"},{"name":"test","status":"in_progress","conclusion":null}]}' ;;
+    vazio) printf '{"total_count":0,"check_runs":[]}' ;;
+    lixo) printf '<html>rate limit</html>' ;;
+esac
+EOF
+    # `gh` sem autenticação por padrão (sai 4, como o real); com CI_VIA=gh
+    # serve o mesmo corpo; com CI_VIA=gh_lento trava além do limite.
+    cat >"$CASE_TMP/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+printf 'gh' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
+case "${CI_VIA:-curl}" in
+    gh) exec bash "$CASE_TMP/ci-payload" ;;
+    gh_lento) exec /bin/sleep 30 ;;
+    *) exit 4 ;;
+esac
+EOF
+
+    # A sonda pública /health e a API de check-runs do GitHub passam por aqui;
+    # a API só é atendida conforme CI_MODO (falha e lenta simulam rede ruim).
     cat >"$CASE_TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 printf 'curl' >>"$CALL_LOG"; printf ' <%s>' "$@" >>"$CALL_LOG"; printf '\n' >>"$CALL_LOG"
+if [[ "$*" == *api.github.com* ]]; then
+    case "${CI_MODO:-verde}" in
+        falha) exit 22 ;;
+        lenta) exec /bin/sleep 30 ;;
+        *) exec bash "$CASE_TMP/ci-payload" ;;
+    esac
+fi
 head=$(cat "$FAKE_HEAD")
 if [ "$SCENARIO" = wealthfolio_success ]; then
     printf 'ok\n200'
@@ -280,7 +311,9 @@ run_deploy() {
         SCENARIO="$SCENARIO" OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" \
         REMOTE_SHA="${REMOTE_SHA:-$NEW_SHA}" FAKE_IMAGE_ID="$(printf '%064d' 0)" FAKE_IMAGE_NAME="app:local" \
         ARTIFACT="$ARTIFACT" RUN_VARIANT="$RUN_VARIANT" \
-        FAKE_PROJECT="$projeto" \
+        FAKE_PROJECT="$projeto" CASE_TMP="$CASE_TMP" \
+        CI_MODO="${CI_MODO:-verde}" CI_VIA="${CI_VIA:-curl}" REMOTE_URL="${REMOTE_URL-https://github.com/mspa-coder/projeto-teste.git}" \
+        CI_LIMITE_SEGUNDOS="${CI_LIMITE_SEGUNDOS:-1}" \
         bash "$DEPLOY" "$projeto" "${@:2}" >"$CASE_TMP/output" 2>&1
     EXIT_CODE=$?
     set -e
@@ -293,6 +326,9 @@ begin_case() {
     APP_LOCK_TIMEOUT_SEGUNDOS=300
     ARTIFACT=0
     RUN_VARIANT=valid
+    CI_MODO=verde
+    CI_VIA=curl
+    unset REMOTE_URL
     CASE_TMP="$SUITE_TMP/case-$TOTAL"
     CALL_LOG="$CASE_TMP/calls.log"
     mkdir -p "$CASE_TMP"
@@ -362,7 +398,8 @@ assert_log 'mv <-f> <-->' 'registro deve terminar por rename atômico'
 [ -z "$(find "$CASE_TMP/state" -name '.controle-bancario.commit.*' -print)" ] || fail 'rename atômico não deve deixar arquivo temporário'
 assert_no_log 'git <reset>' 'sucesso não deve executar rollback'
 # Decisão de 20/10/2026: a validação é feita na máquina antes do commit.
-assert_no_log 'api.github.com' 'o deploy não consulta a CI do GitHub'
+assert_log 'api.github.com/repos/mspa-coder/projeto-teste/commits/'"$NEW_SHA"'/check-runs' 'consulta a CI do commit que vai implantar'
+assert_output 'CI do commit 2222222: verde.' 'diz que a CI está verde'
 # Guardas por app (20/10/2026): o nome compartilhado do banco não pode mais
 # deixar sem nome, e portanto apagar, a imagem que um app está rodando.
 assert_log 'docker <image> <tag> <sha256:0000000000000000000000000000000000000000000000000000000000000000> <mspa-deploy/controle-bancario:000000000000>' 'guarda a imagem em uso com nome do app'
@@ -468,7 +505,7 @@ run_deploy wealthfolio
 assert_eq 0 "$EXIT_CODE" 'deploy saudável do Wealthfolio deve sair zero'
 assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/wealthfolio-teste.commit")" 'Wealthfolio deve registrar o SHA novo'
 assert_log 'docker <compose> <--env-file> <.env> <-f> <compose.yaml> <-f> <compose.patrimonio-internal.yaml> <up> <-d> <--build>' 'Wealthfolio deve usar a rede privada quando a override existe'
-assert_no_log 'api.github.com' 'Wealthfolio também não consulta a CI'
+assert_output 'CI do commit 2222222: verde.' 'Wealthfolio também avisa a CI'
 end_case 'Wealthfolio implanta montando no servidor'
 
 begin_case
@@ -740,6 +777,148 @@ assert_no_log 'git <merge>' 'sem coletor não altera código'
 assert_no_log '<up>' 'sem coletor não altera serviços'
 assert_output 'Snapshot de rollback exige coletor em execução' 'recusa explica papel ausente'
 end_case 'Conforto exige snapshot de ICT e coletor antes de tocar na produção'
+
+# ---------------------------------------------------------------------------
+# Aviso da CI (decisão de 11/11/2026): consulta antes de aplicar o commit e só
+# avisa. Em todos os casos o deploy termina igual: sai zero, aplica o commit e
+# registra o estado; nada é alertado por causa da CI.
+# ---------------------------------------------------------------------------
+confere_deploy_igual() {
+    assert_eq 0 "$EXIT_CODE" "$1: o deploy termina zero"
+    assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/head")" "$1: o commit é aplicado"
+    assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/state/controle-bancario.commit")" "$1: o estado é gravado"
+    assert_no_log 'alerta' "$1: a CI nunca dispara alerta externo"
+    assert_output 'OK: controle-bancario' "$1: o deploy chega ao fim"
+}
+
+begin_case
+SCENARIO=success
+CI_MODO=vermelha
+run_deploy bancario
+confere_deploy_igual 'CI vermelha'
+assert_output 'AVISO: CI do commit 2222222 VERMELHA (falhou: test (py3.14)). O deploy segue' 'vermelha chama atenção e nomeia o job'
+end_case 'CI vermelha avisa com o job que falhou e o deploy segue'
+
+begin_case
+SCENARIO=success
+CI_MODO=andamento
+run_deploy bancario
+confere_deploy_igual 'CI em andamento'
+assert_output 'CI do commit 2222222: em andamento' 'diz que está em andamento'
+end_case 'CI em andamento avisa e o deploy não espera'
+
+begin_case
+SCENARIO=success
+CI_MODO=verde
+CI_VIA=gh
+run_deploy bancario
+confere_deploy_igual 'CI via gh'
+assert_log 'gh <api>' 'usa o gh quando autenticado'
+assert_no_log 'api.github.com' 'com gh funcionando não cai no curl'
+assert_output 'CI do commit 2222222: verde.' 'resultado do gh'
+end_case 'CI consultada pelo gh quando ele responde'
+
+begin_case
+SCENARIO=success
+CI_MODO=vermelha
+run_deploy bancario
+assert_log 'gh <api>' 'tenta o gh primeiro'
+assert_log 'api.github.com' 'gh sem autenticação cai na API pública por curl'
+assert_output 'VERMELHA' 'o curl público entrega o resultado'
+end_case 'gh sem autenticação cai na API pública'
+
+begin_case
+SCENARIO=success
+CI_MODO=vazio
+run_deploy bancario
+confere_deploy_igual 'CI sem verificações'
+assert_output 'CI do commit 2222222: sem informação' 'commit sem verificação é sem informação'
+end_case 'commit sem verificações registradas vira sem informação'
+
+for modo in falha lixo; do
+    begin_case
+    SCENARIO=success
+    CI_MODO=$modo
+    run_deploy bancario
+    confere_deploy_igual "consulta $modo"
+    assert_output 'CI do commit 2222222: sem informação' "consulta $modo vira sem informação"
+    end_case "consulta que dá $modo vira sem informação e o deploy segue"
+done
+
+begin_case
+SCENARIO=success
+CI_MODO=lenta
+inicio=$SECONDS
+run_deploy bancario
+duracao=$((SECONDS - inicio))
+confere_deploy_igual 'consulta lenta'
+assert_output 'CI do commit 2222222: sem informação' 'consulta lenta vira sem informação'
+[ "$duracao" -le 4 ] || fail "consulta lenta atrasou o deploy ($duracao s com limite de 1 s)"
+end_case 'consulta que demora além do limite é cortada e o deploy segue'
+
+begin_case
+SCENARIO=success
+CI_MODO=verde
+CI_VIA=gh_lento
+inicio=$SECONDS
+run_deploy bancario
+duracao=$((SECONDS - inicio))
+confere_deploy_igual 'gh lento'
+assert_output 'CI do commit 2222222: sem informação' 'gh lento vira sem informação'
+[ "$duracao" -le 4 ] || fail "gh lento atrasou o deploy ($duracao s com limite de 1 s)"
+end_case 'gh que trava não passa do orçamento de tempo total'
+
+begin_case
+SCENARIO=success
+REMOTE_URL='https://exemplo.com/algum/repo.git'
+run_deploy bancario
+confere_deploy_igual 'remoto fora do GitHub'
+assert_no_log 'api.github.com' 'remoto estranho não consulta a API'
+assert_output 'sem informação (remoto não é um repositório do GitHub)' 'explica o motivo'
+end_case 'remoto que não é do GitHub vira sem informação'
+
+begin_case
+SCENARIO=success
+REMOTE_URL='git@github.com:mspa-coder/projeto-teste.git'
+run_deploy bancario
+confere_deploy_igual 'remoto ssh'
+assert_log 'api.github.com/repos/mspa-coder/projeto-teste/' 'dono e repo saem também de um remoto SSH'
+end_case 'dono e repositório saem de um remoto SSH'
+
+begin_case
+SCENARIO=success
+CI_MODO=vermelha
+run_deploy villa-rica
+assert_eq 0 "$EXIT_CODE" 'site estático com CI vermelha termina zero'
+assert_eq "$NEW_SHA" "$(read_file "$CASE_TMP/head")" 'site estático aplica o commit'
+assert_output 'VERMELHA' 'site estático também avisa a CI'
+assert_no_log 'alerta' 'CI do site estático não alerta'
+end_case 'site estático também avisa a CI e segue'
+
+begin_case
+SCENARIO=success
+CI_MODO=vermelha
+run_deploy bancario --refresh
+assert_eq 0 "$EXIT_CODE" 'refresh termina zero'
+assert_no_log 'api.github.com' 'refresh não consulta a CI'
+assert_no_log 'gh <api>' 'refresh não chama o gh'
+end_case 'refresh não consulta a CI'
+
+begin_case
+SCENARIO=success
+CI_MODO=vermelha
+REMOTE_SHA=$OLD_SHA
+run_deploy bancario
+assert_no_log 'api.github.com' 'sem commit novo não consulta a CI'
+end_case 'sem commit novo não consulta a CI'
+
+begin_case
+SCENARIO=health_failure
+CI_MODO=verde
+run_deploy bancario
+[ "$EXIT_CODE" -ne 0 ] || fail 'a CI verde não esconde a falha de saúde'
+assert_eq "$OLD_SHA" "$(read_file "$CASE_TMP/head")" 'o rollback continua valendo'
+end_case 'CI verde não muda o rollback quando a saúde falha'
 
 printf '1..%d\n' "$TOTAL"
 if [ "$FAILED" -ne 0 ]; then

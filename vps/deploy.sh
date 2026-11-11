@@ -11,9 +11,19 @@
 # rollback usa `git reset --hard`, portanto só pode operar sobre checkout
 # limpo.
 #
-# POR QUE NÃO CONSULTA A CI: desde 20/10/2026 a validação completa é feita na
-# máquina do usuário antes do commit, e o deploy só roda quando ele manda. A
-# CI do GitHub ficou como aviso. As imagens são montadas aqui, a partir do
+# POR QUE CONSULTA A CI E SÓ AVISA: desde 20/10/2026 a validação completa é
+# feita na máquina do usuário antes do commit, e o deploy só roda quando ele
+# manda; a CI do GitHub é aviso, não portão. Em 10/11/2026 um deploy saiu com a
+# CI vermelha e ninguém foi avisado na hora (decisão de 11/11/2026). Por isso,
+# antes de aplicar o commit, `avisar_ci` imprime uma linha com o estado da CI
+# dele: verde, vermelha (com o job que falhou), em andamento ou sem informação.
+# Depois o deploy segue de qualquer jeito: a consulta NÃO espera, NÃO bloqueia,
+# NÃO muda o código de saída e NÃO chama `alertar`. Tem tempo limite curto
+# (CI_LIMITE_SEGUNDOS, 5 s no total) e qualquer falha (sem rede, limite de
+# taxa, repositório privado sem credencial, resposta inesperada) vira "sem
+# informação". Usa `gh api` quando o `gh` existe e está autenticado e, se não,
+# a API pública do GitHub por `curl`. Não se aplica a `--refresh` (não aplica
+# commit) nem a `--status`. As imagens continuam montadas aqui, a partir do
 # código do main, sem esperar nem baixar nada do GitHub (`montar_imagens`). A
 # exceção é a imagem que a máquina já montou e enviou para o commit
 # (`usar_imagem_recebida`), hoje usada pelo Wealthfolio.
@@ -137,6 +147,7 @@ deploy_estatico() {
 
     echo "Mudanças a aplicar:"
     git log --oneline "$atual..$novo" | sed 's/^/  /'
+    avisar_ci "$novo" || true
     if ! git merge --ff-only origin/main; then
         echo "ABORTADO: origin/main não pôde ser aplicado por fast-forward." >&2
         return 1
@@ -312,6 +323,80 @@ alertar() {
     # pelo título: o título do deploy não carrega o commit, e a segunda falha
     # em 15 minutos (outro commit, outro motivo) era suprimida.
     ALERTA_JANELA=0 "$ALERTA" "$1" "${2:-}" >/dev/null 2>&1 || true
+}
+
+# Estado da CI do commit que vai ser implantado: uma linha, nunca falha, nunca
+# espera além de CI_LIMITE_SEGUNDOS (ver "POR QUE CONSULTA A CI E SÓ AVISA").
+CI_LIMITE_SEGUNDOS=${CI_LIMITE_SEGUNDOS:-5}
+
+# Imprime o JSON de check-runs do commit ($1 = dono/repo, $2 = sha). `gh` só
+# vale se autenticado; senão (ou se falhar) cai no `curl` público, dentro do
+# mesmo orçamento de tempo. Repositório privado sem credencial dá 404: falha.
+ci_consultar() {
+    local rota="repos/$1/commits/$2/check-runs?per_page=100" fim resto
+    fim=$((SECONDS + CI_LIMITE_SEGUNDOS))
+    if command -v gh >/dev/null 2>&1; then
+        timeout "$CI_LIMITE_SEGUNDOS" gh api -H 'Accept: application/vnd.github+json' \
+            "$rota" </dev/null 2>/dev/null && return 0
+    fi
+    resto=$((fim - SECONDS))
+    [ "$resto" -ge 1 ] || return 1
+    timeout "$resto" curl -fsSL --max-time "$resto" \
+        -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/$rota" </dev/null 2>/dev/null
+}
+
+# Lê o JSON de check-runs no stdin e diz: verde | andamento | vazio |
+# vermelha<TAB>jobs. Sem jq nem python (o servidor pode não ter): lê os campos
+# name, status e conclusion na ordem em que a API os entrega. Em cada
+# check-run, o `name` do job vem antes do `status` e do `conclusion`; o `name`
+# do app (depois do `conclusion`) é sobrescrito pelo do job seguinte. Resposta
+# sem `check_runs` (HTML, erro, limite de taxa) é falha.
+ci_classificar() {
+    local texto
+    texto=$(cat) || return 1
+    case "$texto" in *'"check_runs"'*) ;; *) return 1 ;; esac
+    printf '%s' "$texto" | grep -oE '"(name|status|conclusion)": *("[^"]*"|null)' | awk '
+        {
+            k = $0; sub(/^"/, "", k); sub(/".*/, "", k)
+            v = $0; sub(/^"[a-z]+": */, "", v); gsub(/^"|"$/, "", v)
+        }
+        k == "name" { nome = v }
+        k == "status" { total++; if (v != "completed") andamento = 1 }
+        k == "conclusion" && v ~ /^(failure|timed_out|cancelled|action_required|startup_failure|stale)$/ {
+            gsub(/[^A-Za-z0-9 .:\/()+_-]/, "?", nome)
+            falhas++
+            if (falhas <= 3) lista = lista (falhas > 1 ? ", " : "") substr(nome, 1, 60)
+        }
+        END {
+            if (total == 0) print "vazio"
+            else if (falhas > 0) print "vermelha\t" lista (falhas > 3 ? " e outros" : "")
+            else if (andamento) print "andamento"
+            else print "verde"
+        }
+    ' 2>/dev/null
+}
+
+avisar_ci() {
+    local sha="$1" curto="${1:0:7}" url repo json estado detalhe
+    url=$(git remote get-url origin 2>/dev/null) || url=
+    repo=$(printf '%s' "$url" | sed -E 's#^(https?://([^@/]*@)?|ssh://git@|git@)github\.com[:/]##; s#/$##; s#\.git$##')
+    if [ "$repo" = "$url" ] || ! [[ "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+        echo "CI do commit $curto: sem informação (remoto não é um repositório do GitHub)."
+        return 0
+    fi
+    if ! json=$(ci_consultar "$repo" "$sha") || ! estado=$(printf '%s' "$json" | ci_classificar) \
+        || [ -z "$estado" ]; then
+        echo "CI do commit $curto: sem informação (consulta ao GitHub falhou ou não respondeu a tempo)."
+        return 0
+    fi
+    detalhe=${estado#*$'\t'}
+    case "${estado%%$'\t'*}" in
+        verde)    echo "CI do commit $curto: verde." ;;
+        andamento) echo "CI do commit $curto: em andamento (o deploy não espera)." ;;
+        vermelha) echo "AVISO: CI do commit $curto VERMELHA (falhou: $detalhe). O deploy segue: a CI é só aviso." >&2 ;;
+        *)        echo "CI do commit $curto: sem informação (nenhuma verificação registrada)." ;;
+    esac
 }
 
 # Consulta o /health público e devolve 0 só se o corpo trouxer "status":"ok".
@@ -694,6 +779,7 @@ else
     git log --oneline "$atual..$novo" | sed 's/^/  /'
     echo "Arquivos:"
     git diff --stat "$atual..$novo" | tail -20 | sed 's/^/  /'
+    avisar_ci "$novo" || true
 fi
 
 # O gate é o arquivo do commit candidato, não o checkout antigo: os apps com

@@ -527,7 +527,8 @@ begin_case
 com_wealthfolio
 mkdir -p "$CASE_TMP/app-locks"
 (
-    exec 9>"$CASE_TMP/app-locks/wealthfolio_teste.lock"
+    # O nome que o `deploy.sh` usa: a pasta do app, com hífen.
+    exec 9>"$CASE_TMP/app-locks/wealthfolio-teste.lock"
     flock -n 9
     sleep 3
 ) &
@@ -536,7 +537,7 @@ sleep 0.1
 APP_LOCK_TIMEOUT_SEGUNDOS=0 roda
 wait "$lock_pid"
 [ "$EXIT_CODE" -ne 0 ] || fail 'backup com lock do Wealthfolio ocupado deve falhar'
-assert_saida 'wealthfolio_teste está em outra operação' 'a contenção deve identificar o volume protegido'
+assert_saida 'wealthfolio-teste está em outra operação' 'a contenção deve identificar o volume protegido'
 assert_registro '' 'backup bloqueado não pode pausar nem copiar o contêiner'
 end_case 'backup do volume não concorre com deploy do Wealthfolio'
 

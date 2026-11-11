@@ -405,7 +405,13 @@ fazer_copia() {
     # A trava é deliberadamente estreita: só protege o snapshot que pausa o
     # contêiner. Dumps PostgreSQL e backups de outros apps continuam podendo
     # rodar durante o deploy de uma aplicação diferente.
-    if travar_app "$slug"; then
+    #
+    # O lock do `deploy.sh` leva o nome da PASTA do app (`controle-bancario`,
+    # `wealthfolio-teste`), e o slug é essa pasta com `-` virando `_`. Travar
+    # pelo slug abria outro arquivo de lock e a exclusão mútua não existia
+    # (conferido em 11/11/2026): o deploy podia recriar o contêiner no meio da
+    # pausa. Volta-se ao `-` para os dois falarem do mesmo arquivo.
+    if travar_app "${slug//_/-}"; then
         :
     else
         return $?

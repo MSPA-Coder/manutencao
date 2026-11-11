@@ -3,7 +3,7 @@
 # Os quatro vhosts têm estrutura idêntica de propósito: só mudam domínio,
 # porta e tamanho máximo de corpo. A exceção é o bloco de `/patrimonio/`, que
 # só existe aqui e no `controle-bancario`, os dois que publicam o
-# contrato. Cabeçalho de proxy fica em `snippets/proxy-app.conf`, compressão e
+# contrato (e o de `/fechamento/`, só deste). Cabeçalho de proxy fica em `snippets/proxy-app.conf`, compressão e
 # limitador em `conf.d/00-comum.conf`.
 
 server {
@@ -60,6 +60,17 @@ server {
     # Sem `add_header` aqui, pelo mesmo motivo do bloco de login: o HSTS do
     # `server` continua valendo nesta rota.
     location ^~ /patrimonio/ {
+        return 404;
+    }
+
+    # `/fechamento/status` é contrato máquina a máquina, só do CRV: o único
+    # consumidor, o ControleBancario, chama pela rede interna (`crv-api`, via
+    # `CRV_FECHAMENTO_URL=http://crv-api:5003/fechamento/status`, no
+    # `.env.vps.example` do CB) e não passa por este nginx; a tela do CB só
+    # monta links para as telas do CRV (`CRV_PUBLIC_URL`), nunca para esta
+    # rota. Mesma lógica do bloco acima, e sem `add_header` pelo
+    # mesmo motivo. A prova está em `tests/nginx_test.sh`.
+    location ^~ /fechamento/ {
         return 404;
     }
 

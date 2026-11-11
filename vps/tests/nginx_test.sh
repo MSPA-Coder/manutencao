@@ -229,6 +229,26 @@ for publicador in $PUBLICADORES; do
 done
 echo "# /patrimonio/ recusado na borda do CB e do CRV; o resto segue para a aplicação"
 
+# `/fechamento/status` (contrato crv-fechamento/1) é só do CRV e o CB o lê pela
+# rede interna: a borda do CRV recusa. O bloco é só do CRV (o CB tem as telas
+# dele em `/banking/closing/`, que não podem ser tocadas); o `/health` acima
+# prova que o resto do CRV segue para a aplicação.
+dominio_crv=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;[:space:]]*\).*/\1/p' "$ANDAIME/sites/controle-renda-variavel.conf" | head -n 1)
+for caminho in /fechamento/status /fechamento/ //fechamento/status /static/../fechamento/status; do
+    obtido=$(codigo "$dominio_crv" "$caminho")
+    if [ "$obtido" != 404 ]; then
+        echo "FALHOU: $dominio_crv$caminho respondeu ${obtido:-nada}; esperado 404 do próprio nginx." >&2
+        exit 1
+    fi
+done
+dominio_cb=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;[:space:]]*\).*/\1/p' "$ANDAIME/sites/controle-bancario.conf" | head -n 1)
+obtido=$(codigo "$dominio_cb" /banking/closing/)
+if [ "$obtido" != 502 ]; then
+    echo "FALHOU: $dominio_cb/banking/closing/ respondeu ${obtido:-nada}; esperado 502 (a tela do CB segue para a aplicação)." >&2
+    exit 1
+fi
+echo "# /fechamento/ recusado na borda do CRV; no CB segue para a aplicação"
+
 # O Viva Passo é estático: a sonda não depende de processo de aplicação e a
 # rota de saúde deve continuar disponível sem revelar os arquivos do site.
 viva="$ANDAIME/sites/viva-passo.conf"
@@ -266,3 +286,95 @@ if [ "$obtido" != 401 ]; then
     exit 1
 fi
 echo "# Villa Rica: /health estático responde 200 e o conteúdo pede credencial"
+
+# ---------------------------------------------------------------------------
+# Sites estáticos: lista de permissão, cabeçalhos e limite de tentativas
+# (SEG-2, SEG-3 e SEG-4 da auditoria de 10/11/2026).
+#
+# O checkout inteiro estava na raiz do vhost: quem tinha a senha lia também
+# `AGENTS.md`, planos e `Dockerfile`. Agora só o que o site carrega passa pela
+# autenticação (401 sem credencial); o resto responde 404 ANTES dela, e é por
+# isso que o 404 sem credencial prova o bloqueio (se fosse só pela senha, daria
+# 401). A segunda metade da prova é a mesma lista no sentido contrário: cada
+# arquivo que o site usa continua pedindo credencial, e não 404.
+# ---------------------------------------------------------------------------
+# Os arquivos precisam EXISTIR nas raízes: sem eles tudo daria 404 e a prova do
+# bloqueio não provaria nada (o contêiner do teste é descartável).
+for raiz in /home/ubuntu/apps/viva-passo /home/ubuntu/apps/villa-rica; do
+    mkdir -p "$raiz/assets" "$raiz/tests/browser" "$raiz/conferencia" "$raiz/.git"
+    for arq in AGENTS.md README.md PLANO_DE_READAPTACAO.md PLANO_SAUDE_CONDICIONAMENTO_8_SEMANAS.md \
+               Dockerfile Dockerfile.browser compose.yaml .gitignore tests/browser/state.cjs \
+               conferencia/README.md .git/config index.html app.js styles.css anatomy.css \
+               tracking.css builder.css contas-villa-rica-2026.html \
+               sugestoes-convencao-regulamento-villa-rica.html assets/bicicleta-anatomia.png \
+               assets/brasao-villa-rica.jpg; do
+        echo x >"$raiz/$arq"
+    done
+done
+
+esperar() { # <domínio> <código esperado> <caminho>...
+    dom=$1; esp=$2; shift 2
+    for cam in "$@"; do
+        obtido=$(codigo "$dom" "$cam")
+        if [ "$obtido" != "$esp" ]; then
+            echo "FALHOU: $dom$cam respondeu ${obtido:-nada}; esperado $esp." >&2
+            exit 1
+        fi
+    done
+}
+
+esperar "$dominio_viva" 404 /AGENTS.md /README.md /PLANO_DE_READAPTACAO.md \
+    /PLANO_SAUDE_CONDICIONAMENTO_8_SEMANAS.md /Dockerfile /Dockerfile.browser /compose.yaml \
+    /tests/browser/state.cjs /.git/config //AGENTS.md /assets/ /static/../AGENTS.md
+esperar "$dominio_viva" 401 / /index.html /app.js /styles.css /anatomy.css /tracking.css \
+    /builder.css /assets/bicicleta-anatomia.png
+echo "# Viva Passo: só os arquivos do site pedem credencial; o resto do checkout dá 404"
+
+esperar "$dominio_villa_rica" 404 /AGENTS.md /README.md /.gitignore /conferencia/README.md \
+    /conferencia/ //AGENTS.md /assets/
+esperar "$dominio_villa_rica" 401 / /contas-villa-rica-2026.html \
+    /sugestoes-convencao-regulamento-villa-rica.html /assets/brasao-villa-rica.jpg
+echo "# Villa Rica: só as duas páginas e assets/ pedem credencial; o resto dá 404"
+
+# Cabeçalhos de segurança: no `/health` (200) e no 401, que é o que a internet
+# vê. O `s_client -quiet` entrega a resposta inteira; só o cabeçalho
+# interessa.
+cabecalhos() {
+    printf 'GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$2" "$1" \
+        | timeout 10 openssl s_client -quiet -connect 127.0.0.1:443 -servername "$1" 2>/dev/null \
+        | tr -d '\r' | sed '/^$/q'
+}
+for par in "$dominio_viva" "$dominio_villa_rica"; do
+    for caminho in /health /; do
+        resposta=$(cabecalhos "$par" "$caminho")
+        for cab in 'X-Content-Type-Options: nosniff' 'Referrer-Policy: no-referrer' \
+                   'X-Frame-Options: DENY' 'Permissions-Policy:' \
+                   "Content-Security-Policy: default-src 'self'" "frame-ancestors 'none'" \
+                   'Strict-Transport-Security:'; do
+            printf '%s\n' "$resposta" | grep -Fq -- "$cab" \
+                || { echo "FALHOU: $par$caminho sem o cabeçalho '$cab'." >&2; exit 1; }
+        done
+    done
+done
+echo "# Sites estáticos: cabeçalhos de segurança no 200 e no 401"
+
+# Limite de tentativas na autenticação básica. A zona `basica` conta todo
+# pedido ao conteúdo, inclusive o 401; com burst de 120, o 121º em sequência
+# do mesmo endereço volta 429 e a abertura normal do site (dezenas de pedidos)
+# continua passando. Fica por último: a zona é compartilhada pelos dois sites.
+limitado=0; passaram=0
+i=0
+while [ "$i" -lt 220 ]; do
+    i=$((i + 1))
+    obtido=$(codigo "$dominio_villa_rica" /)
+    if [ "$obtido" = 429 ]; then
+        limitado=$((limitado + 1))
+    else
+        passaram=$((passaram + 1))
+    fi
+done
+if [ "$limitado" -lt 1 ] || [ "$passaram" -lt 100 ]; then
+    echo "FALHOU: em 220 pedidos a $dominio_villa_rica/, $passaram passaram e $limitado deram 429; esperado >=100 e >=1." >&2
+    exit 1
+fi
+echo "# Autenticação básica: $passaram pedidos passam (burst) e o excedente leva 429"

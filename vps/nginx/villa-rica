@@ -26,6 +26,15 @@ server {
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     add_header Strict-Transport-Security "max-age=31536000" always;
+    # Cabeçalhos no `server` e nenhum `add_header` em `location` (um local
+    # descartaria estes). A página de contas tem `<script>` e `<style>`
+    # embutidos e um iframe `srcdoc` montado por JS, por isso `'unsafe-inline'`;
+    # o ganho aqui é fechar origem externa, formulário e moldura de terceiro.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
     root /home/ubuntu/apps/villa-rica;
     index contas-villa-rica-2026.html;
 
@@ -39,9 +48,18 @@ server {
         return 404;
     }
 
-    location / {
+    # Lista de permissão: só as duas páginas e `assets/`. `AGENTS.md`,
+    # `README.md` e `conferencia/` (repositório aninhado, com dados de
+    # trabalho) caem no `location /` abaixo e dão 404 antes da autenticação.
+    # PÁGINA OU PASTA NOVA DO SITE PRECISA ENTRAR NESTA LISTA, senão dá 404.
+    location ~ ^/(?:contas-villa-rica-2026\.html|sugestoes-convencao-regulamento-villa-rica\.html|assets/[^/]+)?$ {
+        limit_req zone=basica burst=120 nodelay;
         auth_basic "Villa Rica";
         auth_basic_user_file /etc/nginx/segredos/villa-rica.htpasswd;
         try_files $uri $uri/ =404;
+    }
+
+    location / {
+        return 404;
     }
 }

@@ -6,8 +6,7 @@
 # renovação bem-sucedida -- e só então. Numa execução que não renovou nada, ele
 # não roda.
 #
-# POR QUE ESTE ARQUIVO EXISTE. Até 14/09/2026 não havia hook nenhum em nenhum
-# dos dois servidores. Sem ele, a renovação grava o certificado novo em disco e
+# POR QUE ESTE ARQUIVO EXISTE. Até 14/09/2026 não havia hook nenhum. Sem ele, a renovação grava o certificado novo em disco e
 # o nginx continua apresentando o ANTIGO, porque um processo já rodando não
 # relê o certificado sozinho. Como nada falha, não há o que notificar: o
 # `certbot renew` roda todo dia e reporta sucesso, o `OnFailure=` não dispara,

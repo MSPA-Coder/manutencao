@@ -42,11 +42,11 @@ NGINX_HABILITADOS=${NGINX_HABILITADOS:-/etc/nginx/sites-enabled}
 # Os domínios são os que ESTE servidor serve — lidos dos vhosts habilitados,
 # pelo mesmo motivo e do mesmo jeito que o `vigia.sh` faz.
 #
-# O QUE ISSO SIGNIFICA COM DOIS VPS: cada máquina cuida dos monitores das
-# aplicações que ela serve, e só. O laço abaixo cria e ajusta; ele nunca apaga
-# monitor de domínio que não está na lista, então rodar isto num servidor não
-# mexe nos monitores do outro. Durante uma virada, em que o mesmo vhost existe
-# nas duas caixas por algumas horas, o pior que acontece é o monitor ser
+# O QUE ISSO SIGNIFICA: o servidor cuida dos monitores das aplicações que ele
+# serve, e só. O laço abaixo cria e ajusta; ele nunca apaga monitor de domínio
+# que não está na lista. Se um dia houver outro servidor, rodar isto num não
+# mexe nos monitores do outro (até 05/11/2026 havia dois); numa virada em que
+# o mesmo vhost existe nas duas caixas, o pior que acontece é o monitor ser
 # reescrito com os mesmos valores.
 descobrir_dominios() {
     grep -RhE '^[[:space:]]*server_name[[:space:]]' "$NGINX_HABILITADOS"/ 2>/dev/null \

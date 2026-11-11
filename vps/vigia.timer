@@ -9,11 +9,11 @@ OnUnitActiveSec=1h
 RandomizedDelaySec=5min
 # SEM `Persistent=true`, de propósito: a opção só vale para `OnCalendar`. Num timer
 # monotônico (`OnBootSec`/`OnUnitActiveSec`) ela deixa em /var/lib/systemd/timers/ um
-# `stamp-vigia.timer` que o systemd 259 (VPS2, Ubuntu 26.04) lê ao iniciar: o último
+# `stamp-vigia.timer` que o systemd 259 (Ubuntu 26.04) lê ao iniciar: o último
 # disparo entra só com data de relógio, o base monotônico fica em 0, e o `OnUnitActiveSec`
 # passa a valer "1h depois do boot", que já passou. Depois do reinício de 25/09/2026 o timer
 # ficou `elapsed`, sem próxima execução, e o vigia cinco dias sem rodar, com o
-# `systemctl is-active` dizendo "ativo". O VPS1 (systemd 255) não sofreu, com o mesmo arquivo.
+# `systemctl is-active` dizendo "ativo". O servidor com systemd 255 não sofreu, com o mesmo arquivo.
 # Os outros timers monotônicos (sentinela, autocura) nunca tiveram a opção,
 # nem o stamp, e disparam normalmente. `vps/tests/timers_test.sh` impede a volta da opção.
 #

@@ -27,8 +27,11 @@ concurrency:
 
 jobs:
   qualidade:
-    # `Qualidade` é o nome exigido pelo ruleset do `main` como status check
-    # obrigatório. Renomear o job derruba a proteção do branch em silêncio.
+    # `Qualidade` é o nome que o ruleset do `main` declara como status check
+    # obrigatório, mas o administrador tem bypass e o fluxo é commit direto no
+    # `main`: na prática a CI é só aviso e não bloqueia o único autor. A
+    # proteção real é o bypass restrito a um papel. Renomear o job ainda
+    # desalinha o ruleset, então renomeie junto com ele.
     name: Qualidade
       # Imagem do runner escolhida para esta suíte e atualizada pelo GitHub;
       # as imagens Docker usadas abaixo são puxadas novamente em cada execução.
@@ -90,8 +93,8 @@ jobs:
       - name: Testar o instalador
         run: bash vps/tests/instalar_test.sh
 
-      # Timer monotônico com `Persistent=true` deixou o vigia do VPS2 parado por cinco
-      # dias depois de um reinício (25/09/2026). A guarda lê o texto dos `.timer`.
+      # Timer monotônico com `Persistent=true` deixou o vigia parado por cinco
+      # dias (no servidor que existia então, com systemd 259) depois de um reinício (25/09/2026). A guarda lê o texto dos `.timer`.
       - name: Guardar os timers systemd
         run: bash vps/tests/timers_test.sh
 
@@ -141,7 +144,7 @@ jobs:
         run: bash vps/tests/autocura_test.sh
 
       # O menu /status do Telegram: o coletor só aceita as categorias da lista
-      # (é o comando preso à chave que o VPS1 usaria para ler outro servidor), os domínios
-      # vêm do nginx e cada resposta traz um bloco por servidor.
+      # (é o comando preso à chave de um servidor remoto, hoje inexistente), os domínios
+      # vêm do nginx e cada resposta traz um bloco por servidor da lista.
       - name: Testar o bot de status
         run: python3 -m unittest vps/tests/status_test.py

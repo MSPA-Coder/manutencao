@@ -24,9 +24,8 @@ set -euo pipefail
 # `DEST` aceita sobreposição pelo ambiente só para a suíte hermética
 # (`tests/backup-agent_test.sh`), no mesmo formato do `backup-db.sh`. Isso não
 # abre porta pelo SSH: o sshd só repassa ao processo as variáveis de
-# `AcceptEnv` (conferido em 15/09/2026: `LANG` e `LC_*` nos dois servidores,
-# mais `COLORTERM` e `NO_COLOR` no do portal), e `PermitUserEnvironment` está
-# desligado nos dois — quem conecta com a chave do agente não escolhe `DEST`.
+# `AcceptEnv` (conferido em 15/09/2026: `LANG` e `LC_*` no VPS1),
+# e `PermitUserEnvironment` está desligado — quem conecta com a chave do agente não escolhe `DEST`.
 DEST=${DEST:-/home/ubuntu/backups}
 BACKUP_DB_SH=/home/ubuntu/backup-db.sh
 

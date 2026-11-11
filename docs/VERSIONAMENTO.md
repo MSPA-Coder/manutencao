@@ -22,7 +22,7 @@ fim deste documento.
 - A versão em `pyproject.toml` e no `uv.lock` é a da última release.
 - Cada release traz a lista dos commits desde a anterior; a tag aponta para o
   último commit do marco.
-- O **SharedAuth** já seguia essa lógica desde o início (`v0.1.0` a `v0.14.0`)
+- O **SharedAuth** já seguia essa lógica desde o início (da `v0.1.0` em diante)
   e os aplicativos fixam a versão dele por tag; por isso ele não foi tocado.
 - O `manutencao` e o `WealthfolioTeste` são repositórios de ferramenta e de
   operação, não aplicativos, e não têm releases próprias (a tag `V2.5` do

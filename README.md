@@ -75,10 +75,6 @@ verifica.
 
 ## Deploy
 
-Se a despausa de um contêiner após copiar seu volume falhar, o backup acusa
-falha e tenta despausá-lo novamente ao encerrar, mantendo a trava da aplicação
-até essa tentativa. Uma falha persistente exige intervenção do operador.
-
 No VPS, a interface é:
 
 ```bash
@@ -113,7 +109,9 @@ Cada chamada de `deploy.sh` toma um lock do respectivo aplicativo;
 rotulado. Assim um deploy do Wealthfolio não disputa o SQLite com seu snapshot,
 mas backup e deploy dos demais aplicativos continuam independentes. Se a outra
 operação não terminar em cinco minutos, a chamada termina sem tocar no app e
-informa a contenção.
+informa a contenção. Se a despausa do contêiner, depois de copiar o volume,
+falhar, o backup acusa falha e tenta despausá-lo de novo ao encerrar, mantendo
+a trava da aplicação até essa tentativa; falha persistente exige intervenção.
 
 ### Imagens por ID: bancário, renda, Mega-Sena e Conforto
 
@@ -195,6 +193,15 @@ configuração atual, executa `nginx -t`, restaura o backup se a validação fal
 e só então recarrega o serviço. O `instalar.sh` apenas o entrega em
 `~/instalar-nginx.sh`; o procedimento continua em
 [`vps/nginx/README.md`](vps/nginx/README.md).
+
+## Desastre
+
+O roteiro de reconstrução do VPS (`INVENTARIO.txt`, gerado pelo `backup-db.sh`),
+a restauração do pacote `configuracao_servidor` e a troca dos segredos
+(`telegram.env`, `uptimerobot.env`) **nunca foram executados ponta a ponta**
+(conferido em 12/11/2026: não há registro de execução). Há um só VPS e um
+ensaio exigiria uma VM equivalente. Quem ensaiar o roteiro grava aqui a data e
+o que faltou.
 
 ## Observabilidade
 

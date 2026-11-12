@@ -715,7 +715,7 @@ assert_eq "$(sha256sum "$final" | cut -d' ' -f1)" "$(cat "$final.sha256" 2>/dev/
     'o .sha256 ao lado confere com a cópia'
 grep -qx 'media/attachments/comprovante.pdf' <<<"$(membros "$final")" \
     || fail 'o comprovante precisa estar na cópia'
-dumps=$(ls "$DEST_TMP/controle_bancario"/controle_bancario_banco_*.dump 2>/dev/null | wc -l)
+dumps=$(find "$DEST_TMP/controle_bancario" -maxdepth 1 -name 'controle_bancario_banco_*.dump' | wc -l)
 assert_eq 1 "$dumps" 'o dump do banco continua sendo feito na mesma pasta'
 end_case 'comprovantes do ControleBancario: cópia do volume ao lado do dump'
 
@@ -743,7 +743,7 @@ sleep 1
 roda
 assert_eq 1 "$(copias controle_bancario | wc -l)" 'a cópia de 20 dias sai quando há substituta'
 [ -e "$DEST_TMP/controle_bancario/$velha" ] && fail 'a cópia velha devia ter saído'
-assert_eq 1 "$(ls "$DEST_TMP/controle_bancario"/controle_bancario_banco_*.dump | wc -l)" \
+assert_eq 1 "$(find "$DEST_TMP/controle_bancario" -maxdepth 1 -name 'controle_bancario_banco_*.dump' | wc -l)" \
     'o dump único continua: o piso de cada tipo é independente'
 end_case 'retenção do volume e a do dump não se confundem na mesma pasta'
 

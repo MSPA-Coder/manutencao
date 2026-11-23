@@ -46,7 +46,9 @@ APPS = ["ControleBancario", "ControleRendaVariavel", "ConfortoTermico", "MegaSen
 COM_TESTES = APPS + ["BackupRestore", "FinancasMCP", "SharedAuth", "Site_Mp-solucoes"]
 # Sites estáticos pequenos: só o bloco, sem docs/TESTES.md.
 SITES = ["VivaPasso", "VillaRica", "PlayBook"]
-COM_BLOCO = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name] + SITES
+# Projetos locais sem deploy, Docker nem suíte padrão: só o bloco.
+LOCAIS = ["Cars_Simulator"]
+COM_BLOCO = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name] + SITES + LOCAIS
 COM_QUALITY = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name]
 
 # canônica (relativa a este repositório) -> [(repositório, caminho lá)]

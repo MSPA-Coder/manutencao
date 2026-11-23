@@ -526,16 +526,14 @@ end_case 'estado mostra o volume rotulado mesmo sem cópia ainda'
 begin_case
 com_wealthfolio
 mkdir -p "$CASE_TMP/app-locks"
-(
-    # O nome que o `deploy.sh` usa: a pasta do app, com hífen.
-    exec 9>"$CASE_TMP/app-locks/wealthfolio-teste.lock"
-    flock -n 9
-    sleep 3
-) &
-lock_pid=$!
-sleep 0.1
+# O nome que o `deploy.sh` usa: a pasta do app, com hífen. O lock fica com o
+# próprio teste: um subshell em segundo plano com espera fixa perdia a corrida
+# com a máquina carregada.
+exec 9>"$CASE_TMP/app-locks/wealthfolio-teste.lock"
+flock -n 9 || fail 'o teste não conseguiu segurar o lock'
 APP_LOCK_TIMEOUT_SEGUNDOS=0 roda
-wait "$lock_pid"
+flock -u 9
+exec 9>&-
 [ "$EXIT_CODE" -ne 0 ] || fail 'backup com lock do Wealthfolio ocupado deve falhar'
 assert_saida 'wealthfolio-teste está em outra operação' 'a contenção deve identificar o volume protegido'
 assert_registro '' 'backup bloqueado não pode pausar nem copiar o contêiner'
@@ -752,15 +750,11 @@ end_case 'retenção do volume e a do dump não se confundem na mesma pasta'
 begin_case
 com_bancario
 mkdir -p "$CASE_TMP/app-locks"
-(
-    exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
-    flock -n 9
-    sleep 3
-) &
-lock_pid=$!
-sleep 0.1
+exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
+flock -n 9 || fail 'o teste não conseguiu segurar o lock'
 APP_LOCK_TIMEOUT_SEGUNDOS=0 roda
-wait "$lock_pid"
+flock -u 9
+exec 9>&-
 [ "$EXIT_CODE" -ne 0 ] || fail 'backup com o lock do deploy do CB ocupado deve falhar'
 assert_saida 'controle-bancario está em outra operação' 'a contenção identifica o app'
 assert_registro '' 'com o lock ocupado, o web não é pausado nem copiado'

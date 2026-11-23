@@ -580,16 +580,14 @@ done
 begin_case
 SCENARIO=success
 mkdir -p "$CASE_TMP/app-locks"
-(
-    exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
-    flock -n 9
-    sleep 3
-) &
-lock_pid=$!
-sleep 0.1
+# O lock fica com o próprio teste: subshell em segundo plano com espera fixa
+# perdia a corrida com a máquina carregada.
+exec 9>"$CASE_TMP/app-locks/controle-bancario.lock"
+flock -n 9 || fail 'o teste não conseguiu segurar o lock'
 APP_LOCK_TIMEOUT_SEGUNDOS=0
 run_deploy bancario
-wait "$lock_pid"
+flock -u 9
+exec 9>&-
 assert_eq 75 "$EXIT_CODE" 'lock ocupado deve sinalizar indisponibilidade temporária'
 assert_no_log 'git <fetch>' 'lock ocupado deve parar antes de ler ou alterar o checkout'
 assert_output 'controle-bancario está em outra operação' 'a contenção deve identificar o app'

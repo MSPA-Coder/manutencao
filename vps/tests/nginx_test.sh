@@ -46,10 +46,10 @@ trap 'rm -rf "$ANDAIME"' EXIT
 # ---------------------------------------------------------------------------
 mkdir -p /etc/letsencrypt
 mkdir -p /etc/nginx/segredos
-# O arquivo real contém o hash de credenciais e vive só no VPS. Para testar o
-# contrato do vhost, basta existir um arquivo legível; nenhuma credencial entra
-# neste repositório ou nesta suíte.
-: >/etc/nginx/segredos/viva-passo.htpasswd
+# Identidade efêmera para provar acesso autorizado no contêiner descartável.
+senha_viva=$(openssl rand -hex 16)
+hash_viva=$(printf '%s\n' "$senha_viva" | openssl passwd -apr1 -stdin)
+printf 'ensaio:%s\n' "$hash_viva" >/etc/nginx/segredos/viva-passo.htpasswd
 : >/etc/nginx/segredos/villa-rica.htpasswd
 
 # Versão mínima do arquivo do certbot: só o suficiente para o `include` do
@@ -301,12 +301,13 @@ echo "# Villa Rica: /health estático responde 200 e o conteúdo pede credencial
 # Os arquivos precisam EXISTIR nas raízes: sem eles tudo daria 404 e a prova do
 # bloqueio não provaria nada (o contêiner do teste é descartável).
 for raiz in /home/ubuntu/apps/viva-passo /home/ubuntu/apps/villa-rica; do
-    mkdir -p "$raiz/assets" "$raiz/tests/browser" "$raiz/conferencia" "$raiz/.git"
+    mkdir -p "$raiz/assets/fonts" "$raiz/tests/browser" "$raiz/conferencia" "$raiz/.git"
     for arq in AGENTS.md README.md PLANO_DE_READAPTACAO.md PLANO_SAUDE_CONDICIONAMENTO_8_SEMANAS.md \
                Dockerfile Dockerfile.browser compose.yaml .gitignore tests/browser/state.cjs \
                conferencia/README.md .git/config index.html app.js styles.css anatomy.css \
                tracking.css builder.css contas-villa-rica-2026.html \
                sugestoes-convencao-regulamento-villa-rica.html assets/bicicleta-anatomia.png \
+               assets/fonts/dm-sans-latin.woff2 assets/fonts/fraunces-latin.woff2 assets/fonts/LEIAME.txt assets/guia.webp \
                assets/brasao-villa-rica.jpg; do
         echo x >"$raiz/$arq"
     done
@@ -325,9 +326,16 @@ esperar() { # <domínio> <código esperado> <caminho>...
 
 esperar "$dominio_viva" 404 /AGENTS.md /README.md /PLANO_DE_READAPTACAO.md \
     /PLANO_SAUDE_CONDICIONAMENTO_8_SEMANAS.md /Dockerfile /Dockerfile.browser /compose.yaml \
-    /tests/browser/state.cjs /.git/config //AGENTS.md /assets/ /static/../AGENTS.md
+    /tests/browser/state.cjs /.git/config /assets/fonts/LEIAME.txt //AGENTS.md /assets/ /static/../AGENTS.md
 esperar "$dominio_viva" 401 / /index.html /app.js /styles.css /anatomy.css /tracking.css \
-    /builder.css /assets/bicicleta-anatomia.png
+    /builder.css /assets/bicicleta-anatomia.png /assets/guia.webp /assets/fonts/dm-sans-latin.woff2 /assets/fonts/fraunces-latin.woff2
+for caminho in / /assets/guia.webp /assets/fonts/dm-sans-latin.woff2 /assets/fonts/fraunces-latin.woff2 /assets/ausente.png; do
+    esperado=200
+    [ "$caminho" != /assets/ausente.png ] || esperado=404
+    obtido=$(curl -ksS --noproxy '*' --resolve "$dominio_viva:443:127.0.0.1" --user "ensaio:$senha_viva" \
+        -o /dev/null -w '%{http_code}' "https://$dominio_viva$caminho")
+    [ "$obtido" = "$esperado" ] || { echo "FALHOU: $caminho autenticado retornou $obtido."; exit 1; }
+done
 echo "# Viva Passo: só os arquivos do site pedem credencial; o resto do checkout dá 404"
 
 esperar "$dominio_villa_rica" 404 /AGENTS.md /README.md /.gitignore /conferencia/README.md \
@@ -344,6 +352,8 @@ cabecalhos() {
         | timeout 10 openssl s_client -quiet -connect 127.0.0.1:443 -servername "$1" 2>/dev/null \
         | tr -d '\r' | sed '/^$/q'
 }
+cabecalhos "$dominio_viva" / | grep -Fq "style-src 'self'; font-src 'self';" \
+    || { echo "FALHOU: CSP do Viva Passo precisa permitir estilos e fontes locais."; exit 1; }
 for par in "$dominio_viva" "$dominio_villa_rica"; do
     for caminho in /health /; do
         resposta=$(cabecalhos "$par" "$caminho")
@@ -366,12 +376,14 @@ limitado=0; passaram=0
 i=0
 while [ "$i" -lt 220 ]; do
     i=$((i + 1))
-    obtido=$(codigo "$dominio_villa_rica" /)
-    if [ "$obtido" = 429 ]; then
-        limitado=$((limitado + 1))
-    else
-        passaram=$((passaram + 1))
-    fi
+    # Um IP de loopback próprio começa com a cota inteira, independentemente das provas anteriores.
+    obtido=$(curl -ksS --interface 127.0.0.2 --noproxy '*' --resolve "$dominio_villa_rica:443:127.0.0.1" \
+        -o /dev/null -w '%{http_code}' "https://$dominio_villa_rica/")
+    case "$obtido" in
+        429) limitado=$((limitado + 1)) ;;
+        401) passaram=$((passaram + 1)) ;;
+        *) echo "FALHOU: resposta inesperada $obtido no limite de tentativas."; exit 1 ;;
+    esac
 done
 if [ "$limitado" -lt 1 ] || [ "$passaram" -lt 100 ]; then
     echo "FALHOU: em 220 pedidos a $dominio_villa_rica/, $passaram passaram e $limitado deram 429; esperado >=100 e >=1." >&2

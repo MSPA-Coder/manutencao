@@ -47,7 +47,7 @@ COM_TESTES = APPS + ["BackupRestore", "FinancasMCP", "SharedAuth", "Site_Mp-solu
 # Sites estáticos pequenos: só o bloco, sem docs/TESTES.md.
 SITES = ["VivaPasso", "VillaRica", "PlayBook"]
 # Projetos locais sem deploy, Docker nem suíte padrão: só o bloco.
-LOCAIS = ["Cars_Simulator"]
+LOCAIS = ["Cars_Simulator", "Elevator_Simulator"]
 COM_BLOCO = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name] + SITES + LOCAIS
 COM_QUALITY = COM_TESTES + ["WealthfolioTeste", MANUTENCAO.name]
 
